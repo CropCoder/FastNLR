@@ -297,7 +297,9 @@ fn make_progress_bar(mode: &str) -> Option<indicatif::ProgressBar> {
         .unwrap()
         .progress_chars("=> "),
     );
-    pb.enable_steady_tick(std::time::Duration::from_millis(100));
+    // 1-second steady tick: refreshes the bar once per second instead of 10×/s,
+    // avoiding redraw overhead on fast scans.
+    pb.enable_steady_tick(std::time::Duration::from_secs(1));
     Some(pb)
 }
 
