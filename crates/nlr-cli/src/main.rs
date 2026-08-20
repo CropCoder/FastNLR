@@ -24,15 +24,21 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
     version,
     long_version = concat!(
         "1.0.0\n",
-        "Author: Jiwen Zhao (https://github.com/CropCoder)\n",
-        "Repo: https://github.com/CropCoder/FastNLR\n",
+        "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
+        "Repo:    https://github.com/CropCoder/FastNLR\n",
+        "Releases: https://github.com/CropCoder/FastNLR/releases\n",
+        "Issues:   https://github.com/CropCoder/FastNLR/issues\n",
+        "License:  GPL-3.0-only\n",
         "Original: NLR-Annotator, Steuernagel et al., Plant Physiology, 2020 (PMID: 32184345, GPL-3.0)"
     ),
     about = "FastNLR: scan six reading frames of genomic sequences for amino-acid motifs and annotate NLR immune-receptor loci",
     long_about = "FastNLR: a high-performance Rust rewrite of NLR-Annotator.\n\
                   It scans six-frame translations of an input FASTA for motifs, assembles NLR loci,\n\
                   and emits txt/GFF/BED/alignment-fasta and other formats.\n\
-                  Compatible with the original -i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n flag semantics.",
+                  Compatible with the original -i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n flag semantics.\n\n\
+                  Repository: https://github.com/CropCoder/FastNLR\n\
+                  Author:     Jiwen Zhao (https://github.com/CropCoder)\n\
+                  Citation:   Steuernagel et al., Plant Physiology, 2020 (PMID: 32184345)",
     after_long_help = "Examples:\n  \
         # Basic loci annotation\n  \
         fastnlr -i genome.fasta -o out.txt -g out.gff -b out.bed\n\n  \
@@ -41,7 +47,13 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
         # Checkpoint resume\n  \
         fastnlr -i genome.fasta -p result --checkpoint ckpt/\n\n  \
         # Explicit mot/store override\n  \
-        fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -p result"
+        fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -p result\n\n\
+        \n\
+        Project:   https://github.com/CropCoder/FastNLR\n\
+        Releases:  https://github.com/CropCoder/FastNLR/releases\n\
+        Issues:    https://github.com/CropCoder/FastNLR/issues\n\
+        Author:    Jiwen Zhao (https://github.com/CropCoder)\n\
+        License:   GPL-3.0-only  |  Original: NLR-Annotator (Steuernagel et al., 2020, PMID: 32184345)"
 )]
 struct Cli {
     // ===== Input (required) =====
