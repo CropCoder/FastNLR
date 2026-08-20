@@ -1,0 +1,10 @@
+[package]
+name = "nlr-config"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+nlr-core = { path = "../nlr-core" }
+memmap2 = { workspace = true }

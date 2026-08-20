@@ -1,0 +1,62 @@
+# FastNLR — Rust rewrite of the NLR loci annotation tool (high-performance port of NLR-Annotator).
+#
+# workspace root: unified dependency versions + release-optimized profile.
+# Layered crate dependency graph (bottom-up):
+#   nlr-core (no deps) -> nlr-config/nlr-seq -> nlr-scan -> nlr-assemble -> nlr-output/nlr-report/nlr-plot -> nlr-cli
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/nlr-core",
+    "crates/nlr-config",
+    "crates/nlr-seq",
+    "crates/nlr-scan",
+    "crates/nlr-assemble",
+    "crates/nlr-output",
+    "crates/nlr-report",
+    "crates/nlr-plot",
+    "crates/nlr-cli",
+]
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["Jiwen Zhao (https://github.com/CropCoder)"]
+license = "GPL-3.0-only"
+repository = "https://github.com/CropCoder/FastNLR"
+
+# Unified dependency versions (workspace-level; crates declare workspace = true).
+[workspace.dependencies]
+# parallelism
+rayon = "1.10"
+# CLI parsing
+clap = { version = "4.5", features = ["derive", "cargo"] }
+# logging & observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+# progress bar
+indicatif = "0.17"
+# graceful shutdown (SIGINT)
+ctrlc = "3.4"
+# structured serialization (stats report JSON)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# gzip compression
+flate2 = "1.0"
+# statistics plots (default features disabled to avoid system fontconfig/freetype deps;
+# ab_glyph provides a bundled font backend, enabling static/cross compilation)
+plotters = { version = "0.3", default-features = false, features = ["bitmap_backend", "bitmap_encoder", "image", "ab_glyph", "all_series", "all_elements", "full_palette", "colormaps"] }
+# fast hashing
+rustc-hash = "2.0"
+# temp directory
+tempfile = "3.10"
+# memory-map large files
+memmap2 = "0.9"
+# SIMD vectorization (cross-window parallel scoring)
+wide = "0.7"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

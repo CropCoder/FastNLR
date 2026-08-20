@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target
+**/target
+Cargo.lock.bak
+
+# Release distribution (uploaded to GitHub Releases, not committed)
+/dist
+
+# OS / editor cruft
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Checkpoint / temp runtime output
+/ckpt
+__pycache__/
