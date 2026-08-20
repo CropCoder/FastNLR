@@ -96,103 +96,107 @@ pub fn run_with_progress(
         }
     }
 
-    // 2. Chop all fragments.
+    // 2. Streaming chop + fragment-level parallel scan.
+    //    Fragments are pulled from the chopper in fixed-size chunks and scanned in parallel
+    //    (one rayon task per fragment), then the chunk is released — so peak memory is
+    //    bounded by chunk_size rather than by genome size.
     let chopper = nlr_seq::SequenceChopper::from_file(
         &config.input_fasta,
         config.fragment_length,
         config.overlap,
     )?;
-    let mut fragments = Vec::new();
     let mut chopper = chopper;
-    while let Some(fragment) = chopper.next_sequence() {
-        fragments.push(fragment);
-    }
-    tracing::info!("chopping done: {} fragments", fragments.len());
 
-    // 3. Parallel batch scan (seqs_per_thread fragments per batch).
     let num_threads = config.threads.max(1);
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build()
         .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-    let scan_batch = |batch: &[nlr_seq::translate::BioSequence]| -> Vec<(String, Motif)> {
-        let mut local: HashMap<String, Vec<Motif>> = HashMap::new();
-        for fragment in batch {
-            let (id, offset) = parse_fragment_id(&fragment.identifier);
-            let fragment_len = fragment.len() as u64; // actual fragment length (last fragment may be < fragment_length)
-            let protein_seqs = fragment.translate2protein();
-            for pseq in &protein_seqs {
-                let list = parser.find_motifs(&pseq.identifier, &pseq.sequence);
-                if list.motifs.is_empty() {
-                    continue;
-                }
-                let ids: Vec<u8> = list.motifs.iter().map(|m| m.id).collect();
-                if !signature_def.has_signature(&ids) {
-                    continue;
-                }
-                let (frame, strand) = parse_frame(&pseq.identifier);
-                for motif in list.motifs {
-                    let mut m = motif;
-                    // Java: motif.setDNA(id, offset, seq.getLength(), frame, forwardStrand)
-                    // Use actual fragment length (not fixed fragment_length).
-                    m.set_dna(id.clone(), offset, fragment_len, frame, strand);
-                    local.entry(id.clone()).or_default().push(m);
-                }
+    let chunk_size = config.seqs_per_thread.max(1);
+    let mut motifs_by_seq: HashMap<String, Vec<Motif>> = HashMap::new();
+    let mut scanned: u64 = 0;
+
+    loop {
+        // Pull a chunk of fragments from the chopper (streaming).
+        let mut chunk: Vec<nlr_seq::translate::BioSequence> = Vec::with_capacity(chunk_size);
+        while chunk.len() < chunk_size {
+            match chopper.next_sequence() {
+                Some(f) => chunk.push(f),
+                None => break,
             }
         }
-        local.into_iter().flat_map(|(k, v)| v.into_iter().map(move |m| (k.clone(), m))).collect()
-    };
+        if chunk.is_empty() {
+            break;
+        }
+        let chunk_len = chunk.len() as u64;
 
-    let batches: Vec<&[nlr_seq::translate::BioSequence]> =
-        fragments.chunks(config.seqs_per_thread.max(1)).collect();
+        // Fragment-level parallelism: each fragment is one rayon task (fine-grained load
+        // balancing — a large contig no longer stalls the whole batch).
+        let chunk_results: Vec<Vec<(String, Motif)>> = pool.install(|| {
+            use rayon::prelude::*;
+            chunk
+                .par_iter()
+                .filter_map(|fragment| {
+                    if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
+                        return None;
+                    }
+                    Some(scan_one_fragment(fragment, &parser, &signature_def))
+                })
+                .collect()
+        });
 
-    // Progress bar granularity = fragments; total length = fragment count.
-    if let Some(pb) = progress {
-        pb.set_length(fragments.len() as u64);
+        // Merge into the global map immediately; the chunk is dropped after this iteration.
+        for frags in chunk_results {
+            for (seq_id, motif) in frags {
+                motifs_by_seq.entry(seq_id).or_default().push(motif);
+            }
+        }
+
+        scanned += chunk_len;
+        if let Some(pb) = progress {
+            pb.set_length(scanned); // total grows as streaming discovers fragments
+            pb.inc(chunk_len);
+        }
+        if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
     }
-
-    let results: Vec<Vec<(String, Motif)>> = pool.install(|| {
-        use rayon::prelude::*;
-        batches
-            .par_iter()
-            .filter_map(|batch| {
-                // Skip remaining batches after interrupt.
-                if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
-                    return None;
-                }
-                let r = scan_batch(batch);
-                if let Some(pb) = progress {
-                    pb.inc(batch.len() as u64); // advance by batch.len() fragments
-                }
-                Some(r)
-            })
-            .collect()
-    });
+    tracing::info!("chopping + scan done: {} fragments", scanned);
 
     if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
         tracing::warn!("scan interrupted, outputting completed batch results");
     }
 
-    // 4. Merge + dedup.
-    let mut motifs_by_seq: HashMap<String, Vec<Motif>> = HashMap::new();
-    for batch in results {
-        for (seq_id, motif) in batch {
-            motifs_by_seq.entry(seq_id).or_default().push(motif);
-        }
-    }
+    // 3. Per-sequence sort + adjacent dedup (deterministic regardless of scan parallelism).
     for v in motifs_by_seq.values_mut() {
         v.sort();
         dedup_adjacent(v);
     }
 
-    // 5. Assemble NLRs.
-    let mut nlrs: Vec<MotifList> = Vec::new();
+    // 4. Assemble NLRs per contig. Contigs are independent, so this is parallelized;
+    //    results are keyed by sorted seq_id and flattened to keep output order deterministic
+    //    (identical to the prior serial `for seq_id in sorted_seq_ids` loop).
     let mut seq_ids: Vec<&String> = motifs_by_seq.keys().collect();
     seq_ids.sort();
-    for seq_id in seq_ids {
-        let motifs = motifs_by_seq.get(seq_id).unwrap().clone();
-        let mut assembled = nlr_assemble::assemble(seq_id, motifs, &config.assemble, &signature_def);
+    let per_seq: Vec<(usize, Vec<MotifList>)> = pool.install(|| {
+        use rayon::prelude::*;
+        seq_ids
+            .par_iter()
+            .enumerate()
+            .map(|(idx, seq_id)| {
+                let motifs = motifs_by_seq.get(*seq_id).unwrap().clone();
+                let assembled =
+                    nlr_assemble::assemble(seq_id, motifs, &config.assemble, &signature_def);
+                (idx, assembled)
+            })
+            .collect()
+    });
+    // Reorder by original sorted index → deterministic contig order.
+    let mut per_seq = per_seq;
+    per_seq.sort_by_key(|(idx, _)| *idx);
+    let mut nlrs: Vec<MotifList> = Vec::new();
+    for (_, mut assembled) in per_seq {
         nlrs.append(&mut assembled);
     }
 
@@ -208,6 +212,38 @@ pub fn run_with_progress(
     }
 
     Ok(result)
+}
+
+/// Scan a single fragment: six-frame translate → find motifs → signature filter → DNA coord map.
+/// Returns `(seq_id, motif)` pairs for this fragment.
+fn scan_one_fragment(
+    fragment: &nlr_seq::translate::BioSequence,
+    parser: &nlr_scan::MotifParser,
+    signature_def: &AnnotatorSignatureDefinition,
+) -> Vec<(String, Motif)> {
+    let (id, offset) = parse_fragment_id(&fragment.identifier);
+    let fragment_len = fragment.len() as u64; // actual length (last fragment may be < fragment_length)
+    let protein_seqs = fragment.translate2protein();
+    let mut out: Vec<(String, Motif)> = Vec::new();
+    for pseq in &protein_seqs {
+        let list = parser.find_motifs(&pseq.identifier, &pseq.sequence);
+        if list.motifs.is_empty() {
+            continue;
+        }
+        let ids: Vec<u8> = list.motifs.iter().map(|m| m.id).collect();
+        if !signature_def.has_signature(&ids) {
+            continue;
+        }
+        let (frame, strand) = parse_frame(&pseq.identifier);
+        for motif in list.motifs {
+            let mut m = motif;
+            // Java: motif.setDNA(id, offset, seq.getLength(), frame, forwardStrand)
+            // Use actual fragment length (not fixed fragment_length).
+            m.set_dna(id.clone(), offset, fragment_len, frame, strand);
+            out.push((id.clone(), m));
+        }
+    }
+    out
 }
 
 /// Resolve mot/store sources (user path takes precedence over built-in) and load MotifDefinition.
