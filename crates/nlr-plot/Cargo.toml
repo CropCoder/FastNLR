@@ -1,0 +1,10 @@
+[package]
+name = "nlr-plot"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+nlr-report = { path = "../nlr-report" }
+plotters = { workspace = true }

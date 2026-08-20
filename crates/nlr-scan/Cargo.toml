@@ -1,0 +1,12 @@
+[package]
+name = "nlr-scan"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+nlr-core = { path = "../nlr-core" }
+nlr-config = { path = "../nlr-config" }
+nlr-seq = { path = "../nlr-seq" }
+wide = { workspace = true }

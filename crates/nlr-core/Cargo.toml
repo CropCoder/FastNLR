@@ -1,0 +1,9 @@
+[package]
+name = "nlr-core"
+description = "FastNLR domain model: Motif/MotifList and hardcoded rule tables (rank/class/color/seed combos/signatures/consensus)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
