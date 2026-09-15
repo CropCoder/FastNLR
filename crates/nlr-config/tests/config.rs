@@ -1,19 +1,25 @@
 //! nlr-config integration tests: load the real mot.txt/store.txt and validate the parsed result.
+//!
+//! NOTE: the data files live in `crates/nlr-cli/data/` (the crate layout moved there long ago);
+//! the previous path (`../../../src`) pointed outside the repository, so these three tests failed
+//! on every CI run. The path below is relative to this crate's manifest dir.
 
 use nlr_config::MotifDefinition;
 use std::path::Path;
 
 #[test]
 fn load_real_config() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../nlr-cli/data");
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
 
-    // All 20 motifs loaded.
-    let mut ids: Vec<u8> = (1..=20).collect();
-    ids.sort();
+    // The shipped library has the 20 NLR-Annotator motifs; an extended library may have more,
+    // so assert "the 20 built-ins are present" instead of an exact count.
     let mut names = def.motif_names().to_vec();
     names.sort();
-    assert_eq!(names, ids, "should load 20 motifs");
+    let builtins: Vec<u8> = (1..=20).collect();
+    assert!(names.len() >= builtins.len(), "should load at least 20 motifs, got {}", names.len());
+    assert!(builtins.iter().all(|i| names.contains(i)), "missing built-in motifs");
+    assert_eq!(def.max_motif_id(), *names.last().unwrap());
 
     // Maximum motif length = 50 (per documentation).
     assert_eq!(def.max_length(), 50);
@@ -29,7 +35,7 @@ fn load_real_config() {
 
 #[test]
 fn thresholds_monotonic() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../nlr-cli/data");
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
     let t = def.score_thresholds(1e-4);
     // Thresholds are non-negative, and every motif has a value.
@@ -40,7 +46,7 @@ fn thresholds_monotonic() {
 
 #[test]
 fn score_non_ascii_returns_zero() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../nlr-cli/data");
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
     // '*' (42) is less than 'A', should return 0.
     assert_eq!(def.score(4, 0, b'*'), 0);
