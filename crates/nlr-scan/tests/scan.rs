@@ -6,7 +6,7 @@ use nlr_scan::MotifParser;
 use std::path::Path;
 
 fn real_parser() -> MotifParser {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../nlr-cli/data");
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
     MotifParser::new(def)
 }
