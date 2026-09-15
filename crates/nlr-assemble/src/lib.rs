@@ -21,6 +21,8 @@ pub struct AssembleParams {
     pub distance_for_elongating: u64,
     /// Seed merge distance (default 10000).
     pub distance_between_motif_combinations: u64,
+    /// 宽松播种（新增）：连续命中串里 NB-ARC 类 motif ≥ 该数即播种；None = 沿用原版精确组合。
+    pub relaxed_seed_min_nbarc: Option<usize>,
 }
 
 impl Default for AssembleParams {
@@ -29,6 +31,7 @@ impl Default for AssembleParams {
             distance_within_motif_combination: 500,
             distance_for_elongating: 2500,
             distance_between_motif_combinations: 10000,
+            relaxed_seed_min_nbarc: None,
         }
     }
 }
@@ -45,7 +48,8 @@ pub fn assemble(
     // Sort (forward strand ascending / reverse strand descending).
     motifs.sort();
 
-    let seeds = find_seeds(&motifs, params.distance_within_motif_combination, def);
+    let seeds = find_seeds(&motifs, params.distance_within_motif_combination, def,
+                           params.relaxed_seed_min_nbarc);
     let merged = merge_seeds(seeds, params.distance_between_motif_combinations, def);
     let mut pre_nlrs = elongate(merged, &motifs, params.distance_for_elongating, def);
 
@@ -69,6 +73,7 @@ fn find_seeds(
     motifs: &[Motif],
     distance: u64,
     def: &AnnotatorSignatureDefinition,
+    relaxed_seed_min_nbarc: Option<usize>,
 ) -> Vec<MotifList> {
     let mut seeds = Vec::new();
     let mut count = 0usize;
@@ -86,7 +91,11 @@ fn find_seeds(
                 s.push(next.id);
                 potential.push(next.clone());
                 cur = next;
-                if def.is_seed(&s) {
+                let seeded = match relaxed_seed_min_nbarc {
+                    Some(n) => def.is_seed_relaxed(&s, n),
+                    None => def.is_seed(&s),
+                };
+                if seeded {
                     count += 1;
                     let name = format!("{}_nlr{}", motifs[i].dna_sequence_id.as_deref().unwrap_or(""), count);
                     seeds.push(MotifList::new(name, potential));

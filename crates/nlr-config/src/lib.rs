@@ -6,11 +6,15 @@
 //! - PWM uses `[aa - 'A']` (ASCII 65) as the first dimension index; non A-Z chars yield 0;
 //! - `motif_names` records the order motifs first appear in mot.txt (scan iteration order).
 
-/// Motif id (1..=20), matching nlr-core's MotifId.
+/// Motif id (1-based), matching nlr-core's MotifId.
+/// 上限由 mot.txt 里出现的最大 id 决定（不再硬编码 20）——这样外部 mot.txt/store.txt
+/// 可以带更多 motif（例如从特定基因家族重挖出来的 CC/TIR motif）。
 pub type MotifId = u8;
 
 /// Motif definition (PWM + CDF + length + order of appearance).
 pub struct MotifDefinition {
+    /// mot.txt 里出现的最大 motif id（数组尺寸 = 该值 + 1）。
+    max_motif_id: MotifId,
     /// `pwm[id]` = flattened PWM, `[aa(0..25) * width + pos]`, length `26 * width`.
     pwm: Vec<Vec<i32>>,
     /// `cdf[id]` = CDF array indexed by integer score.
@@ -24,6 +28,12 @@ pub struct MotifDefinition {
 }
 
 impl MotifDefinition {
+    /// mot.txt 里最大的 motif id（外部库可能 > 20，数组尺寸 = 该值 + 1）。
+    #[inline]
+    pub fn max_motif_id(&self) -> MotifId {
+        self.max_motif_id
+    }
+
     /// Load from mot.txt and store.txt file paths (equivalent to Java constructor).
     pub fn load(pwm_file: &std::path::Path, cdf_file: &std::path::Path) -> std::io::Result<Self> {
         let mot_text = read_mmap_str(pwm_file)?;
@@ -34,6 +44,8 @@ impl MotifDefinition {
     /// Load from in-memory mot.txt / store.txt text (enables `include_str!` embedding).
     pub fn load_from_str(mot: &str, store: &str) -> std::io::Result<Self> {
         let (lengths, motif_names) = Self::lengths_from(mot);
+        let slots = lengths.len();
+        let max_motif_id = (slots.saturating_sub(1)) as MotifId;
         let pwm = Self::pwm_from(mot, &lengths);
         let cdf = Self::cdf_from(store);
         let max_length = lengths.iter().copied().max().unwrap_or(0);
@@ -43,6 +55,7 @@ impl MotifDefinition {
             lengths,
             motif_names,
             max_length,
+            max_motif_id,
         })
     }
 
@@ -53,9 +66,25 @@ impl MotifDefinition {
 
     /// First pass: compute each motif's length (equivalent to `loadMotifLengths`).
     fn lengths_from(text: &str) -> (Vec<u16>, Vec<MotifId>) {
-        let mut lengths = vec![0u16; 21];
+        // 第一遍：扫出最大 motif id（决定数组尺寸，支持 >20 的外部库）
+        let mut max_id = 0usize;
+        for line in text.lines() {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = cols[0].split('@').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            if let Some(i) = Self::parse_motif_id(parts[0]) {
+                max_id = max_id.max(i as usize);
+            }
+        }
+        let slots = max_id + 1;
+        let mut lengths = vec![0u16; slots];
         let mut motif_names: Vec<MotifId> = Vec::new();
-        let mut seen = [false; 21];
+        let mut seen = vec![false; slots];
 
         for line in text.lines() {
             let first = match line.split_whitespace().next() {
@@ -85,7 +114,7 @@ impl MotifDefinition {
 
     /// Second pass: fill PWM (equivalent to `loadPWM`).
     fn pwm_from(text: &str, lengths: &[u16]) -> Vec<Vec<i32>> {
-        let mut pwm: Vec<Vec<i32>> = (0..21)
+        let mut pwm: Vec<Vec<i32>> = (0..lengths.len())
             .map(|i| vec![0; 26 * lengths[i] as usize])
             .collect();
 
@@ -117,8 +146,20 @@ impl MotifDefinition {
 
     /// Parse store.txt (CDF), two passes (equivalent to `loadCDF`).
     fn cdf_from(text: &str) -> Vec<Vec<f64>> {
+        // motif 槽位数从 store.txt 自身的最大 id 推断（与 mot.txt 保持一致）
+        let slot_count = {
+            let mut m = 0usize;
+            for line in text.lines() {
+                let cols: Vec<&str> = line.split_whitespace().collect();
+                if cols.is_empty() { continue; }
+                let parts: Vec<&str> = cols[0].split('@').collect();
+                if parts.len() < 2 { continue; }
+                if let Some(i) = Self::parse_motif_id(parts[0]) { m = m.max(i as usize); }
+            }
+            m + 1
+        };
         // First pass: find max index per motif.
-        let mut max_idx = vec![0usize; 21];
+        let mut max_idx = vec![0usize; slot_count];
         for line in text.lines() {
             let cols: Vec<&str> = line.split_whitespace().collect();
             if cols.is_empty() {
@@ -139,7 +180,7 @@ impl MotifDefinition {
         }
 
         // Second pass: fill.
-        let mut cdf: Vec<Vec<f64>> = (0..21).map(|i| vec![0.0; max_idx[i] + 1]).collect();
+        let mut cdf: Vec<Vec<f64>> = (0..slot_count).map(|i| vec![0.0; max_idx[i] + 1]).collect();
         for line in text.lines() {
             let cols: Vec<&str> = line.split_whitespace().collect();
             if cols.len() < 2 {
@@ -218,8 +259,8 @@ impl MotifDefinition {
     /// monotonically decreasing — higher score is more significant.
     /// Returns `thresholds[id]`: when score >= thresholds[id], pvalue < thresh.
     pub fn score_thresholds(&self, thresh: f64) -> Vec<i32> {
-        let mut thresholds = vec![0i32; 21];
-        for id in 1..=20u8 {
+        let mut thresholds = vec![0i32; self.cdf.len()];
+        for id in 1..=self.max_motif_id {
             let arr = &self.cdf[id as usize];
             // Find first score where cdf[score] < thresh (CDF is decreasing).
             let mut t = arr.len() as i32;
