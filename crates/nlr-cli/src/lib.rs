@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
-use nlr_core::signature_def::AnnotatorSignatureDefinition;
+use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory};
 
 /// Built-in mot.txt (PWM config), embedded at compile time for default distribution.
 pub const EMBEDDED_MOT: &str = include_str!("../data/mot.txt");
@@ -34,9 +34,55 @@ pub struct RunConfig {
     pub checkpoint_dir: Option<PathBuf>,
     /// Assembly parameters.
     pub assemble: nlr_assemble::AssembleParams,
+    /// Motif 命中最终接受阈值（默认 1e-5；提高可召回分化 NLR）。
+    pub motif_accept_p: f64,
+    /// Motif 预筛阈值（默认 1e-4）。
+    pub motif_prelim_p: f64,
+    /// 内置表之外 motif 的域类别声明（形如 "21=CC"），外部库用。
+    pub motif_categories: Vec<String>,
+    /// 外部库额外声明的播种组合（形如 "21,4"），可多次给。
+    pub extra_seeds: Vec<String>,
+    /// 外部库额外声明的 signature（形如 "21,4"）。
+    pub extra_signatures: Vec<String>,
 }
 
 impl RunConfig {
+    /// 解析 --motif-category 的 "ID=CAT" 列表（CAT ∈ NBARC/LRR/TIR/CC/LINKER/NA）。
+    /// 解析 "21,4" / "21,4,6" 形式的 motif id 串（可逗号分隔多个组合）。
+    fn parse_id_lists(list: &[String]) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        for item in list {
+            for combo in item.split(';') {
+                let ids: Vec<u8> = combo
+                    .split(',')
+                    .filter_map(|x| x.trim().parse::<u8>().ok())
+                    .collect();
+                if ids.len() >= 2 {
+                    out.push(ids);
+                }
+            }
+        }
+        out
+    }
+
+    fn parse_motif_categories(list: &[String]) -> std::collections::HashMap<u8, DomainCategory> {
+        let mut m = std::collections::HashMap::new();
+        for item in list {
+            for kv in item.split(',') {
+                let kv = kv.trim();
+                if kv.is_empty() {
+                    continue;
+                }
+                if let Some((id, cat)) = kv.split_once('=') {
+                    if let Ok(id) = id.trim().parse::<u8>() {
+                        m.insert(id, DomainCategory::from_str(cat.trim().to_uppercase().as_str()));
+                    }
+                }
+            }
+        }
+        m
+    }
+
     pub fn new(input_fasta: PathBuf, mot_file: Option<PathBuf>, store_file: Option<PathBuf>) -> Self {
         RunConfig {
             input_fasta,
@@ -50,6 +96,11 @@ impl RunConfig {
             seqs_per_thread: 1000,
             checkpoint_dir: None,
             assemble: nlr_assemble::AssembleParams::default(),
+            motif_accept_p: 1e-5,
+            motif_prelim_p: 1e-4,
+            motif_categories: Vec::new(),
+            extra_seeds: Vec::new(),
+            extra_signatures: Vec::new(),
         }
     }
 }
@@ -85,13 +136,17 @@ pub fn run_with_progress(
 
     // 1. Load config (Arc-shared across threads). User paths take precedence over built-in.
     let def_cfg = load_motif_definition(config)?;
-    let signature_def = AnnotatorSignatureDefinition::new();
-    let parser = nlr_scan::MotifParser::new(def_cfg);
+    let signature_def = AnnotatorSignatureDefinition::new()
+        .with_extra_categories(RunConfig::parse_motif_categories(&config.motif_categories))
+        .with_extra_rules(RunConfig::parse_id_lists(&config.extra_seeds),
+                          RunConfig::parse_id_lists(&config.extra_signatures));
+    let parser = nlr_scan::MotifParser::with_thresholds(
+        def_cfg, config.motif_prelim_p, config.motif_accept_p);
     let parser = std::sync::Arc::new(parser);
 
     // 1.5 Checkpoint resume: if a checkpoint exists, assemble and return (skip scan).
     if let Some(dir) = &config.checkpoint_dir {
-        if let Some(existing) = load_checkpoint(dir, signature_def)? {
+        if let Some(existing) = load_checkpoint(dir, signature_def.clone())? {
             return Ok(existing);
         }
     }

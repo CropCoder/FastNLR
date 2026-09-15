@@ -143,6 +143,34 @@ struct Cli {
     /// Log level: trace/debug/info/warn/error
     #[arg(long, default_value = "info", help_heading = "Observability")]
     log_level: String,
+
+    // ===== NLR 召回增强（本仓库补丁新增）=====
+    /// Motif 命中最终接受 p 值阈值（默认 1e-5）。调大（如 1e-3）可提高对高度分化 NLR
+    ///（helper NLR/RNL，例如 ADR1、NRG1）的召回，代价是可能引入更多弱命中。
+    #[arg(long, default_value_t = 1e-5, help_heading = "NLR 召回增强")]
+    motif_accept_p: f64,
+
+    /// Motif 预筛 p 值阈值（默认 1e-4），与 --motif-accept-p 配合使用。
+    #[arg(long, default_value_t = 1e-4, help_heading = "NLR 召回增强")]
+    motif_prelim_p: f64,
+
+    /// 宽松播种：连续命中串里 NB-ARC 类 motif 数 >= N 即视为 seed（默认关闭）。
+    /// 用于召回 motif 命中组合不在原版 11 个硬编码组合里的 NLR/RNL。
+    #[arg(long, help_heading = "NLR 召回增强")]
+    relaxed_seed: Option<usize>,
+
+    /// 声明内置表之外 motif 的域类别（外部 mot.txt 带更多 motif 时用）。
+    /// 用法：--motif-category 21=CC,22=CC,25=TIR（可多次给，逗号分隔）
+    #[arg(long = "motif-category", value_name = "ID=CAT", num_args = 1..)]
+    motif_categories: Vec<String>,
+
+    /// 外部库额外声明的播种组合，形如 "21,4"（可多次给；分号分隔多个组合）。
+    #[arg(long = "seed-combination", value_name = "IDS", num_args = 1..)]
+    extra_seeds: Vec<String>,
+
+    /// 外部库额外声明的 signature（预过滤），形如 "21,4"。
+    #[arg(long = "signature", value_name = "IDS", num_args = 1..)]
+    extra_signatures: Vec<String>,
 }
 
 fn main() {
@@ -165,6 +193,12 @@ fn main() {
     }
     config.seqs_per_thread = cli.seqs_per_thread;
     config.checkpoint_dir = cli.checkpoint.clone();
+    config.motif_accept_p = cli.motif_accept_p;
+    config.motif_prelim_p = cli.motif_prelim_p;
+    config.assemble.relaxed_seed_min_nbarc = cli.relaxed_seed;
+    config.motif_categories = cli.motif_categories.clone();
+    config.extra_seeds = cli.extra_seeds.clone();
+    config.extra_signatures = cli.extra_signatures.clone();
 
     // Startup config summary: print key params and expected output file list.
     print_run_config(&cli, &config);
