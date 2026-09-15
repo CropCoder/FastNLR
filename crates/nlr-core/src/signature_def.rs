@@ -120,7 +120,12 @@ pub const SEED_COMBINATIONS: &[&[MotifId]] = &[
     &[12, 2, 8],
     &[2, 8, 7],
     &[18, 15, 13],
-    &[1, 6],
+    &[1, 6],    // TIR-only 组合：原版只把 [18,15]/[15,13] 放在 SIGNATURES（预过滤）里，没放进播种组合，
+    // 于是"只有 TIR 域、没有 NB-ARC"的 TIR-only / TN / TNP 蛋白永远播不了种
+    // （单子叶里这类蛋白很多：水稻 TIR-only 蛋白在原版上 0 个位点）。
+    // 这里把两条组合提升为 seed —— 它们是纯 TIR 类的合法组合，不需要 NB-ARC 参与。
+    &[18, 15],
+    &[15, 13],
 ];
 
 /// 18 "NLR signatures" (Java `SignatureDefinition.loadDefaultSignature`).
