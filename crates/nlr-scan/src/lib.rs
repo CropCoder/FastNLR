@@ -35,16 +35,24 @@ pub struct MotifParser {
     /// retained for a future fast path.)
     #[allow(dead_code)]
     accept_thresholds: Vec<i32>,
+    /// 最终接受阈值（默认 1e-5）。调大（如 1e-3）可提高对高度分化 NLR（RNL/helper）的灵敏度。
+    thresh_accept: f64,
 }
 
 impl MotifParser {
     pub fn new(definition: MotifDefinition) -> Self {
-        let prelim_thresholds = definition.score_thresholds(THRESH_PRELIMINARY);
-        let accept_thresholds = definition.score_thresholds(THRESH_ACCEPT);
+        Self::with_thresholds(definition, THRESH_PRELIMINARY, THRESH_ACCEPT)
+    }
+
+    /// 带自定义阈值的构造（新增，用于提高对分化 NLR 的召回）。
+    pub fn with_thresholds(definition: MotifDefinition, prelim: f64, accept: f64) -> Self {
+        let prelim_thresholds = definition.score_thresholds(prelim);
+        let accept_thresholds = definition.score_thresholds(accept);
         MotifParser {
             definition,
             prelim_thresholds,
             accept_thresholds,
+            thresh_accept: accept,
         }
     }
 
@@ -69,7 +77,7 @@ impl MotifParser {
             }
             let motif_id = hit; // hit directly stores the motif id (1..=20)
             let p = pvalues[q];
-            if p < THRESH_ACCEPT {
+            if p < self.thresh_accept {
                 let width = self.definition.length(motif_id) as usize;
                 let seq = std::str::from_utf8(&bytes[q..q + width])
                     .unwrap_or("")
