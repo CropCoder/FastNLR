@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Jiwen Zhao (https://github.com/CropCoder)"]
 license = "GPL-3.0-only"

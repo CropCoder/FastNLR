@@ -9,7 +9,7 @@ A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.1.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.1.1-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 [![Platform](https://img.shields.io/badge/platform-linux%20x86__64-lightgrey.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Features](#features) · [Quick Start](#quick-start) · [Usage](#usage) · [Extended motif library](#extended-motif-library) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Citation](#citation)
@@ -41,7 +41,7 @@ NLR genes encode a major class of plant intracellular immune receptors and are a
 # Download the Linux x86_64 asset from Releases, then:
 tar -xzf fastnlr-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
-./fastnlr -i genome.fasta -p result        # produces result.nlr.txt/.nlr.gff/.nlr.bed/...
+./fastnlr -i genome.fasta -o result.txt -p result
 ```
 
 Verify integrity:
@@ -65,7 +65,7 @@ cargo build --release
 ## Usage
 
 ```bash
-fastnlr -i <input.fasta> [output flags] [options]
+fastnlr -i <input.fasta> -o <output.txt> [output flags] [options]
 ```
 
 ### Examples
@@ -76,24 +76,24 @@ fastnlr -i genome.fasta -o out.txt -g out.gff -b out.bed
 
 # 2. Prefix-derived subfiles + multithreading
 #    -> out.nlr.txt, out.nlr.gff, out.nlr.bed, out.motifs.bed, out.nbarc.fasta
-fastnlr -i genome.fasta -p out -t 8
+fastnlr -i genome.fasta -o out.txt -p out -t 8
 
 # 3. Full run: report + summary + plots + checkpoint resume
-fastnlr -i genome.fasta -p out \
+fastnlr -i genome.fasta -o out.txt -p out \
   --stats stats.tsv --summary --plot plots/ --checkpoint ckpt/
 
 # 4. Extract NLR loci sequences (±2000 bp flanking) across ALL contigs
-fastnlr -i genome.fasta -p out -f genome.fasta loci.fasta 2000
+fastnlr -i genome.fasta -o out.txt -p out -f genome.fasta loci.fasta 2000
 
 # 5. Custom motif config override
-fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -p out
+fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o out.txt -p out
 
 # 6. Resume from checkpoint after an interrupted run
-fastnlr -i genome.fasta -p out --checkpoint ckpt/
+fastnlr -i genome.fasta -o out.txt -p out --checkpoint ckpt/
 
 # 7. Optional RNL/helper-CC + TIR extended library (28 motifs)
 source data/motif_library_rnl_tir/flags.sh
-fastnlr -i genome.fasta -p out \
+fastnlr -i genome.fasta -o out.txt -p out \
   -x data/motif_library_rnl_tir/mot.txt \
   -y data/motif_library_rnl_tir/store.txt \
   --motif-category "$TIS_MOTIF_CATEGORY" \
@@ -127,11 +127,11 @@ fastnlr -i genome.fasta -p out \
 | `--motif-prelim-p <p>` | Fragment prefilter p-value threshold (default `1e-4`). |
 | `--relaxed-seed <n>` | Relaxed seeding: accept a consecutive hit run with at least `n` NB-ARC motifs (off by default). |
 
-**Output** — any combination; omit all to do a scan-only dry run.
+**Output** — `-o` is required; add any other format as needed.
 
 | Flag | Description |
 |------|-------------|
-| `-o <txt>` | NLR loci report (tabular). |
+| `-o <txt>` | NLR loci report (tabular). **Required.** |
 | `-g <gff>` | NLR loci (GFF3). |
 | `-b <bed>` | NLR loci (BED12, color-coded). |
 | `-m <bed>` | Motif intervals (BED). |
@@ -167,7 +167,7 @@ Because these motifs live outside the built-in rule tables, enable them together
 
 ```bash
 source data/motif_library_rnl_tir/flags.sh
-fastnlr -i genome.fasta -p out \
+fastnlr -i genome.fasta -o out.txt -p out \
   -x data/motif_library_rnl_tir/mot.txt \
   -y data/motif_library_rnl_tir/store.txt \
   --motif-category "$TIS_MOTIF_CATEGORY" \
@@ -185,7 +185,7 @@ For sensitivity tuning on divergent NLRs, three additional flags are available: 
 - **`-g` GFF3** — header relabeled for FastNLR with a live system timestamp; `source` column = `FastNLR`.
   ```
   ##gff-version 2
-  ##source-version FastNLR V1.1.0
+  ##source-version FastNLR V1.1.1
   ##date 2026-08-20 09:30:01
   ##Type DNA
   ```

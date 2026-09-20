@@ -48,7 +48,7 @@ pub fn write_nlr_gff<W: Write>(
     complete_only: bool,
 ) -> std::io::Result<()> {
     writeln!(w, "##gff-version 2")?;
-    writeln!(w, "##source-version FastNLR V1.1.0")?;
+    writeln!(w, "##source-version FastNLR V1.1.1")?;
     writeln!(w, "##date {}", date)?;
     writeln!(w, "##Type DNA")?;
     writeln!(w, "#seqname\tsource\tfeature\tstart\tend\tscore\tstrand\tframe\tattribute")?;

@@ -34,21 +34,22 @@ pub struct RunConfig {
     pub checkpoint_dir: Option<PathBuf>,
     /// Assembly parameters.
     pub assemble: nlr_assemble::AssembleParams,
-    /// Motif 命中最终接受阈值（默认 1e-5；提高可召回分化 NLR）。
+    /// Final motif-accept threshold (default 1e-5; higher values improve recall for divergent NLRs).
     pub motif_accept_p: f64,
-    /// Motif 预筛阈值（默认 1e-4）。
+    /// Motif prefilter threshold (default 1e-4).
     pub motif_prelim_p: f64,
-    /// 内置表之外 motif 的域类别声明（形如 "21=CC"），外部库用。
+    /// Domain-category declarations for motif IDs outside the built-in tables (e.g. "21=CC"),
+    /// used by external motif libraries.
     pub motif_categories: Vec<String>,
-    /// 外部库额外声明的播种组合（形如 "21,4"），可多次给。
+    /// Extra seed combinations declared by an external library (e.g. "21,4"); repeatable.
     pub extra_seeds: Vec<String>,
-    /// 外部库额外声明的 signature（形如 "21,4"）。
+    /// Extra signatures declared by an external library (e.g. "21,4").
     pub extra_signatures: Vec<String>,
 }
 
 impl RunConfig {
-    /// 解析 --motif-category 的 "ID=CAT" 列表（CAT ∈ NBARC/LRR/TIR/CC/LINKER/NA）。
-    /// 解析 "21,4" / "21,4,6" 形式的 motif id 串（可逗号分隔多个组合）。
+    /// Parse motif id lists such as "21,4" or "21,4,6"
+    /// (comma-separated combinations).
     fn parse_id_lists(list: &[String]) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
         for item in list {
@@ -65,6 +66,7 @@ impl RunConfig {
         out
     }
 
+    /// Parse --motif-category "ID=CAT" entries (CAT in NBARC/LRR/TIR/CC/LINKER/NA).
     fn parse_motif_categories(list: &[String]) -> std::collections::HashMap<u8, DomainCategory> {
         let mut m = std::collections::HashMap::new();
         for item in list {

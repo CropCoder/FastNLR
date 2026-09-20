@@ -401,7 +401,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.1.0</span>
+      <span class="ver">v1.1.1</span>
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -468,7 +468,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <span class="title">fastnlr — annotate NLR loci</span>
       </div>
       <div class="term-body">
-        <span class="p">$</span> <span class="cmd">fastnlr -i genome.fasta -p result -t 8</span><span class="cursor"></span><br/>
+        <span class="p">$</span> <span class="cmd">fastnlr -i genome.fasta -o result.txt -p result -t 8</span><span class="cursor"></span><br/>
         <span class="c"># scanning six reading frames ...</span><br/>
         <span class="c"># 12,482 motifs scored in 4.7s</span><br/>
         <span class="ok">✓</span> <span class="p">assembled 218 NLR loci</span><br/>
@@ -568,13 +568,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.1.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.1.1/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 cd fastnlr-linux-x86_64
 ./fastnlr --version
 
 <span class="c"># Annotate a genome (prefix-derived subfiles)</span>
-./fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-p</span> result</pre>
+./fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> result.txt <span class="cmd">-p</span> result</pre>
       </div>
 
       <!-- 源码构建 -->
@@ -586,7 +586,7 @@ cd FastNLR
 cargo build --release
 
 <span class="c"># binary: target/release/fastnlr</span>
-./target/release/fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-p</span> result</pre>
+./target/release/fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> result.txt <span class="cmd">-p</span> result</pre>
       </div>
 
       <p class="lead reveal" style="margin-top: 26px; font-size: 15px;">
@@ -615,15 +615,15 @@ cargo build --release
       </div>
       <div class="usage-item reveal">
         <div class="u-label">Full run with reporting</div>
-        <code>fastnlr -i genome.fasta -p out --stats stats.tsv --summary --plot plots/ --checkpoint ckpt/</code>
+        <code>fastnlr -i genome.fasta -o out.txt -p out --stats stats.tsv --summary --plot plots/ --checkpoint ckpt/</code>
       </div>
       <div class="usage-item reveal">
         <div class="u-label">Extract loci sequences</div>
-        <code>fastnlr -i genome.fasta -p out -f genome.fasta loci.fasta 2000</code>
+        <code>fastnlr -i genome.fasta -o out.txt -p out -f genome.fasta loci.fasta 2000</code>
       </div>
       <div class="usage-item reveal">
         <div class="u-label">Custom motif config</div>
-        <code>fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -p out</code>
+        <code>fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o out.txt -p out</code>
       </div>
     </div>
   </div>

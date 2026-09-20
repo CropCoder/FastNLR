@@ -23,7 +23,7 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
     name = "fastnlr",
     version,
     long_version = concat!(
-        "1.1.0\n",
+        "1.1.1\n",
         "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
@@ -40,11 +40,11 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
         # Basic loci annotation\n  \
         fastnlr -i genome.fasta -o out.txt -g out.gff -b out.bed\n\n  \
         # Prefix-derived subfiles + multithreading + plots (uses built-in mot/store)\n  \
-        fastnlr -i genome.fasta -p result -t 8 --plot plots/ --summary\n\n  \
+        fastnlr -i genome.fasta -o result.txt -p result -t 8 --plot plots/ --summary\n\n  \
         # Checkpoint resume\n  \
-        fastnlr -i genome.fasta -p result --checkpoint ckpt/\n\n  \
+        fastnlr -i genome.fasta -o result.txt --checkpoint ckpt/\n\n  \
         # Explicit mot/store override\n  \
-        fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -p result\n\n\
+        fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o result.txt\n\n\
         \n\
         Project:   https://github.com/CropCoder/FastNLR\n\
         Releases:  https://github.com/CropCoder/FastNLR/releases\n\
@@ -69,7 +69,7 @@ struct Cli {
 
     // ===== Loci output =====
     /// Output NLR loci report (txt)
-    #[arg(short = 'o', help_heading = "Loci output")]
+    #[arg(short = 'o', required = true, help_heading = "Loci output (required)")]
     output: Option<PathBuf>,
 
     /// Output NLR loci (GFF3)
@@ -141,31 +141,35 @@ struct Cli {
     #[arg(long, default_value = "info", help_heading = "Observability")]
     log_level: String,
 
-    // ===== NLR 召回增强（本仓库补丁新增）=====
-    /// Motif 命中最终接受 p 值阈值（默认 1e-5）。调大（如 1e-3）可提高对高度分化 NLR
-    ///（helper NLR/RNL，例如 ADR1、NRG1）的召回，代价是可能引入更多弱命中。
-    #[arg(long, default_value_t = 1e-5, help_heading = "NLR 召回增强")]
+    // ===== NLR recall enhancements =====
+    /// Final motif-accept p-value threshold (default 1e-5).
+    /// Increase (e.g. 1e-3) to improve recall for highly divergent NLRs
+    /// (helper NLR/RNL such as ADR1 or NRG1), at the cost of more weak hits.
+    #[arg(long, default_value_t = 1e-5, help_heading = "NLR recall enhancements")]
     motif_accept_p: f64,
 
-    /// Motif 预筛 p 值阈值（默认 1e-4），与 --motif-accept-p 配合使用。
-    #[arg(long, default_value_t = 1e-4, help_heading = "NLR 召回增强")]
+    /// Motif prefilter p-value threshold (default 1e-4); use together with --motif-accept-p.
+    #[arg(long, default_value_t = 1e-4, help_heading = "NLR recall enhancements")]
     motif_prelim_p: f64,
 
-    /// 宽松播种：连续命中串里 NB-ARC 类 motif 数 >= N 即视为 seed（默认关闭）。
-    /// 用于召回 motif 命中组合不在原版 11 个硬编码组合里的 NLR/RNL。
-    #[arg(long, help_heading = "NLR 召回增强")]
+    /// Relaxed seeding: treat a consecutive motif run with at least N NB-ARC motifs
+    /// as a seed (disabled by default). Recovers NLR/RNL loci whose motif combinations
+    /// are not among the 11 built-in seed combinations.
+    #[arg(long, help_heading = "NLR recall enhancements")]
     relaxed_seed: Option<usize>,
 
-    /// 声明内置表之外 motif 的域类别（外部 mot.txt 带更多 motif 时用）。
-    /// 用法：--motif-category 21=CC,22=CC,25=TIR（可多次给，逗号分隔）
+    /// Declare domain category for motif IDs outside the built-in tables
+    /// (for external mot.txt with extra motifs).
+    /// Usage: --motif-category 21=CC,22=CC,25=TIR (repeatable or comma-separated)
     #[arg(long = "motif-category", value_name = "ID=CAT", num_args = 1..)]
     motif_categories: Vec<String>,
 
-    /// 外部库额外声明的播种组合，形如 "21,4"（可多次给；分号分隔多个组合）。
+    /// Extra seed combinations declared by an external library, e.g. "21,4"
+    /// (repeatable; separate combinations with semicolons).
     #[arg(long = "seed-combination", value_name = "IDS", num_args = 1..)]
     extra_seeds: Vec<String>,
 
-    /// 外部库额外声明的 signature（预过滤），形如 "21,4"。
+    /// Extra signatures (prefilter) declared by an external library, e.g. "21,4".
     #[arg(long = "signature", value_name = "IDS", num_args = 1..)]
     extra_signatures: Vec<String>,
 }
