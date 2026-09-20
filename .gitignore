@@ -18,3 +18,5 @@ Cargo.lock.bak
 # Checkpoint / temp runtime output
 /ckpt
 __pycache__/
+
+/genome

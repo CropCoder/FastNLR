@@ -1,6 +1,6 @@
 //! nlr-config — parse mot.txt (PWM) and store.txt (CDF).
 //!
-//! Faithful reimplementation of Java `MotifDefinition`:
+//! Motif definition parsing:
 //! - mot.txt: `motif@pos@aa score`, pos 0-based, aa is a single A-Z char, integer score;
 //! - store.txt: `motif@score pvalue`, integer index + double p-value;
 //! - PWM uses `[aa - 'A']` (ASCII 65) as the first dimension index; non A-Z chars yield 0;
@@ -34,7 +34,7 @@ impl MotifDefinition {
         self.max_motif_id
     }
 
-    /// Load from mot.txt and store.txt file paths (equivalent to Java constructor).
+    /// Load from `mot.txt` and `store.txt` file paths.
     pub fn load(pwm_file: &std::path::Path, cdf_file: &std::path::Path) -> std::io::Result<Self> {
         let mot_text = read_mmap_str(pwm_file)?;
         let store_text = read_mmap_str(cdf_file)?;
@@ -64,7 +64,7 @@ impl MotifDefinition {
         s.strip_prefix("motif_")?.parse::<MotifId>().ok()
     }
 
-    /// First pass: compute each motif's length (equivalent to `loadMotifLengths`).
+    /// First pass: compute each motif's length.
     fn lengths_from(text: &str) -> (Vec<u16>, Vec<MotifId>) {
         // 第一遍：扫出最大 motif id（决定数组尺寸，支持 >20 的外部库）
         let mut max_id = 0usize;
@@ -112,7 +112,7 @@ impl MotifDefinition {
         (lengths, motif_names)
     }
 
-    /// Second pass: fill PWM (equivalent to `loadPWM`).
+    /// Second pass: fill the position-weight matrix.
     fn pwm_from(text: &str, lengths: &[u16]) -> Vec<Vec<i32>> {
         let mut pwm: Vec<Vec<i32>> = (0..lengths.len())
             .map(|i| vec![0; 26 * lengths[i] as usize])
@@ -144,7 +144,7 @@ impl MotifDefinition {
         pwm
     }
 
-    /// Parse store.txt (CDF), two passes (equivalent to `loadCDF`).
+    /// Parse `store.txt` (CDF), two passes.
     fn cdf_from(text: &str) -> Vec<Vec<f64>> {
         // motif 槽位数从 store.txt 自身的最大 id 推断（与 mot.txt 保持一致）
         let slot_count = {
@@ -221,10 +221,10 @@ impl MotifDefinition {
         self.max_length
     }
 
-    /// Query PWM score (equivalent to `getScore`): aa < 'A' returns 0.
+    /// Query the PWM score; characters below `A` return 0.
     #[inline]
     pub fn score(&self, id: MotifId, position: usize, aa: u8) -> i32 {
-        // Java: `if ((int) aa - 65 < 0) return 0;` i.e. aa < 'A' returns 0.
+        // Characters below 'A' return 0.
         if aa < b'A' {
             return 0;
         }
@@ -239,7 +239,7 @@ impl MotifDefinition {
         self.pwm[id as usize][aa_idx * width + position]
     }
 
-    /// Query CDF (equivalent to `getCDF`). CDF is right-tail cumulative (decreasing).
+    /// Query the CDF. The CDF is right-tail cumulative (decreasing).
     #[inline]
     pub fn cdf(&self, id: MotifId, score: i32) -> f64 {
         let idx = score.max(0) as usize;
@@ -248,7 +248,7 @@ impl MotifDefinition {
             arr[idx]
         } else {
             // Score beyond table upper bound -> highly significant (right-tail p ~= 0).
-            // Java throws out-of-bounds here; returning 0 is equivalent to highly significant.
+            // Out-of-range scores are treated as highly significant.
             0.0
         }
     }

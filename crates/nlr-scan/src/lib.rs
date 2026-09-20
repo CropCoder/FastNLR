@@ -1,6 +1,6 @@
 //! nlr-scan — scanning engine: sliding-window scoring + non-overlap arbitration + signature pre-filtering.
 //!
-//! Faithful reimplementation of Java `MotifParser.findMotifs` and `get_motifs_stats`:
+//! The scanning engine works as follows:
 //! - For each protein sequence, scans motifs in order of first appearance;
 //! - Scoring: PWM integer accumulation + `(int)` truncation + CDF table lookup;
 //! - Preliminary threshold `p < 1e-4`, final acceptance `p < 1e-5`;
@@ -17,9 +17,9 @@ use nlr_config::MotifDefinition;
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 
-/// Preliminary threshold (Java `thresh = 0.0001D`).
+/// Preliminary p-value threshold.
 pub const THRESH_PRELIMINARY: f64 = 1e-4;
-/// Final acceptance threshold (Java `1E-5`).
+/// Final acceptance p-value threshold.
 pub const THRESH_ACCEPT: f64 = 1e-5;
 
 /// Number of SIMD parallel windows (wide i32x8).

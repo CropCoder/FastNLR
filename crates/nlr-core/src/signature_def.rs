@@ -1,6 +1,6 @@
 //! NLR static rule tables and signature definitions.
 //!
-//! Faithfully replicates the hard-coded rules of Java `AnnotatorSignatureDefinition` and `SignatureDefinition`:
+//! The tables define:
 //! - rank, category (domain category), and RGB color for each of the 20 motifs;
 //! - 11 seed combinations (findSeeds targets);
 //! - 18 "NLR signatures" (contiguous motif sequence patterns used for pre-filtering);
@@ -9,8 +9,8 @@
 
 /// Motif id（内置 1..=20；外部 mot.txt 可带更多，见 BUILTIN_MOTIF_COUNT）。
 ///
-/// 20 = NLR-Annotator 原版（motif_1..motif_20）；本补丁把上限改成常量，使外部 mot.txt/store.txt
-/// 可以带更多 motif（例如 21+ 的 RNL/helper CC 与 TIR 家族 motif，用 MEME 从目标家族重挖后追加）。
+/// Built-in motifs use ids 1..=20. The upper bound is a constant so external `mot.txt`/`store.txt`
+/// files can carry additional motifs (for example RNL/helper-CC and TIR family profiles).
 pub type MotifId = u8;
 
 
@@ -26,7 +26,7 @@ pub enum DomainCategory {
 }
 
 impl DomainCategory {
-    /// Construct from a Java category string.
+    /// Construct from a category string.
     pub fn from_str(s: &str) -> Self {
         match s {
             "NBARC" => DomainCategory::Nbarc,
@@ -38,7 +38,7 @@ impl DomainCategory {
         }
     }
 
-    /// Convert back to a Java category string (for output).
+    /// Convert back to a category string for output.
     pub fn as_str(self) -> &'static str {
         match self {
             DomainCategory::Nbarc => "NBARC",
@@ -51,18 +51,16 @@ impl DomainCategory {
     }
 }
 
-/// P-loop motif id (Java `ploopMotif = "motif_1"`).
+/// P-loop motif id.
 pub const PLOOP_MOTIF: MotifId = 1;
 
 /// Rank table (index = motif id; `RANKS[0]` is an unused placeholder).
-/// Corresponds to Java `loadDefaultMotifRanks`.
 pub const RANKS: [u8; 29] = [
     0, 4, 11, 9, 6, 7, 5, 13, 12, 14, 8, 14, 10, 3, 3, 2, 2, 1, 1, 14, 15,
     14,     14,     14,     14,     14,     14,     14, 14,   // 8 个 RNL(helper) 专用 CC motif（不参与 NB-ARC 排序）
 ];
 
 /// Category table (index = motif id).
-/// Corresponds to Java `loadDefaultMotifCategories`.
 pub const CATEGORIES: [DomainCategory; 29] = [
     DomainCategory::Na,
     DomainCategory::Nbarc,  // 1
@@ -96,7 +94,6 @@ pub const CATEGORIES: [DomainCategory; 29] = [
 ];
 
 /// RGB color table (index = motif id).
-/// Corresponds to Java `loadDefaultMotifRgbColors`.
 pub const RGB_COLORS: [[u8; 3]; 29] = [
     [0, 0, 0],
     [0, 255, 255],   // 1
@@ -129,7 +126,7 @@ pub const RGB_COLORS: [[u8; 3]; 29] = [
     [255, 64, 0],   // 28（RNL CC）
 ];
 
-/// 11 seed combinations (enabled; the uncommented subset of Java `loadDefaultMotifIDCombinations`).
+/// Enabled seed combinations.
 pub const SEED_COMBINATIONS: &[&[MotifId]] = &[
     &[1, 6, 4],
     &[6, 4, 5],
@@ -147,7 +144,7 @@ pub const SEED_COMBINATIONS: &[&[MotifId]] = &[
     &[15, 13],
 ];
 
-/// 18 "NLR signatures" (Java `SignatureDefinition.loadDefaultSignature`).
+/// NLR signatures.
 pub const SIGNATURES: &[&[MotifId]] = &[
     &[17, 16],
     &[1, 6],
@@ -170,7 +167,7 @@ pub const SIGNATURES: &[&[MotifId]] = &[
     // ---- RNL 补丁新增（用于 has_signature 预过滤）----
 ];
 
-/// Consensus sequences for 8 NB-ARC motifs (Java `loadDefaultDefaultMotifSequences`).
+/// Consensus sequences for NB-ARC motifs.
 /// Index 0 is a placeholder; only NB-ARC motifs (1,2,3,4,5,6,10,12) have values.
 pub const CONSENSUS_SEQUENCES: [&str; 29] = [
     "",
@@ -217,8 +214,8 @@ pub struct AnnotatorSignatureDefinition {
     extra_signatures: Vec<Vec<MotifId>>,
 }
 
-/// 内置 motif 数量（NLR-Annotator 原版的 20 个）。id > 该值时视为"外部库新增的 motif"：
-/// 类别默认 NA，可用 `with_extra_categories()` 由命令行声明（例如 21=CC / 25=TIR）。
+/// Number of built-in motifs. Ids above this value are treated as library-specific motifs;
+/// their categories default to `NA` and can be declared via `with_extra_categories()`.
 pub const BUILTIN_MOTIF_COUNT: MotifId = 20;
 
 impl AnnotatorSignatureDefinition {
@@ -289,7 +286,7 @@ impl AnnotatorSignatureDefinition {
         CONSENSUS_SEQUENCES.get(id as usize).copied().unwrap_or("")
     }
 
-    /// NB-ARC motif order sorted by rank ascending (Java `getNbarcMotifOrder`).
+    /// NB-ARC motif order sorted by rank ascending.
     /// Fixed as [1, 6, 4, 5, 10, 3, 12, 2].
     pub fn nbarc_motif_order(&self) -> Vec<MotifId> {
         let mut ids: Vec<MotifId> = (1..=BUILTIN_MOTIF_COUNT)
@@ -346,7 +343,7 @@ impl AnnotatorSignatureDefinition {
         })
     }
 
-    /// Derive the domain string from a motif list (Java `getDomainString`).
+    /// Derive the domain string from a motif list.
     /// Merges consecutive identical categories, skips NA and LINKER, outputs "NBARC-LRR" style.
     pub fn domain_string(&self, ids: &[MotifId]) -> String {
         let mut parts: Vec<&'static str> = Vec::new();
@@ -354,7 +351,7 @@ impl AnnotatorSignatureDefinition {
         for &id in ids {
             let cat = self.category(id);
             if cat == DomainCategory::Na || cat == DomainCategory::Linker {
-                current = Some(cat); // skipped but updates continuity (equivalent to Java's unconditional currentCategory update)
+                current = Some(cat); // skipped but updates continuity.
                 continue;
             }
             if current != Some(cat) {
@@ -366,7 +363,7 @@ impl AnnotatorSignatureDefinition {
     }
 }
 
-/// Signature pre-filter definition (equivalent to Java `SignatureDefinition`; actual logic has been merged into `AnnotatorSignatureDefinition::has_signature`).
+/// Signature pre-filter definition. The actual logic is merged into `AnnotatorSignatureDefinition::has_signature`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SignatureDefinition;
 

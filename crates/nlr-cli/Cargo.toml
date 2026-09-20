@@ -1,24 +1,33 @@
 [package]
-name = "nlr-cli"
+name = "fastnlr"
+description = "FastNLR: high-speed, accurate NLR immune-receptor locus annotation for plant genomes"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
-# User-facing binary name (the crate stays `nlr-cli` internally to avoid renaming imports).
+# Public crates.io package name is `fastnlr`; the internal library target remains `nlr_cli`
+# so source imports and integration tests do not need to change.
+[lib]
+name = "nlr_cli"
+path = "src/lib.rs"
+
+# User-facing binary name.
 [[bin]]
 name = "fastnlr"
 path = "src/main.rs"
 
 [dependencies]
-nlr-core = { path = "../nlr-core" }
-nlr-config = { path = "../nlr-config" }
-nlr-seq = { path = "../nlr-seq" }
-nlr-scan = { path = "../nlr-scan" }
-nlr-assemble = { path = "../nlr-assemble" }
-nlr-output = { path = "../nlr-output" }
-nlr-report = { path = "../nlr-report" }
-nlr-plot = { path = "../nlr-plot" }
+nlr-core = { path = "../nlr-core", version = "1.0.0" }
+nlr-config = { path = "../nlr-config", version = "1.0.0" }
+nlr-seq = { path = "../nlr-seq", version = "1.0.0" }
+nlr-scan = { path = "../nlr-scan", version = "1.0.0" }
+nlr-assemble = { path = "../nlr-assemble", version = "1.0.0" }
+nlr-output = { path = "../nlr-output", version = "1.0.0" }
+nlr-report = { path = "../nlr-report", version = "1.0.0" }
+nlr-plot = { path = "../nlr-plot", version = "1.0.0" }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

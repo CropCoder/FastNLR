@@ -1,6 +1,5 @@
 //! Biological sequence with six-frame translation and reverse complement.
 //!
-//! Reimplementation of Java `BioSequence`:
 //! - `translate2protein`: 6 frames (forward strand 0/1/2 + reverse strand 0/1/2), remainder -> end offset table;
 //! - naming `{id}_frame+0/1/2`, `{id}_frame-0/1/2`;
 //! - reverse complement: case-sensitive, non-standard bases preserved as-is.
@@ -68,7 +67,7 @@ impl BioSequence {
         let terminus = n % 3;
 
         // Remainder -> end offset table (shared by forward and reverse strands).
-        // Java: frame0 t0=-2,t1=-3,t2=-4; frame1 t0=-4,t1=-2,t2=-3; frame2 t0=-3,t1=-4,t2=-2
+        // Frame-specific tail offsets used to match six-frame translation length semantics.
         let end_offset = |frame: usize| -> isize {
             match (terminus, frame) {
                 (0, 0) | (1, 1) | (2, 2) => -2,
@@ -83,7 +82,7 @@ impl BioSequence {
             let limit = (n as isize + end).max(0) as usize;
             let mut out = String::with_capacity(limit / 3 + 1);
             let mut i = frame;
-            // Java: for(i=frame; i < n+end; i+=3) substring(i,i+3)
+            // Walk codons in the current reading frame.
             while i < limit && i + 3 <= n {
                 out.push(translate_triplet(&bytes[i..i + 3]));
                 i += 3;
@@ -127,7 +126,7 @@ impl BioSequence {
         frames
     }
 
-    /// Whether this is DNA (equivalent to Java `isDNA`: ATGCN ratio in the first 500 characters > 50%).
+    /// Whether this is DNA, judged by an ATGCN ratio above 50% in the first 500 characters.
     pub fn is_dna(&self) -> bool {
         let sample = &self.sequence[..self.sequence.len().min(500)];
         if sample.is_empty() {

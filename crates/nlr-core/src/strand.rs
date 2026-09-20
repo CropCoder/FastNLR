@@ -2,7 +2,7 @@
 
 /// Strand: forward strand / reverse strand.
 ///
-/// Corresponds to Java `Motif.forwardStrand`.
+/// Whether a motif is on the forward or reverse strand.
 ///
 /// Note: on both strands, `Motif.dna_start` is always leftmost and `dna_end` always rightmost
 /// (i.e. `dna_start < dna_end` always holds). The only special behavior of the reverse strand

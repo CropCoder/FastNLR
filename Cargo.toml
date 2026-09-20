@@ -1,4 +1,4 @@
-# FastNLR — Rust rewrite of the NLR loci annotation tool (high-performance port of NLR-Annotator).
+# FastNLR — high-speed, accurate NLR loci annotation for plant genomes.
 #
 # workspace root: unified dependency versions + release-optimized profile.
 # Layered crate dependency graph (bottom-up):
@@ -24,6 +24,7 @@ edition = "2021"
 authors = ["Jiwen Zhao (https://github.com/CropCoder)"]
 license = "GPL-3.0-only"
 repository = "https://github.com/CropCoder/FastNLR"
+homepage = "https://github.com/CropCoder/FastNLR"
 
 # Unified dependency versions (workspace-level; crates declare workspace = true).
 [workspace.dependencies]

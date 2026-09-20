@@ -3,7 +3,7 @@
 """
 把 MEME 挖出的 RNL（helper NLR：ADR1/NRG1/RPW8 类）motif 转成 FastNLR 的 mot.txt / store.txt 条目。
 
-FastNLR（= NLR-Annotator 的 Rust 重写）的 motif 机制（读源码 nlr-config / nlr-scan 得到）：
+FastNLR 的 motif 机制（读源码 nlr-config / nlr-scan 得到）：
   · mot.txt : `motif_<id>@<pos0based>@<LETTER> <int>`，整数得分，字母表 A–Z（索引 = ascii-65）；
                现有 20 个 motif 的取值都在 0–100。
   · store.txt: `motif_<id>@<score> <p>`，**右尾 CDF**（p = P(随机窗口得分 ≥ score)），单调递减；

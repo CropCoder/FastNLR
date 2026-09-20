@@ -1,6 +1,5 @@
 //! FASTA reader (streaming, gzip support).
 //!
-//! Reimplementation of Java `FastaReader`:
 //! - gzip magic-number sniffing (first 2 bytes `0x1f 0x8b`);
 //! - `read_entry` returns sequences one by one; identifier is the first whitespace-delimited token of the header with `>` stripped, description is retained;
 //! - each line is `.trim()`-ed of leading/trailing whitespace before being appended to the sequence.

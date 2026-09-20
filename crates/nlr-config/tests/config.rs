@@ -12,7 +12,7 @@ fn load_real_config() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../nlr-cli/data");
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
 
-    // The shipped library has the 20 NLR-Annotator motifs; an extended library may have more,
+    // The built-in library has the standard 20 motifs; an extended library may have more,
     // so assert "the 20 built-ins are present" instead of an exact count.
     let mut names = def.motif_names().to_vec();
     names.sort();

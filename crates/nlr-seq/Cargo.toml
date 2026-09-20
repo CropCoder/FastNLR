@@ -1,9 +1,12 @@
 [package]
 name = "nlr-seq"
+description = "FASTA reading, six-frame translation, and sequence chopping for FastNLR"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
 flate2 = { workspace = true }

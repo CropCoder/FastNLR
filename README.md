@@ -4,41 +4,42 @@
 
 **Fast, self-contained NLR immune-receptor locus annotation for plant genomes**
 
-A high-performance Rust rewrite of [NLR-Annotator](https://pubmed.ncbi.nlm.nih.gov/32184345/)
+A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
 [![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 [![Platform](https://img.shields.io/badge/platform-linux%20x86__64-lightgrey.svg)](https://github.com/CropCoder/FastNLR/releases)
 
-[Features](#features) · [Quick Start](#quick-start) · [Usage](#usage) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Citation](#citation)
+[Features](#features) · [Quick Start](#quick-start) · [Usage](#usage) · [Extended motif library](#extended-motif-library) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Citation](#citation)
 
 </div>
 
 ---
 
-FastNLR scans the six reading frames of a genome assembly for amino-acid **motifs** and assembles them into **NLR** (Nucleotide-binding, Leucine-rich Repeat) immune-receptor loci. It is a from-scratch Rust port of the Java tool *NLR-Annotator* (Steuernagel et al., 2020), preserving the original algorithm semantics while adding multithreading, embedded default configs, checkpoint resume, and several bug fixes.
+FastNLR scans the six reading frames of a genome assembly for amino-acid **motifs** and assembles them into **NLR** (Nucleotide-binding, Leucine-rich Repeat) immune-receptor loci. It combines multithreading, memory-mapped FASTA input, embedded default motif profiles, checkpoint resume, and coordinate-consistent multi-format outputs.
 
-NLR genes encode the largest class of plant intracellular immune receptors and are a key target of disease-resistance breeding. FastNLR lets you survey any assembled genome for complete and partial NLR loci in minutes.
+NLR genes encode a major class of plant intracellular immune receptors and are a key target of disease-resistance breeding. FastNLR provides a self-contained pipeline for identifying complete and partial NLR loci directly from an assembled genome. The project is under active development, with future releases targeting publication-grade documentation, validation, and packaging.
 
 ## Features
 
 - **Zero-config, self-contained binary** — the standard `mot.txt` (PWM) and `store.txt` (CDF) configs are embedded at compile time. Run on any FASTA with no extra files; override with `-x`/`-y` when you need custom motifs.
+- **Extensible motif libraries** — supports more than the built-in 20 motifs, plus CLI-declared domain categories, seed combinations, and signatures. An optional RNL/helper-CC + TIR library is included for recovering RNL and TIR-only loci.
 - **High performance** — Rust + [rayon](https://github.com/rayon-rs/rayon) multithreading, memory-mapped large-file FASTA parsing, and SIMD (`wide`) cross-window scoring. Typical plant genomes finish in seconds to minutes.
-- **Coordinate-consistent output** — `-f` loci extraction matches the GFF/BED coordinates exactly. (The original Java `writeNLRLoci` had an off-by-one; see [Bugs fixed](#bugs-fixed-vs-the-original).)
+- **Coordinate-consistent output** — `-f` loci extraction matches the GFF/BED coordinates exactly; see [Implementation notes](#implementation-notes).
 - **Resumable runs** — `--checkpoint` saves motif results after the scan; reruns skip the expensive scan and go straight to assembly.
 - **Rich reporting** — human-readable summary, TSV statistics (global / per-chromosome / per-motif), and PNG plots out of the box.
 - **Graceful interruption** — Ctrl-C outputs whatever batches have completed instead of dropping everything.
-- **Original flag compatibility** — drop-in for existing `-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n` workflows.
+- **Familiar flag interface** — supports `-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n` workflows.
 
 ## Quick Start
 
 ### Option A — download the prebuilt binary
 
 ```bash
-# Download from Releases, then:
-tar -xzf fastnlr-v1.0.0-linux-x86_64.tar.gz
-cd fastnlr-linux-x86_64
+# Download the Linux x86_64 asset from Releases, then:
+tar -xzf fastnlr-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 ./fastnlr -i genome.fasta -p result        # produces result.nlr.txt/.nlr.gff/.nlr.bed/...
 ```
@@ -46,15 +47,17 @@ cd fastnlr-linux-x86_64
 Verify integrity:
 
 ```bash
-sha256sum -c fastnlr.sha256
+sha256sum -c fastnlr-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
+
+Release assets use the `fastnlr-<target>.tar.gz` naming scheme; Windows builds use `.zip`, and macOS assets are also `.tar.gz`.
 
 ### Option B — build from source
 
 ```bash
 # Requires Rust 1.70+ (developed on 1.94.1)
 git clone https://github.com/CropCoder/FastNLR.git
-cd NLR-Finder
+cd FastNLR
 cargo build --release
 # binary: target/release/fastnlr
 ```
@@ -87,6 +90,15 @@ fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -p out
 
 # 6. Resume from checkpoint after an interrupted run
 fastnlr -i genome.fasta -p out --checkpoint ckpt/
+
+# 7. Optional RNL/helper-CC + TIR extended library (28 motifs)
+source data/motif_library_rnl_tir/flags.sh
+fastnlr -i genome.fasta -p out \
+  -x data/motif_library_rnl_tir/mot.txt \
+  -y data/motif_library_rnl_tir/store.txt \
+  --motif-category "$TIS_MOTIF_CATEGORY" \
+  --seed-combination "$TIS_SEED_COMBINATION" \
+  --signature "$TIS_SIGNATURE"
 ```
 
 ### Flags
@@ -98,6 +110,22 @@ fastnlr -i genome.fasta -p out --checkpoint ckpt/
 | `-i <fasta>` | Input genome FASTA (may be gzip-compressed). **Required.** |
 | `-x <mot.txt>` | PWM config (optional; default: built-in). |
 | `-y <store.txt>` | CDF config (optional; default: built-in). |
+
+**Motif library metadata** — only needed for custom libraries with more than 20 motifs.
+
+| Flag | Description |
+|------|-------------|
+| `--motif-category ID=CAT` | Declare the domain category for a motif id outside the built-in tables, e.g. `21=CC,25=TIR`. Repeatable or comma-separated. |
+| `--seed-combination IDS` | Add a seed motif-id combination, e.g. `21,4`; multiple combinations are separated by `;`. |
+| `--signature IDS` | Add a fragment signature, e.g. `25,26`; multiple signatures are separated by `;`. |
+
+**Sensitivity / recall** — optional tuning for divergent NLRs.
+
+| Flag | Description |
+|------|-------------|
+| `--motif-accept-p <p>` | Final motif-accept p-value threshold (default `1e-5`). |
+| `--motif-prelim-p <p>` | Fragment prefilter p-value threshold (default `1e-4`). |
+| `--relaxed-seed <n>` | Relaxed seeding: accept a consecutive hit run with at least `n` NB-ARC motifs (off by default). |
 
 **Output** — any combination; omit all to do a scan-only dry run.
 
@@ -128,6 +156,29 @@ fastnlr -i genome.fasta -p out --checkpoint ckpt/
 
 Run `fastnlr --help` for the full, grouped reference.
 
+## Extended motif library
+
+The default build ships the built-in 20-motif profile. The repository also contains an optional library at [`data/motif_library_rnl_tir/`](data/motif_library_rnl_tir/) that adds eight motifs:
+
+- `21`–`24`: RNL / helper-NLR N-terminal CC motifs (`ADR1`, `NRG1`, and Solanaceous `NRC`).
+- `25`–`28`: TIR-family motifs, including short and TIR-only loci that the standard `[18,15,13]` seed could miss.
+
+Because these motifs live outside the built-in rule tables, enable them together with their declared categories, seeds, and signatures:
+
+```bash
+source data/motif_library_rnl_tir/flags.sh
+fastnlr -i genome.fasta -p out \
+  -x data/motif_library_rnl_tir/mot.txt \
+  -y data/motif_library_rnl_tir/store.txt \
+  --motif-category "$TIS_MOTIF_CATEGORY" \
+  --seed-combination "$TIS_SEED_COMBINATION" \
+  --signature "$TIS_SIGNATURE"
+```
+
+`flags.sh` contains the complete parameter lists; adjust `-x`/`-y` paths if you copy the files elsewhere. The companion [`data/motif_library_rnl_tir/README.md`](data/motif_library_rnl_tir/README.md) records the motif-design rationale, benchmark results, and regeneration workflow.
+
+For sensitivity tuning on divergent NLRs, three additional flags are available: `--motif-accept-p`, `--motif-prelim-p`, and `--relaxed-seed` (see the flag tables below).
+
 ## Output Formats
 
 - **`-o` report** — one row per NLR: `seqname, name, domain-class, start, end, strand, motif-list`.
@@ -147,8 +198,8 @@ Run `fastnlr --help` for the full, grouped reference.
 FastNLR is a layered Cargo workspace — each crate has a single responsibility and the dependency graph flows bottom-up:
 
 ```
-nlr-core     domain model + hardcoded rule tables (rank/class/color/seed/signature/consensus)
-nlr-config   parse mot.txt (PWM) / store.txt (CDF); built-in embed support
+nlr-core     domain model + rule tables (rank/class/color/seed/signature/consensus; built-in + CLI-declared extras)
+nlr-config   parse mot.txt (PWM) / store.txt (CDF); built-in embed and >20-motif library support
 nlr-seq      six-frame translation, reverse complement, codon table, FASTA reader, chopper
 nlr-scan     sliding-window scoring + non-overlap arbitration + signature pre-filter (SIMD)
 nlr-assemble findSeeds -> mergeSeeds -> elongate three-step assembly
@@ -160,20 +211,22 @@ nlr-cli      clap CLI entry + pipeline orchestration (rayon + checkpoint + SIGIN
 
 **Pipeline:** `FASTA → chop (overlap) → six-frame translate → scan (PWM+CDF) → signature filter → coordinate map → three-step assembly → multi-format output`.
 
-## Bugs fixed vs. the original
+## Implementation notes
 
-1. `-a` P-loop location logic (`while(isPloop)` → `while(!isPloop)`).
-2. `-a` stop-codon / unknown-aa replacement (Java `replaceAll` return value was discarded → now actually replaced with `_`).
-3. `-f` unified coordinate clamp on the last contig.
-4. `-f` multi-contig extraction — the original Java groups NLRs by contig name and extracts from every chromosome; an earlier Rust port only processed the first contig (`seqs.first()`), dropping all other chromosomes. Now correct.
-5. `-f` extraction consistency — Java `writeNLRLoci` had an off-by-one (it dropped the first genome character when reading inline, shifting `-f` extraction +1 bp relative to its own GFF/BED coordinates). FastNLR keeps `-f` consistent with the reported coordinates (biologically correct).
-6. `##date` header — set to the current system time (Java was non-deterministic).
-7. GFF `##source-version` and `source` column relabeled `FastNLR`.
-8. p-value rendering in motif BED / export TSV now matches Java `Double.toString` (scientific notation for very small p-values).
+FastNLR enforces coordinate-consistent behavior across its output formats:
+
+1. `-a` uses corrected P-loop location logic.
+2. `-a` replaces stop codons and unknown amino acids with `_`.
+3. `-f` applies a unified coordinate clamp on the last contig.
+4. `-f` extracts loci from every contig, not only the first.
+5. `-f` keeps extracted sequence coordinates consistent with the reported GFF/BED coordinates.
+6. `##date` reflects the current system time.
+7. GFF `##source-version` and the `source` column are labeled `FastNLR`.
+8. p-values in motif BED and export TSV use scientific notation for very small values.
 
 ## Correctness
 
-Validated against the original algorithm by cross-running the Java jar and diffing every output format. Unit and integration tests cover coordinate mapping (both strands), six-frame translation tail-offset, the codon table, seed/signature tables, scan hits, three-step assembly, and output formats.
+The pipeline is validated by unit and integration tests covering coordinate mapping (both strands), six-frame translation tail offsets, the codon table, seed/signature tables, motif scanning, three-step assembly, and every output format.
 
 ```bash
 cargo test --workspace      # 40 tests, all passing
@@ -200,19 +253,22 @@ cargo bench                          # benchmarks (if enabled)
 
 The release profile uses `opt-level=3`, `lto="fat"`, `codegen-units=1`, and `panic="abort"` for maximum performance and a small binary.
 
+Continuous integration and release automation are defined in `.github/workflows/`:
+
+- `rust.yml` runs workspace build and tests on pushes and pull requests to `main`.
+- `release.yml` builds `fastnlr` for Linux, Windows, and macOS x86_64 when a `vX.Y.Z` tag is pushed, then uploads archives and SHA-256 checksums to GitHub Releases.
+
+The static project page is generated from [`docs/index.html`](docs/index.html) and published through GitHub Pages.
+
 ## Citation
 
-If FastNLR helps your research, please cite the original method:
+FastNLR is developed and maintained by Jiwen Zhao. A dedicated manuscript is in preparation; until then, please cite this repository:
 
-> Steuernagel, B. et al. *NLR-Annotator: Mining NLRs across the tree of life.* Plant Physiology, 2020. PMID: 32184345.
-
-And reference this Rust port:
-
-> Jiwen Zhao. FastNLR: a high-performance Rust rewrite of NLR-Annotator. https://github.com/CropCoder/FastNLR
+> Jiwen Zhao. FastNLR: a high-speed, accurate NLR annotation tool. https://github.com/CropCoder/FastNLR
 
 ## License
 
-GPL-3.0-only — inherited from the original NLR-Annotator. See [LICENSE](LICENSE).
+GPL-3.0-only. See [LICENSE](LICENSE).
 
 ## Author
 

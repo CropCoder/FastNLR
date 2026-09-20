@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FastNLR — Fast NLR Immune-Receptor Locus Annotation for Plant Genomes</title>
-<meta name="description" content="FastNLR is a high-performance Rust rewrite of NLR-Annotator. Scan six reading frames for amino-acid motifs and assemble NLR immune-receptor loci in minutes." />
+<meta name="description" content="FastNLR is a high-speed, accurate NLR annotation tool for plant genomes. It scans six reading frames for amino-acid motifs and assembles NLR immune-receptor loci." />
 <meta name="author" content="Jiwen Zhao (https://github.com/CropCoder)" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>" />
 
@@ -437,12 +437,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="hero-grid"></div>
   <div class="wrap hero-inner">
     <div>
-      <span class="badge"><span class="dot"></span> High-performance Rust rewrite of NLR-Annotator</span>
+      <span class="badge"><span class="dot"></span> High-speed, accurate NLR annotation in Rust</span>
       <h1><span class="grad">FastNLR</span></h1>
       <p class="hero-sub">
         FastNLR scans the <strong>six reading frames</strong> of a genome assembly for amino-acid
-        motifs and assembles them into complete and partial <strong>NLR loci</strong> — a from-scratch
-        Rust port with multithreading, checkpoint resume, and several bug fixes over the original.
+        motifs and assembles them into complete and partial <strong>NLR loci</strong> with
+        multithreading, memory-mapped input, checkpoint resume, and coordinate-consistent output.
       </p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="#quickstart">
@@ -491,7 +491,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     <div class="center reveal">
       <span class="eyebrow">Features</span>
       <h2 class="h2">Built for speed, shipped self-contained</h2>
-      <p class="lead">A drop-in replacement for NLR-Annotator that runs out of the box on any FASTA — no config files, no setup.</p>
+      <p class="lead">A self-contained pipeline that runs out of the box on any FASTA — no extra config files, no setup.</p>
     </div>
 
     <div class="grid grid-3" style="margin-top: 52px;">
@@ -516,7 +516,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <h3>Coordinate-consistent</h3>
-        <p>Loci extraction (<code>-f</code>) matches GFF/BED coordinates exactly, fixing the original Java off-by-one and multi-contig bugs.</p>
+        <p>Loci extraction (<code>-f</code>) matches GFF/BED coordinates exactly across every contig.</p>
       </div>
 
       <div class="card reveal">
@@ -539,8 +539,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <div class="card-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 12h10M4 16h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
-        <h3>Original flag compatible</h3>
-        <p>Drop-in for existing <code>-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n</code> workflows. Swap the binary, keep your pipeline.</p>
+        <h3>Compatible flag interface</h3>
+        <p>Supports <code>-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n</code> workflows with a compatible command-line interface.</p>
       </div>
     </div>
   </div>
@@ -708,19 +708,19 @@ cargo build --release
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Correctness</span>
-      <h2 class="h2">Bugs fixed vs. the original</h2>
-      <p class="lead">Validated against the original algorithm by cross-running the Java jar and diffing every output format.</p>
+      <h2 class="h2">Implementation notes</h2>
+      <p class="lead">Unit and integration tests cover coordinate mapping, six-frame translation, motif scanning, assembly, and every output format.</p>
     </div>
 
     <div class="fixes">
-      <div class="fix reveal"><span class="idx">1</span><span class="ft"><code>-a</code> P-loop location logic (<code>while(isPloop)</code> → <code>while(!isPloop)</code>).</span></div>
-      <div class="fix reveal"><span class="idx">2</span><span class="ft"><code>-a</code> stop-codon / unknown-aa replacement now actually applied (Java <code>replaceAll</code> return value was discarded).</span></div>
+      <div class="fix reveal"><span class="idx">1</span><span class="ft"><code>-a</code> uses corrected P-loop location logic.</span></div>
+      <div class="fix reveal"><span class="idx">2</span><span class="ft"><code>-a</code> replaces stop codons and unknown amino acids with <code>_</code>.</span></div>
       <div class="fix reveal"><span class="idx">3</span><span class="ft"><code>-f</code> unified coordinate clamp on the last contig.</span></div>
       <div class="fix reveal"><span class="idx">4</span><span class="ft"><code>-f</code> multi-contig extraction — extracts from every chromosome, not just the first.</span></div>
-      <div class="fix reveal"><span class="idx">5</span><span class="ft"><code>-f</code> extraction consistency — off-by-one in Java <code>writeNLRLoci</code> fixed, keeping <code>-f</code> consistent with reported coordinates.</span></div>
-      <div class="fix reveal"><span class="idx">6</span><span class="ft"><code>##date</code> header set to the current system time (Java was non-deterministic).</span></div>
+      <div class="fix reveal"><span class="idx">5</span><span class="ft"><code>-f</code> extraction remains consistent with the reported coordinates.</span></div>
+      <div class="fix reveal"><span class="idx">6</span><span class="ft"><code>##date</code> reflects the current system time.</span></div>
       <div class="fix reveal"><span class="idx">7</span><span class="ft">GFF <code>##source-version</code> and <code>source</code> column relabeled <code>FastNLR</code>.</span></div>
-      <div class="fix reveal"><span class="idx">8</span><span class="ft">p-value rendering in motif BED / export TSV now matches Java <code>Double.toString</code>.</span></div>
+      <div class="fix reveal"><span class="idx">8</span><span class="ft">p-value rendering in motif BED / export TSV uses scientific notation for very small values.</span></div>
     </div>
   </div>
 </section>
@@ -735,10 +735,8 @@ cargo build --release
       <h2 class="h2">Acknowledgements</h2>
     </div>
     <div class="cite reveal" style="margin-top: 30px;">
-      <p>If FastNLR helps your research, please cite the original method:</p>
-      <blockquote>Steuernagel, B. et al. <em>NLR-Annotator: Mining NLRs across the tree of life.</em> Plant Physiology, 2020. PMID: 32184345.</blockquote>
-      <p>And reference this Rust port:</p>
-      <blockquote>Jiwen Zhao. <em>FastNLR: a high-performance Rust rewrite of NLR-Annotator.</em> <a href="https://github.com/CropCoder/FastNLR" target="_blank" rel="noopener">github.com/CropCoder/FastNLR</a></blockquote>
+      <p>FastNLR is developed and maintained by Jiwen Zhao. A dedicated manuscript is in preparation; until then, please cite this repository:</p>
+      <blockquote>Jiwen Zhao. <em>FastNLR: a high-speed, accurate NLR annotation tool.</em> <a href="https://github.com/CropCoder/FastNLR" target="_blank" rel="noopener">github.com/CropCoder/FastNLR</a></blockquote>
     </div>
   </div>
 </section>
@@ -753,7 +751,6 @@ cargo build --release
       <a href="https://github.com/CropCoder/FastNLR" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/CropCoder/FastNLR/releases" target="_blank" rel="noopener">Releases</a>
       <a href="https://github.com/CropCoder/FastNLR/issues" target="_blank" rel="noopener">Issues</a>
-      <a href="https://pubmed.ncbi.nlm.nih.gov/32184345/" target="_blank" rel="noopener">NLR-Annotator</a>
     </div>
   </div>
 </footer>

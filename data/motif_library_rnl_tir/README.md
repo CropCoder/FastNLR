@@ -9,7 +9,7 @@
 
 下文 §1–§7 是 RNL 部分；**§8 专门写 TIR 部分**。
 
-> 目标：让 FastNLR（NLR-Annotator 的 Rust 重写）能对 **helper NLR**（ADR1/NRG1 类 + 茄科 **NRC clade**）播种。
+> 目标：让 FastNLR 能对 **helper NLR**（ADR1/NRG1 类 + 茄科 **NRC clade**）播种。
 > 原版在 Wm82 T2T 上：11 个 RNL 基因只有 **2 个**落在 FastNLR 位点里 → README §「FastNLR 能找 RNL 吗」。
 > 本补丁：**11/11 个 RNL 区域都有位点**（±5 kb 口径同样 11/11），并且新增的 motif 对 NRC 专属。
 

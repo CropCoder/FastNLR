@@ -292,7 +292,7 @@ fn scan_one_fragment(
         let (frame, strand) = parse_frame(&pseq.identifier);
         for motif in list.motifs {
             let mut m = motif;
-            // Java: motif.setDNA(id, offset, seq.getLength(), frame, forwardStrand)
+            // Map protein coordinates to genomic coordinates.
             // Use actual fragment length (not fixed fragment_length).
             m.set_dna(id.clone(), offset, fragment_len, frame, strand);
             out.push((id.clone(), m));
@@ -350,11 +350,10 @@ fn parse_frame(id: &str) -> (u8, nlr_core::strand::Strand) {
     (frame, strand)
 }
 
-/// Remove adjacent duplicates (equivalent to Java `removeRedundantMotifs`: same id + same dnaStart).
+/// Remove adjacent duplicates with the same motif id and DNA start.
 ///
-/// Faithful to Java semantics: each iteration `index++` unconditionally; after a deletion the
-/// same position is NOT retried. (Differs from "decrement i after delete": given three identical
-/// in a row, Java keeps 2, the decrement variant would reduce to 1.)
+/// The loop advances after every deletion without retrying the same position. Given three
+/// identical adjacent motifs, this keeps the first two.
 fn dedup_adjacent(motifs: &mut Vec<Motif>) {
     let mut i = 0;
     while i < motifs.len() {
@@ -389,7 +388,7 @@ pub fn save_checkpoint(dir: &std::path::Path, result: &RunResult) -> std::io::Re
     Ok(())
 }
 
-/// Load checkpoint: read motif results from the checkpoint directory (equivalent to `-c` import).
+/// Load checkpoint: read motif results from the checkpoint directory.
 pub fn load_checkpoint(
     dir: &std::path::Path,
     def: AnnotatorSignatureDefinition,

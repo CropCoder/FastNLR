@@ -1,13 +1,11 @@
 //! nlr-output — output formatting: txt / GFF / BED / motifBED / alignment fasta / loci fasta / TSV.
 //!
-//! Faithful reimplementation of Java `NLR_Annotator` `write*` methods, with deliberate fixes:
+//! Implements the output writers with the following coordinate-consistency guarantees:
 //! 1. `-a` P-loop location logic (`while(!is_ploop)`);
 //! 2. `-a` `*`/`X` replacement with `_` (actually applied);
 //! 3. `-f` unified clamp on the last contig;
-//! 4. `-f` extracts the exact motif span (Java `writeNLRLoci` had an off-by-one that shifted
-//!    extraction +1 relative to its own GFF coordinates; this port keeps the extraction
-//!    consistent with GFF/BED coordinates — biologically correct);
-//! 5. `##date` header set to the current system time (Java was non-deterministic / hardcoded);
+//! 4. `-f` extracts the exact motif span and keeps it consistent with GFF/BED coordinates;
+//! 5. `##date` header set to the current system time;
 //! 6. GFF `##source-version` and source column relabeled `FastNLR`.
 
 use std::io::Write;
@@ -186,7 +184,7 @@ pub fn write_nbarc_alignment_fasta<W: Write>(
 
     if include_ced4 {
         // CED4 reference row: 85-char reference sequence + 80-char dash padding, on one line
-        // (matches Java's single literal string for this row).
+        // Keep the row as a single literal string.
         writeln!(
             w,
             ">NP_001021202.1\nFLHGRAGSGKSVIASQALSKS-----------------------------TLFVFDDVVQEETIRLRLRCLVTTRDVEISNAASQ{}",
@@ -199,7 +197,7 @@ pub fn write_nbarc_alignment_fasta<W: Write>(
             continue;
         }
 
-        // Locate P-loop (fixed Java `while(isPloop)` to `while(!is_ploop)`).
+        // Locate the P-loop using the corrected `while(!is_ploop)` condition.
         let ploop_idx = match list.motifs.iter().position(|m| def.is_ploop(m.id)) {
             Some(i) => i,
             None => continue,
@@ -254,12 +252,11 @@ pub fn write_nlr_loci<W: Write>(
     Ok(())
 }
 
-/// Loci sequence fasta across multiple contigs (replicates Java `writeNLRLoci` semantics).
+/// Loci sequence fasta across multiple contigs.
 ///
 /// `contigs` is a list of `(identifier, sequence)` in genome FASTA order. NLRs are grouped
-/// by sequence name and extracted from the matching contig. This fixes the original Rust bug
-/// that only processed the first contig (`seqs.first()`), which dropped or mis-clamped NLRs
-/// on every other chromosome.
+/// by sequence name and extracted from the matching contig. The implementation processes
+/// every contig so loci are not dropped or mis-clamped on non-first chromosomes.
 pub fn write_nlr_loci_all<W: Write>(
     w: &mut W,
     nlrs: &[MotifList],

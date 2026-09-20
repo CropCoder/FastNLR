@@ -285,6 +285,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "fastnlr"
+version = "1.0.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "indicatif",
+ "nlr-assemble",
+ "nlr-config",
+ "nlr-core",
+ "nlr-output",
+ "nlr-plot",
+ "nlr-report",
+ "nlr-scan",
+ "nlr-seq",
+ "rayon",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -481,29 +504,6 @@ name = "nlr-assemble"
 version = "1.0.0"
 dependencies = [
  "nlr-core",
-]
-
-[[package]]
-name = "nlr-cli"
-version = "1.0.0"
-dependencies = [
- "clap",
- "ctrlc",
- "indicatif",
- "nlr-assemble",
- "nlr-config",
- "nlr-core",
- "nlr-output",
- "nlr-plot",
- "nlr-report",
- "nlr-scan",
- "nlr-seq",
- "rayon",
- "serde",
- "serde_json",
- "tempfile",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 //! NLR loci (a collection of motifs on one sequence) type.
 //!
-//! Replicates Java `MotifList`:
+//! Key behavior:
 //! - Sorting (by Motif's Ord; forward strand ascending / reverse strand descending);
 //! - `is_complete_nlr` (contains P-loop and LRR);
 //! - `can_be_merged_with` (same strand / nearest of the 4 dna_start combinations within threshold / rank monotonic);
@@ -76,19 +76,19 @@ impl MotifList {
         self.sort();
     }
 
-    /// Whether it is a complete NLR: contains P-loop and LRR (Java `isCompleteNLR`).
+    /// Whether it is a complete NLR: contains P-loop and LRR.
     pub fn is_complete_nlr(&self, def: &AnnotatorSignatureDefinition) -> bool {
         let has_ploop = self.motifs.iter().any(|m| def.is_ploop(m.id));
         let has_lrr = self.motifs.iter().any(|m| def.is_lrr(m.id));
         has_ploop && has_lrr
     }
 
-    /// Whether it contains a stop codon (Java `hasStopCodon`).
+    /// Whether it contains a stop codon.
     pub fn has_stop_codon(&self) -> bool {
         self.motifs.iter().any(|m| m.has_stop())
     }
 
-    /// Whether it can be merged with another loci (Java `canBeMergedWith`).
+    /// Whether it can be merged with another loci.
     ///
     /// Three conditions:
     /// 1. Same strand;
@@ -118,11 +118,11 @@ impl MotifList {
         }
 
         // Rank consistency: after merge, dedup, and sort, rank is monotonically non-decreasing (LRR exception).
-        // Replicates Java: HashSet<Motif> (equals = id + dnaStart) dedup then sort;
+        // Deduplicate by motif identity and DNA start, then sort.
         // during iteration a motif passes only if `rank > lastRank || isLRR`, otherwise
         // (rank <= lastRank and not LRR) returns false.
         let mut merged: Vec<&Motif> = self.motifs.iter().chain(other.motifs.iter()).collect();
-        // Dedup by (id, dna_start) (equivalent to Java Motif.equals).
+        // Deduplicate by (id, dna_start).
         let mut seen = std::collections::HashSet::new();
         merged.retain(|m| seen.insert((m.id, m.dna_start)));
         merged.sort();
@@ -141,18 +141,17 @@ impl MotifList {
         true
     }
 
-    /// Whether it contains a used motif (Java `containsUsedMotif`, used for assembly dedup).
+    /// Whether it contains a used motif (used for assembly dedup).
     ///
     /// Note: assembly dedup is actually implemented in nlr-assemble keyed by `(id, dna_start)`
-    /// (equivalent to Java `Motif.equals`); this method is retained only for API completeness
-    /// and is not part of the current assembly flow.
+    /// This method is retained only for API completeness and is not part of the current assembly flow.
     pub fn contains_used_motif(&self, used: &std::collections::HashSet<(u8, u64)>) -> bool {
         self.motifs
             .iter()
             .any(|m| used.contains(&(m.id, m.dna_start)))
     }
 
-    /// Dedup by id+start+end (Java `removeRedundantMotifs`, keeps first occurrence).
+    /// Dedup by id+start+end, keeping the first occurrence.
     pub fn remove_redundant_motifs(&mut self) {
         let mut seen = std::collections::HashSet::new();
         self.motifs.retain(|m| {
@@ -161,7 +160,7 @@ impl MotifList {
         });
     }
 
-    /// Motif id list (comma-joined, Java `getMotifListString`).
+    /// Motif id list (comma-joined).
     pub fn motif_list_string(&self) -> String {
         self.motifs
             .iter()
@@ -170,7 +169,7 @@ impl MotifList {
             .join(",")
     }
 
-    /// Domain string (Java `getDomainString`).
+    /// Domain string.
     pub fn domain_string(&self, def: &AnnotatorSignatureDefinition) -> String {
         let ids: Vec<MotifId> = self.motifs.iter().map(|m| m.id).collect();
         def.domain_string(&ids)
@@ -195,7 +194,7 @@ impl PartialOrd for MotifList {
 impl Eq for MotifList {}
 
 impl Ord for MotifList {
-    /// Replicates Java `MotifList.compareTo`: same strand forward ascending / reverse descending; on equal start, the longer one comes first.
+    /// Sort order: forward strand ascending / reverse strand descending; on equal start, the longer loci comes first.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         use std::cmp::Ordering;
         let s = self.first_motif();

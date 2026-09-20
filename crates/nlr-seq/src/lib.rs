@@ -1,6 +1,6 @@
 //! nlr-seq -- sequence processing: six-frame translation, reverse complement, codon table, FASTA reading, sequence chopping.
 //!
-//! Faithful reimplementation of Java `BioSequence` / `FastaReader` / `SequenceChopper`.
+//! Sequence-processing primitives: translation, reverse complement, codon table, FASTA reading, and chopping.
 
 pub mod codon;
 pub mod chopper;

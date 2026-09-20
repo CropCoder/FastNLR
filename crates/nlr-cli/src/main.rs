@@ -1,6 +1,6 @@
 //! FastNLR command-line entry point.
 //!
-//! Compatible with the original Java flags `-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n`,
+//! Provides short options `-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n`,
 //! plus enhancements `--output-prefix/--tmpdir/--progress/--stats/--plot/--summary/--log-level`.
 //!
 //! `-x`/`-y` are optional: when omitted, built-in mot.txt/store.txt (embedded at compile time)
@@ -28,17 +28,14 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
         "Issues:   https://github.com/CropCoder/FastNLR/issues\n",
-        "License:  GPL-3.0-only\n",
-        "Original: NLR-Annotator, Steuernagel et al., Plant Physiology, 2020 (PMID: 32184345, GPL-3.0)"
+        "License:  GPL-3.0-only"
     ),
     about = "FastNLR: scan six reading frames of genomic sequences for amino-acid motifs and annotate NLR immune-receptor loci",
-    long_about = "FastNLR: a high-performance Rust rewrite of NLR-Annotator.\n\
+    long_about = "FastNLR: a high-speed, accurate NLR annotation tool.\n\
                   It scans six-frame translations of an input FASTA for motifs, assembles NLR loci,\n\
                   and emits txt/GFF/BED/alignment-fasta and other formats.\n\
-                  Compatible with the original -i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n flag semantics.\n\n\
                   Repository: https://github.com/CropCoder/FastNLR\n\
-                  Author:     Jiwen Zhao (https://github.com/CropCoder)\n\
-                  Citation:   Steuernagel et al., Plant Physiology, 2020 (PMID: 32184345)",
+                  Author:     Jiwen Zhao (https://github.com/CropCoder)",
     after_long_help = "Examples:\n  \
         # Basic loci annotation\n  \
         fastnlr -i genome.fasta -o out.txt -g out.gff -b out.bed\n\n  \
@@ -53,7 +50,7 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
         Releases:  https://github.com/CropCoder/FastNLR/releases\n\
         Issues:    https://github.com/CropCoder/FastNLR/issues\n\
         Author:    Jiwen Zhao (https://github.com/CropCoder)\n\
-        License:   GPL-3.0-only  |  Original: NLR-Annotator (Steuernagel et al., 2020, PMID: 32184345)"
+        License:   GPL-3.0-only"
 )]
 struct Cli {
     // ===== Input (required) =====

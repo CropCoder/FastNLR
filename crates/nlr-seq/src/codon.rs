@@ -1,6 +1,5 @@
 //! Genetic code table and triplet codon translation.
 //!
-//! Reimplementation of Java `BioSequence.loadGeneticCodeTable` / `translateTriplet`:
 //! - 64 standard codons (including 3 stop codons TAA/TAG/TGA -> `*`);
 //! - non-standard triplets (containing N, IUPAC, etc.) -> `X`;
 //! - input is uppercased before table lookup.

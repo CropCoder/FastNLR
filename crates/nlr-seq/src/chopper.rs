@@ -1,12 +1,10 @@
 //! Sequence chopper (streaming slicing with overlap).
 //!
-//! Reimplementation of Java `SequenceChopper`:
 //! - reads character by character, accumulating up to `fragmentLength` then chopping;
 //! - fragment naming `{id}_{offset}`, where offset is the 0-based start of the fragment, step `fragmentLength - overlap`;
 //! - sequence is uppercased; newlines are skipped; header takes only the first whitespace-delimited token with `>` stripped.
 //!
-//! Note: Java `readIdentifier` can infinite-loop at EOF (`(char)baseCharacter != '\n'` never terminates);
-//! the Rust version adds an EOF guard.
+//! The reader includes an EOF guard for malformed headers.
 
 use crate::translate::BioSequence;
 use std::io::{BufRead, BufReader};

@@ -1,6 +1,6 @@
 //! nlr-assemble — three-step NLR locus assembly: findSeeds -> mergeSeeds -> elongate.
 //!
-//! Faithful reimplementation of Java `NLR_Annotator.findNLRs` (activated version only):
+//! Three-step assembly algorithm:
 //! - findSeeds: build seed combinations from adjacent motifs within
 //!   `distanceWithinMotifCombination`;
 //! - mergeSeeds: same strand + 4 dna_start combination differences within threshold + rank
@@ -53,7 +53,7 @@ pub fn assemble(
     let merged = merge_seeds(seeds, params.distance_between_motif_combinations, def);
     let mut pre_nlrs = elongate(merged, &motifs, params.distance_for_elongating, def);
 
-    // Java sorts `preNlrs` before naming (forward strand ascending / reverse strand
+    // Sort candidate NLRs before naming (forward strand ascending / reverse strand
     // descending), which determines the nlrN naming order.
     pre_nlrs.sort();
 
@@ -68,7 +68,7 @@ pub fn assemble(
     nlrs
 }
 
-/// (1) findSeeds (Java `findNLRs_substep1_findSeeds`).
+/// (1) Find seeds from adjacent motifs.
 fn find_seeds(
     motifs: &[Motif],
     distance: u64,
@@ -113,7 +113,7 @@ fn find_seeds(
     seeds
 }
 
-/// (2) mergeSeeds (Java `findNLRs_subsep2a_mergeSeeds`).
+/// (2) Merge compatible seeds.
 fn merge_seeds(
     mut seeds: Vec<MotifList>,
     distance: u64,
@@ -138,18 +138,17 @@ fn merge_seeds(
     merged
 }
 
-/// (3) elongate (Java `findNLRs_substep3_elongate`, activated version only).
+/// (3) Elongate merged seeds at both ends.
 ///
-/// Key replication point: inside the loop Java uses `motifList.firstMotif()` /
-/// `motifList.lastMotif()` as a **dynamic** baseline (addMotif re-sorts, so the baseline
-/// shifts as elongation proceeds). The first/last from the initial clone must not be pinned.
+/// The first/last motif is read dynamically while adding motifs, because each addition
+/// re-sorts the list and shifts the elongation baseline.
 fn elongate(
     merged_seeds: Vec<MotifList>,
     motifs: &[Motif],
     distance: u64,
     def: &AnnotatorSignatureDefinition,
 ) -> Vec<MotifList> {
-    // usedMotifs dedup key: `(id, dna_start)`, equivalent to Java `Motif.equals`.
+    // usedMotifs dedup key: `(id, dna_start)`.
     let mut used: HashSet<(u8, u64)> = HashSet::new();
     let mut pre_nlrs: Vec<MotifList> = Vec::new();
 

@@ -1,10 +1,13 @@
 [package]
 name = "nlr-plot"
+description = "PNG statistics plots for FastNLR"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
-nlr-report = { path = "../nlr-report" }
+nlr-report = { path = "../nlr-report", version = "1.0.0" }
 plotters = { workspace = true }

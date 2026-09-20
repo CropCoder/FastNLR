@@ -1,10 +1,13 @@
 [package]
 name = "nlr-config"
+description = "PWM and CDF motif-profile parsing for FastNLR"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
-nlr-core = { path = "../nlr-core" }
+nlr-core = { path = "../nlr-core", version = "1.0.0" }
 memmap2 = { workspace = true }

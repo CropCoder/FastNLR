@@ -1,6 +1,6 @@
 //! Single motif hit type.
 //!
-//! Faithfully replicates the Java `Motif`:
+//! Key behavior:
 //! - Holds both protein coordinates (position, protein_sequence) and DNA coordinates (dna_start, dna_end, strand, frame);
 //! - `set_dna` maps protein coordinates to genomic coordinates (including reverse strand mirroring);
 //! - The sorting rule is asymmetric: forward strand sorted ascending by dna_start, reverse strand descending.
@@ -10,12 +10,8 @@ use std::cmp::Ordering;
 use crate::signature_def::MotifId;
 use crate::strand::Strand;
 
-/// Format an `f64` close to Java's `Double.toString`: shortest round-trippable decimal,
-/// plain notation when `1e-3 <= |d| < 1e7`, otherwise scientific notation with uppercase `E`.
-///
-/// Rust's `{}` / `{:e}` already produce the shortest digit sequence (same as Java); this only
-/// picks the notation and uppercases the exponent marker so output matches the original tool
-/// (e.g. p-values render as `8.778909458322434E-12`, not `0.000000000008778909458322434`).
+/// Format an `f64` as a short round-trippable decimal: plain notation when
+/// `1e-3 <= |d| < 1e7`, otherwise scientific notation with uppercase `E`.
 pub fn format_double_java(d: f64) -> String {
     if d == 0.0 {
         return "0.0".to_string();
@@ -45,13 +41,13 @@ pub struct Motif {
     pub id: MotifId,
     /// Protein sequence id (translated fragment name, e.g. `chr1_0_frame+0`).
     pub protein_sequence_id: String,
-    /// Protein coordinate (1-based semantics; Java stores `q+1` on construction).
+    /// Protein coordinate (1-based semantics).
     pub position: u64,
     /// The actual matched amino acid sequence.
     pub protein_sequence: String,
     /// p-value.
     pub pvalue: f64,
-    /// Score (always 0.0 on the Java scan path; only read from TSV on import).
+    /// Score (always 0.0 during scanning; only read from TSV on import).
     pub score: f64,
     /// DNA sequence id (None when unset).
     pub dna_sequence_id: Option<String>,
@@ -68,7 +64,7 @@ pub struct Motif {
 }
 
 impl Motif {
-    /// Construct a motif with only protein-side info (equivalent to the Java scan-stage construction).
+    /// Construct a motif with only protein-side information.
     pub fn new_protein(
         id: MotifId,
         protein_sequence_id: String,
@@ -92,7 +88,7 @@ impl Motif {
         }
     }
 
-    /// Set DNA coordinates (equivalent to Java `Motif.setDNA`).
+    /// Set DNA coordinates from protein coordinates.
     ///
     /// - `offset`: 0-based start of the fragment on the chromosome;
     /// - `fragment_length`: fragment length (needed for reverse-strand computation);
@@ -111,7 +107,7 @@ impl Motif {
         frame: u8,
         strand: Strand,
     ) {
-        // Java position is 1-based; the protein sequence length equals the motif length.
+        // The stored position is 1-based; the protein sequence length equals the motif length.
         let len = self.protein_sequence.len() as u64;
         let pos_minus_1 = self.position.saturating_sub(1);
         let (start, end) = match strand {
@@ -140,7 +136,7 @@ impl Motif {
         self.protein_sequence.contains('*')
     }
 
-    /// Export a TSV string (equivalent to Java `getExportString`, 11 fields).
+    /// Export a TSV string with 11 fields.
     pub fn export_string(&self) -> String {
         let mut s = format!(
             "{}\t{}\t{}\t{}\t{}\t{}",
@@ -166,7 +162,7 @@ impl Motif {
         s
     }
 
-    /// Deserialize from a TSV line (equivalent to Java `Motif(String)`, used for -c import).
+    /// Deserialize from an exported TSV line (used for `-c` import).
     pub fn from_export_line(line: &str) -> Option<Self> {
         let cols: Vec<&str> = line.split('\t').collect();
         if cols.len() < 6 {
@@ -216,13 +212,12 @@ impl PartialOrd for Motif {
 impl Eq for Motif {}
 
 impl Ord for Motif {
-    /// Replicates the asymmetric sorting of Java `Motif.compareTo`.
+    /// Asymmetric sorting rule.
     ///
-    /// Key point: Java uses `dna_sequence_id` (chromosome id) to determine the same group;
-    /// only within the same group does it sort by strand + dnaStart.
-    /// Different groups are sorted by `protein_sequence_id`. Do not use protein_sequence_id
-    /// to determine the same group (fragment ids are almost unique per motif, which would
-    /// prevent same-chromosome motifs from ever being sorted by coordinate).
+    /// `dna_sequence_id` (chromosome id) determines the same group; only within a group does
+    /// sorting use strand and DNA start. Different groups are sorted by `protein_sequence_id`.
+    /// Do not use `protein_sequence_id` to determine group membership, because fragment ids
+    /// are nearly unique per motif.
     fn cmp(&self, other: &Self) -> Ordering {
         if self.dna_parameters_set && other.dna_parameters_set {
             let self_id = self.dna_sequence_id.as_deref().unwrap_or("");
@@ -238,7 +233,7 @@ impl Ord for Motif {
                     },
                 }
             } else {
-                // Different groups: sort by fragment id (replicates Java behavior).
+                // Different groups: sort by fragment id.
                 self.protein_sequence_id.cmp(&other.protein_sequence_id)
             }
         } else {

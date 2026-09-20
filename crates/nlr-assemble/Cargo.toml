@@ -1,9 +1,12 @@
 [package]
 name = "nlr-assemble"
+description = "Three-step NLR locus assembly for FastNLR"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
-nlr-core = { path = "../nlr-core" }
+nlr-core = { path = "../nlr-core", version = "1.0.0" }

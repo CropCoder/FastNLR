@@ -1,12 +1,15 @@
 [package]
 name = "nlr-scan"
+description = "Sliding-window motif scanning for FastNLR"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [dependencies]
-nlr-core = { path = "../nlr-core" }
-nlr-config = { path = "../nlr-config" }
-nlr-seq = { path = "../nlr-seq" }
+nlr-core = { path = "../nlr-core", version = "1.0.0" }
+nlr-config = { path = "../nlr-config", version = "1.0.0" }
+nlr-seq = { path = "../nlr-seq", version = "1.0.0" }
 wide = { workspace = true }
