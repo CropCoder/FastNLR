@@ -23,7 +23,7 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
     name = "fastnlr",
     version,
     long_version = concat!(
-        "1.0.0\n",
+        "1.1.0\n",
         "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
