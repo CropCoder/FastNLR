@@ -1,13 +1,14 @@
 //! FastNLR command-line entry point.
 //!
 //! Provides short options `-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n`,
-//! plus enhancements `--output-prefix/--tmpdir/--progress/--stats/--plot/--summary/--log-level`.
+//! plus enhancements `-p/--output-prefix/--tmpdir/--progress/--stats/--plot/--summary/--log-level`.
 //!
 //! `-x`/`-y` are optional: when omitted, built-in mot.txt/store.txt (embedded at compile time)
 //! are used, so the tool runs out of the box for standard motif configs.
 //!
-//! This file owns: arg parsing & help text, input validation, pipeline orchestration,
-//! startup config summary and end-of-run summary, multi-format output writing.
+//! This file owns: arg parsing & help text, input/output validation,
+//! pipeline orchestration, startup config summary and end-of-run summary,
+//! multi-format output writing.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -18,44 +19,81 @@ use nlr_cli::{all_motifs, run_with_progress, RunConfig};
 /// Valid log-level values (for --log-level validation and hints).
 const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
 
+/// CLI banner and project metadata shown at the top of `fastnlr --help`.
+const HELP_BANNER: &str = r#"   ____           __   _  __ __    ___ 
+  / __/___ _ ___ / /_ / |/ // /   / _ \
+ / _/ / _ `/(_-</ __//    // /__ / , _/
+/_/   \_,_//___/\__//_/|_//____//_/|_| 
+
+FastNLR v1.2.0
+
+Author:     Jiwen Zhao (https://github.com/CropCoder)
+Repository: https://github.com/CropCoder/FastNLR
+Releases:   https://github.com/CropCoder/FastNLR/releases
+Issues:     https://github.com/CropCoder/FastNLR/issues
+License:    GPL-3.0-only"#;
+
+/// Print the compact no-argument help block.
+fn print_no_args_help() {
+    print!("{}", HELP_BANNER);
+    print!(
+        "\n\nFastNLR: high-speed, accurate NLR immune-receptor locus annotation for plant genomes.\n\n\
+         Key parameters:\n  \
+         -i INPUT.genomic.fasta   Input genome FASTA (gzip allowed)\n  \
+         -o OUTPUT.DIR            Output directory\n  \
+         -p PREFIX                Output prefix (default: out)\n  \
+         -t THREADS               Thread count\n  \
+         --motif-accept-p         Final motif p-value threshold\n  \
+         --motif-prelim-p         Motif prefilter p-value threshold\n  \
+         --relaxed-seed           Relaxed seeding for divergent NLRs\n\n\
+         Usage: fastnlr [OPTIONS] -i <INPUT.genomic.fasta> -o <OUTPUT.DIR>\n\n\
+         Use -h for a brief summary or --help for full documentation.\n"
+    );
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "fastnlr",
     version,
+    before_help = HELP_BANNER,
     long_version = concat!(
-        "1.1.1\n",
+        "1.2.0\n",
         "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
         "Issues:   https://github.com/CropCoder/FastNLR/issues\n",
         "License:  GPL-3.0-only"
     ),
-    about = "FastNLR: scan six reading frames of genomic sequences for amino-acid motifs and annotate NLR immune-receptor loci",
-    long_about = "FastNLR: a high-speed, accurate NLR annotation tool.\n\
-                  It scans six-frame translations of an input FASTA for motifs, assembles NLR loci,\n\
-                  and emits txt/GFF/BED/alignment-fasta and other formats.\n\
-                  Repository: https://github.com/CropCoder/FastNLR\n\
-                  Author:     Jiwen Zhao (https://github.com/CropCoder)",
+    about = "FastNLR: high-speed, accurate NLR immune-receptor locus annotation for plant genomes.\n\n\
+              Key parameters:\n  \
+              -i INPUT.genomic.fasta   Input genome FASTA (gzip allowed)\n  \
+              -o OUTPUT.DIR            Output directory\n  \
+              -p PREFIX                Output prefix (default: out)\n  \
+              -t THREADS               Thread count\n  \
+              --motif-accept-p         Final motif p-value threshold\n  \
+              --motif-prelim-p         Motif prefilter p-value threshold\n  \
+              --relaxed-seed           Relaxed seeding for divergent NLRs",
+    long_about = "FastNLR scans six-frame translations of an input FASTA for amino-acid motifs,\n\
+                  assembles complete and partial NLR loci, and writes multi-format outputs.\n\
+                  By default, the full pipeline runs and writes the complete output set.",
     after_long_help = "Examples:\n  \
-        # Basic loci annotation\n  \
-        fastnlr -i genome.fasta -o out.txt -g out.gff -b out.bed\n\n  \
-        # Prefix-derived subfiles + multithreading + plots (uses built-in mot/store)\n  \
-        fastnlr -i genome.fasta -o result.txt -p result -t 8 --plot plots/ --summary\n\n  \
+        # Full default run (writes the complete output set)\n  \
+        fastnlr -i genome.fasta -o results\n\n  \
+        # Multithreading with explicit prefix\n  \
+        fastnlr -i genome.fasta -o results -p run1 -t 8\n\n  \
         # Checkpoint resume\n  \
-        fastnlr -i genome.fasta -o result.txt --checkpoint ckpt/\n\n  \
+        fastnlr -i genome.fasta -o results --checkpoint ckpt/\n\n  \
         # Explicit mot/store override\n  \
-        fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o result.txt\n\n\
-        \n\
-        Project:   https://github.com/CropCoder/FastNLR\n\
-        Releases:  https://github.com/CropCoder/FastNLR/releases\n\
-        Issues:    https://github.com/CropCoder/FastNLR/issues\n\
-        Author:    Jiwen Zhao (https://github.com/CropCoder)\n\
-        License:   GPL-3.0-only"
+        fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o results"
 )]
 struct Cli {
     // ===== Input (required) =====
     /// Input genome FASTA (may be gzip-compressed)
-    #[arg(short = 'i', help_heading = "Input (required)")]
+    #[arg(
+        short = 'i',
+        value_name = "INPUT.genomic.fasta",
+        help_heading = "Input (required)"
+    )]
     input: PathBuf,
 
     // ===== Motif config (optional, built-in by default) =====
@@ -67,40 +105,50 @@ struct Cli {
     #[arg(short = 'y', help_heading = "Motif config (optional, built-in by default)")]
     store: Option<PathBuf>,
 
-    // ===== Loci output =====
-    /// Output NLR loci report (txt)
-    #[arg(short = 'o', required = true, help_heading = "Loci output (required)")]
-    output: Option<PathBuf>,
+    // ===== Output directory and prefix =====
+    /// Output directory for all generated files
+    #[arg(
+        short = 'o',
+        required = true,
+        value_name = "OUTPUT.DIR",
+        help_heading = "Output (required)"
+    )]
+    output_dir: PathBuf,
+
+    /// Output prefix (default: out); the full output set is written by default
+    #[arg(
+        short = 'p',
+        long = "output-prefix",
+        default_value = "out",
+        value_name = "PREFIX",
+        help_heading = "Output (required)"
+    )]
+    output_prefix: PathBuf,
 
     /// Output NLR loci (GFF3)
-    #[arg(short = 'g', help_heading = "Loci output")]
+    #[arg(short = 'g', help_heading = "Optional output files")]
     gff: Option<PathBuf>,
 
     /// Output NLR loci (BED)
-    #[arg(short = 'b', help_heading = "Loci output")]
+    #[arg(short = 'b', help_heading = "Optional output files")]
     bed: Option<PathBuf>,
 
     // ===== Sequence / export output =====
     /// Output motif intervals (BED)
-    #[arg(short = 'm', help_heading = "Sequence & export output")]
+    #[arg(short = 'm', help_heading = "Optional sequence/export output")]
     motif_bed: Option<PathBuf>,
 
     /// Output NB-ARC multiple-alignment fasta
-    #[arg(short = 'a', help_heading = "Sequence & export output")]
+    #[arg(short = 'a', help_heading = "Optional sequence/export output")]
     alignment: Option<PathBuf>,
 
     /// Output loci sequence fasta; requires 3 args in order: genome.fasta out.fasta flanking(bp)
-    #[arg(short = 'f', num_args = 3, help_heading = "Sequence & export output")]
+    #[arg(short = 'f', num_args = 3, help_heading = "Optional sequence/export output")]
     loci: Option<Vec<String>>,
 
     /// Export precomputed motif results (TSV; usable as checkpoint import)
-    #[arg(short = 'c', help_heading = "Sequence & export output")]
+    #[arg(short = 'c', help_heading = "Optional sequence/export output")]
     export: Option<PathBuf>,
-
-    // ===== Output control =====
-    /// Output prefix; auto-derives .nlr.txt/.nlr.gff/.nlr.bed/.motifs.bed/.nbarc.fasta subfiles
-    #[arg(long, short = 'p', help_heading = "Output control")]
-    output_prefix: Option<PathBuf>,
 
     // ===== Performance tuning =====
     /// Thread count (default: auto-detect core count; -t N overrides)
@@ -175,6 +223,11 @@ struct Cli {
 }
 
 fn main() {
+    if std::env::args().len() == 1 {
+        print_no_args_help();
+        return;
+    }
+
     let start = Instant::now();
     let cli = Cli::parse();
     init_logging(&cli.log_level);
@@ -204,13 +257,18 @@ fn main() {
     // Startup config summary: print key params and expected output file list.
     print_run_config(&cli, &config);
 
-    // Progress bar.
-    let pb = make_progress_bar(&cli.progress);
+    // Progress bar with a rough fragment-total estimate.
+    let estimated_fragments =
+        estimate_total_fragments(&cli.input, config.fragment_length, config.overlap);
+    let pb = make_progress_bar(&cli.progress, estimated_fragments);
 
     match run_with_progress(&config, pb.as_ref()) {
         Ok(result) => {
             if let Some(pb) = &pb {
-                pb.finish_with_message("scan complete");
+                let total = pb.length().unwrap_or(0);
+                pb.set_position(total);
+                pb.finish();
+                std::thread::sleep(std::time::Duration::from_secs(2));
             }
             tracing::info!(
                 "scan complete: {} sequences, {} NLR loci",
@@ -242,12 +300,14 @@ fn main() {
             }
 
             // End-of-run summary.
-            print_run_summary(&result, &written, start.elapsed());
+            let peak_rss_mb = read_peak_rss_mb();
+            print_run_summary(&cli, &config, &result, &written, start.elapsed(), peak_rss_mb);
             tracing::info!("run complete");
         }
         Err(e) => {
             if let Some(pb) = &pb {
-                pb.finish_with_message("run failed");
+                pb.finish_and_clear();
+                eprintln!();
             }
             print_cli_error(&format!("run failed: {}", e));
             std::process::exit(2);
@@ -308,8 +368,29 @@ fn setup_tmpdir(cli: &Cli) -> Option<PathBuf> {
     None
 }
 
+/// Estimate the total number of chopped fragments from the input file size.
+///
+/// This is intentionally rough: FASTA headers/newlines and gzip compression
+/// mean the estimate is not exact. The final scan position is normalized to
+/// 100% when the run completes.
+fn estimate_total_fragments(input: &PathBuf, fragment_length: usize, overlap: usize) -> u64 {
+    let step = fragment_length.saturating_sub(overlap).max(1) as u64;
+    let file_size = std::fs::metadata(input).map(|m| m.len()).unwrap_or(0);
+    let estimated_bases = if input
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("gz"))
+        .unwrap_or(false)
+    {
+        file_size.saturating_mul(4)
+    } else {
+        file_size
+    };
+    estimated_bases.saturating_div(step).max(1)
+}
+
 /// Create a progress bar (auto: bar on TTY, otherwise off).
-fn make_progress_bar(mode: &str) -> Option<indicatif::ProgressBar> {
+fn make_progress_bar(mode: &str, total: u64) -> Option<indicatif::ProgressBar> {
     let enabled = match mode {
         "off" => false,
         "bar" => true,
@@ -323,11 +404,11 @@ fn make_progress_bar(mode: &str) -> Option<indicatif::ProgressBar> {
     if !enabled {
         return None;
     }
-    let pb = indicatif::ProgressBar::new(0);
-    // Show: processed/total fragments + percent + throughput (fragments/s) + elapsed + ETA.
+    let pb = indicatif::ProgressBar::new(total);
+    // Show: completed/total, percent, elapsed, and remaining time.
     pb.set_style(
         indicatif::ProgressStyle::with_template(
-            "{spinner} fragments: {pos}/{len} [{bar:40}] {percent}% | {per_sec} | elapsed {elapsed} eta {eta}",
+            "[{bar:40}] {percent}% | elapsed {elapsed} | remaining {eta}",
         )
         .unwrap()
         .progress_chars("=> "),
@@ -338,7 +419,7 @@ fn make_progress_bar(mode: &str) -> Option<indicatif::ProgressBar> {
     Some(pb)
 }
 
-/// Pre-validate: input file existence, log-level validity, no-output-target detection.
+/// Pre-validate input and output paths, motif files, and log-level validity.
 fn validate_inputs(cli: &Cli) -> Result<(), String> {
     // Input genome must exist and be a file.
     if !cli.input.is_file() {
@@ -370,20 +451,14 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         ));
     }
 
-    // No output target -> warn (non-blocking, info only).
-    let has_output = cli.output.is_some()
-        || cli.gff.is_some()
-        || cli.bed.is_some()
-        || cli.motif_bed.is_some()
-        || cli.alignment.is_some()
-        || cli.loci.is_some()
-        || cli.export.is_some()
-        || cli.output_prefix.is_some()
-        || cli.stats.is_some()
-        || cli.plot.is_some()
-        || cli.summary;
-    if !has_output {
-        tracing::warn!("no output flags given; will only complete the scan and produce no files");
+    // The output directory is created before the scan so output writing
+    // does not fail after expensive computation.
+    if let Err(e) = std::fs::create_dir_all(&cli.output_dir) {
+        return Err(format!(
+            "cannot create output directory {}: {}",
+            cli.output_dir.display(),
+            e
+        ));
     }
 
     Ok(())
@@ -393,6 +468,20 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
 fn print_cli_error(msg: &str) {
     eprintln!("error: {}", msg);
     eprintln!("run `fastnlr --help` for full usage and examples.");
+}
+
+/// Resolve an output path from an optional explicit file or the
+/// output-directory + prefix convention.
+fn resolve_output_path(
+    explicit: &Option<PathBuf>,
+    output_dir: &PathBuf,
+    prefix: &PathBuf,
+    suffix: &str,
+) -> PathBuf {
+    explicit.clone().unwrap_or_else(|| {
+        let base = output_dir.join(prefix);
+        PathBuf::from(format!("{}{}", base.display(), suffix))
+    })
 }
 
 /// Startup config summary: print key params and expected output file list.
@@ -418,29 +507,14 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
 
     // Expected output file list.
     let mut targets: Vec<String> = Vec::new();
-    let prefix = &cli.output_prefix;
-    let resolve = |explicit: &Option<PathBuf>, suffix: &str| -> Option<PathBuf> {
-        explicit.clone().or_else(|| {
-            prefix
-                .as_ref()
-                .map(|p| PathBuf::from(format!("{}{}", p.display(), suffix)))
-        })
+    let resolve = |explicit: &Option<PathBuf>, suffix: &str| {
+        resolve_output_path(explicit, &cli.output_dir, &cli.output_prefix, suffix)
     };
-    if let Some(p) = resolve(&cli.output, ".nlr.txt") {
-        targets.push(p.display().to_string());
-    }
-    if let Some(p) = resolve(&cli.gff, ".nlr.gff") {
-        targets.push(p.display().to_string());
-    }
-    if let Some(p) = resolve(&cli.bed, ".nlr.bed") {
-        targets.push(p.display().to_string());
-    }
-    if let Some(p) = resolve(&cli.motif_bed, ".motifs.bed") {
-        targets.push(p.display().to_string());
-    }
-    if let Some(p) = resolve(&cli.alignment, ".nbarc.fasta") {
-        targets.push(p.display().to_string());
-    }
+    targets.push(resolve(&None::<PathBuf>, ".nlr.txt").display().to_string());
+    targets.push(resolve(&cli.gff, ".nlr.gff").display().to_string());
+    targets.push(resolve(&cli.bed, ".nlr.bed").display().to_string());
+    targets.push(resolve(&cli.motif_bed, ".motifs.bed").display().to_string());
+    targets.push(resolve(&cli.alignment, ".nbarc.fasta").display().to_string());
     if let Some(p) = &cli.export {
         targets.push(p.display().to_string());
     }
@@ -456,19 +530,61 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
     }
 }
 
-/// End-of-run summary: human-readable sequence/NLR/complete counts, elapsed time, output files.
-fn print_run_summary(result: &nlr_cli::RunResult, written: &[PathBuf], elapsed: std::time::Duration) {
+/// Read peak resident set size from `/proc/self/status` (Linux).
+fn read_peak_rss_mb() -> f64 {
+    let status = match std::fs::read_to_string("/proc/self/status") {
+        Ok(s) => s,
+        Err(_) => return 0.0,
+    };
+    for line in status.lines() {
+        if let Some(value) = line.strip_prefix("VmHWM:") {
+            if let Ok(kb) = value.trim().split_whitespace().next().unwrap_or("0").parse::<f64>() {
+                return kb / 1024.0;
+            }
+        }
+    }
+    0.0
+}
+
+/// End-of-run summary: input, resources, NLR counts, type counts, and software metadata.
+fn print_run_summary(
+    cli: &Cli,
+    config: &RunConfig,
+    result: &nlr_cli::RunResult,
+    written: &[PathBuf],
+    elapsed: std::time::Duration,
+    peak_rss_mb: f64,
+) {
     let def = &result.def;
     let complete = result
         .nlrs
         .iter()
         .filter(|l| l.is_complete_nlr(def))
         .count();
-    println!("# FastNLR done");
-    println!("sequences\t{}", result.motifs_by_seq.len());
+    let mut type_counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for list in &result.nlrs {
+        *type_counts.entry(list.domain_string(def)).or_default() += 1;
+    }
+    let mut type_counts: Vec<(String, usize)> = type_counts.into_iter().collect();
+    type_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    println!("# FastNLR run summary");
+    println!(
+        "input file\t{}",
+        cli.input
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+    );
+    println!("threads\t{}", config.threads);
+    println!("peak memory\t{:.2} MB", peak_rss_mb);
+    println!("elapsed\t{:.2}s", elapsed.as_secs_f64());
     println!("NLR loci\t{}", result.nlrs.len());
     println!("complete NLR\t{}", complete);
-    println!("elapsed\t{:.2}s", elapsed.as_secs_f64());
+    println!("NLR types (count desc):");
+    for (class, count) in type_counts {
+        println!("{}\t{}", class, count);
+    }
     if written.is_empty() {
         println!("output files\t(none)");
     } else {
@@ -477,6 +593,9 @@ fn print_run_summary(result: &nlr_cli::RunResult, written: &[PathBuf], elapsed: 
             println!("  {}", p.display());
         }
     }
+    println!(
+        "FastNLR: high-speed, accurate NLR immune-receptor locus annotation for plant genomes | https://github.com/CropCoder/FastNLR"
+    );
 }
 
 /// Write all output files, returning the list of successfully written paths (for the summary).
@@ -486,57 +605,47 @@ fn write_outputs(cli: &Cli, result: &nlr_cli::RunResult) -> std::io::Result<Vec<
     let nlrs = &result.nlrs;
     let mut written: Vec<PathBuf> = Vec::new();
 
-    let prefix = cli.output_prefix.clone();
-    let resolve = |explicit: &Option<PathBuf>, suffix: &str| -> Option<PathBuf> {
-        explicit.clone().or_else(|| {
-            prefix
-                .as_ref()
-                .map(|p| PathBuf::from(format!("{}{}", p.display(), suffix)))
-        })
+    let resolve = |explicit: &Option<PathBuf>, suffix: &str| {
+        resolve_output_path(explicit, &cli.output_dir, &cli.output_prefix, suffix)
     };
 
     // Loci report txt.
-    if let Some(p) = resolve(&cli.output, ".nlr.txt") {
-        let mut f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        nlr_output::write_report_txt(&mut f, nlrs, def)
-            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-        written.push(p);
-    }
+    let p = resolve(&None::<PathBuf>, ".nlr.txt");
+    let mut f = std::fs::File::create(&p)
+        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+    nlr_output::write_report_txt(&mut f, nlrs, def)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
     // Loci GFF.
-    if let Some(p) = resolve(&cli.gff, ".nlr.gff") {
-        let mut f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        let date = now_date_string();
-        nlr_output::write_nlr_gff(&mut f, nlrs, def, &date, false)
-            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-        written.push(p);
-    }
+    let p = resolve(&cli.gff, ".nlr.gff");
+    let mut f = std::fs::File::create(&p)
+        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+    let date = now_date_string();
+    nlr_output::write_nlr_gff(&mut f, nlrs, def, &date, false)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
     // Loci BED.
-    if let Some(p) = resolve(&cli.bed, ".nlr.bed") {
-        let mut f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        nlr_output::write_nlr_bed(&mut f, nlrs, def)
-            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-        written.push(p);
-    }
+    let p = resolve(&cli.bed, ".nlr.bed");
+    let mut f = std::fs::File::create(&p)
+        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+    nlr_output::write_nlr_bed(&mut f, nlrs, def)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
     // Motif BED.
-    if let Some(p) = resolve(&cli.motif_bed, ".motifs.bed") {
-        let mut f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        let motifs = all_motifs(result);
-        nlr_output::write_motif_bed(&mut f, &motifs, def, false)
-            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-        written.push(p);
-    }
+    let p = resolve(&cli.motif_bed, ".motifs.bed");
+    let mut f = std::fs::File::create(&p)
+        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+    let motifs = all_motifs(result);
+    nlr_output::write_motif_bed(&mut f, &motifs, def, false)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
     // NB-ARC alignment fasta.
-    if let Some(p) = resolve(&cli.alignment, ".nbarc.fasta") {
-        let mut f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        nlr_output::write_nbarc_alignment_fasta(&mut f, nlrs, def, true)
-            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-        written.push(p);
-    }
+    let p = resolve(&cli.alignment, ".nbarc.fasta");
+    let mut f = std::fs::File::create(&p)
+        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+    nlr_output::write_nbarc_alignment_fasta(&mut f, nlrs, def, true)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
     // Loci sequence fasta (-f: genome.fasta out.fasta flanking).
     // Extracts from ALL contigs (multi-contig fix), grouping NLRs by contig name.
     if let Some(args) = &cli.loci {

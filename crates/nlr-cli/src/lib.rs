@@ -212,8 +212,7 @@ pub fn run_with_progress(
 
         scanned += chunk_len;
         if let Some(pb) = progress {
-            pb.set_length(scanned); // total grows as streaming discovers fragments
-            pb.inc(chunk_len);
+            pb.set_position(scanned);
         }
         if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
             break;
