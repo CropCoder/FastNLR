@@ -91,9 +91,12 @@ fn find_seeds(
                 s.push(next.id);
                 potential.push(next.clone());
                 cur = next;
-                let seeded = match relaxed_seed_min_nbarc {
-                    Some(n) => def.is_seed_relaxed(&s, n),
-                    None => def.is_seed(&s),
+                let seeded = if let Some(cfg) = def.flexible_seed() {
+                    def.is_seed_flexible(&s, &cfg)
+                } else if let Some(n) = relaxed_seed_min_nbarc {
+                    def.is_seed_relaxed(&s, n)
+                } else {
+                    def.is_seed(&s)
                 };
                 if seeded {
                     count += 1;

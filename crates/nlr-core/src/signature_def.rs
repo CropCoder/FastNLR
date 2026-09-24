@@ -200,6 +200,24 @@ pub fn motif_id_str(id: MotifId) -> String {
     format!("motif_{}", id)
 }
 
+/// 柔性播种配置：按结构域类别 + rank 顺序判定，而非精确 motif ID 串。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FlexibleSeedConfig {
+    /// 最少 NB-ARC motif 数（默认 3）。
+    pub min_nbarc: usize,
+    /// 是否要求包含 P-loop（motif_1）。
+    pub require_ploop: bool,
+}
+
+impl Default for FlexibleSeedConfig {
+    fn default() -> Self {
+        FlexibleSeedConfig {
+            min_nbarc: 3,
+            require_ploop: false,
+        }
+    }
+}
+
 /// NLR annotation signature definition (access interface for rank/category/color/seed/consensus/ploop).
 ///
 /// 内置表都是编译期常量；额外类别（外部 motif 库用）放在 HashMap 里，因此本结构不再是零大小、
@@ -212,6 +230,8 @@ pub struct AnnotatorSignatureDefinition {
     extra_seeds: Vec<Vec<MotifId>>,
     /// 外部库额外声明的 signature（预过滤用）。
     extra_signatures: Vec<Vec<MotifId>>,
+    /// 柔性播种配置（None = 使用原有精确匹配 / relaxed-seed 逻辑）。
+    flexible_seed: Option<FlexibleSeedConfig>,
 }
 
 /// Number of built-in motifs. Ids above this value are treated as library-specific motifs;
@@ -224,6 +244,7 @@ impl AnnotatorSignatureDefinition {
             extra_categories: std::collections::HashMap::new(),
             extra_seeds: Vec::new(),
             extra_signatures: Vec::new(),
+            flexible_seed: None,
         }
     }
 
@@ -238,6 +259,18 @@ impl AnnotatorSignatureDefinition {
         self.extra_seeds = seeds;
         self.extra_signatures = signatures;
         self
+    }
+
+    /// 启用柔性播种（按 NB-ARC 结构域 + rank 顺序）。
+    pub fn with_flexible_seed(mut self, cfg: FlexibleSeedConfig) -> Self {
+        self.flexible_seed = Some(cfg);
+        self
+    }
+
+    /// 返回柔性播种配置（启用时为 Some）。
+    #[inline]
+    pub fn flexible_seed(&self) -> Option<FlexibleSeedConfig> {
+        self.flexible_seed
     }
 
     /// Rank of the motif. 超出内置表时返回 15（最低档），不会 panic。
@@ -328,6 +361,28 @@ impl AnnotatorSignatureDefinition {
             .filter(|&&id| self.category(id) == DomainCategory::Nbarc)
             .count();
         n_nbarc >= min_nbarc
+    }
+
+    /// 柔性播种：取 seq 中按出现顺序排列的 NB-ARC motif，要求数量 >= min_nbarc、
+    /// rank 单调不减，且（可选）包含 P-loop。
+    pub fn is_seed_flexible(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
+        let nbarc: Vec<MotifId> = seq
+            .iter()
+            .copied()
+            .filter(|&id| self.is_nbarc(id))
+            .collect();
+        if nbarc.len() < cfg.min_nbarc {
+            return false;
+        }
+        if cfg.require_ploop && !nbarc.contains(&PLOOP_MOTIF) {
+            return false;
+        }
+        nbarc.windows(2).all(|w| self.rank(w[0]) <= self.rank(w[1]))
+    }
+
+    /// 柔性预过滤：片段命中任意既有 signature，或满足柔性播种条件，即保留。
+    pub fn has_signature_flexible(&self, ids: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
+        self.has_signature(ids) || self.is_seed_flexible(ids, cfg)
     }
 
     /// Whether the motif id sequence contains an NLR signature (a contiguous subsequence matches any signature).

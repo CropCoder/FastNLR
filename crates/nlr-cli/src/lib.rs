@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
-use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory};
+use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory, FlexibleSeedConfig};
 
 /// Built-in mot.txt (PWM config), embedded at compile time for default distribution.
 pub const EMBEDDED_MOT: &str = include_str!("../data/mot.txt");
@@ -45,6 +45,8 @@ pub struct RunConfig {
     pub extra_seeds: Vec<String>,
     /// Extra signatures declared by an external library (e.g. "21,4").
     pub extra_signatures: Vec<String>,
+    /// Flexible seeding config (category + rank based); `None` keeps exact-match seeding.
+    pub flexible_seed: Option<FlexibleSeedConfig>,
 }
 
 impl RunConfig {
@@ -103,6 +105,7 @@ impl RunConfig {
             motif_categories: Vec::new(),
             extra_seeds: Vec::new(),
             extra_signatures: Vec::new(),
+            flexible_seed: None,
         }
     }
 }
@@ -138,10 +141,13 @@ pub fn run_with_progress(
 
     // 1. Load config (Arc-shared across threads). User paths take precedence over built-in.
     let def_cfg = load_motif_definition(config)?;
-    let signature_def = AnnotatorSignatureDefinition::new()
+    let mut signature_def = AnnotatorSignatureDefinition::new()
         .with_extra_categories(RunConfig::parse_motif_categories(&config.motif_categories))
         .with_extra_rules(RunConfig::parse_id_lists(&config.extra_seeds),
                           RunConfig::parse_id_lists(&config.extra_signatures));
+    if let Some(cfg) = config.flexible_seed {
+        signature_def = signature_def.with_flexible_seed(cfg);
+    }
     let parser = nlr_scan::MotifParser::with_thresholds(
         def_cfg, config.motif_prelim_p, config.motif_accept_p);
     let parser = std::sync::Arc::new(parser);
@@ -287,7 +293,12 @@ fn scan_one_fragment(
             continue;
         }
         let ids: Vec<u8> = list.motifs.iter().map(|m| m.id).collect();
-        if !signature_def.has_signature(&ids) {
+        let keep = if let Some(cfg) = signature_def.flexible_seed() {
+            signature_def.has_signature_flexible(&ids, &cfg)
+        } else {
+            signature_def.has_signature(&ids)
+        };
+        if !keep {
             continue;
         }
         let (frame, strand) = parse_frame(&pseq.identifier);

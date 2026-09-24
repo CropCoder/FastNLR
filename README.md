@@ -9,7 +9,7 @@ A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.2.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.3.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 [![Platform](https://img.shields.io/badge/platform-linux%20x86__64-lightgrey.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Features](#features) · [Quick Start](#quick-start) · [Usage](#usage) · [Extended motif library](#extended-motif-library) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Citation](#citation)
@@ -27,19 +27,22 @@ NLR genes encode a major class of plant intracellular immune receptors and are a
 - **Zero-config, self-contained binary** — the standard `mot.txt` (PWM) and `store.txt` (CDF) configs are embedded at compile time. Run on any FASTA with no extra files; override with `-x`/`-y` when you need custom motifs.
 - **Extensible motif libraries** — supports more than the built-in 20 motifs, plus CLI-declared domain categories, seed combinations, and signatures. An optional RNL/helper-CC + TIR library is included for recovering RNL and TIR-only loci.
 - **High performance** — Rust + [rayon](https://github.com/rayon-rs/rayon) multithreading, memory-mapped large-file FASTA parsing, and SIMD (`wide`) cross-window scoring. Typical plant genomes finish in seconds to minutes.
-- **Coordinate-consistent output** — `-f` loci extraction matches the GFF/BED coordinates exactly; see [Implementation notes](#implementation-notes).
+- **Coordinate-consistent output** — loci FASTA extraction matches the GFF/BED coordinates exactly; see [Implementation notes](#implementation-notes).
 - **Resumable runs** — `--checkpoint` saves motif results after the scan; reruns skip the expensive scan and go straight to assembly.
 - **Rich reporting** — human-readable summary, TSV statistics (global / per-chromosome / per-motif), and PNG plots out of the box.
-- **Complete default output** — `-o <dir>` writes the full result set by default:
-  NLR text report, GFF3, BED12, motif BED, and NB-ARC alignment FASTA.
+- **Complete default output** — `-o <dir>` writes the full result set by default with
+  the input genome filename as prefix: NLR text report, GFF3, BED12, motif BED,
+  NB-ARC alignment FASTA, loci FASTA, TSV statistics, summary, and PNG plots.
 - **Clear CLI help** — running `fastnlr`, `fastnlr -h`, or `fastnlr --help` shows
   a layered help interface with the ASCII banner, key parameters, and full documentation.
 - **Live progress and summary** — optional progress bar with percentage, elapsed time,
   and remaining-time estimate; the run summary reports input, threads, peak memory,
   elapsed time, and NLR class counts.
 - **Graceful interruption** — Ctrl-C outputs whatever batches have completed instead of dropping everything.
-- **Familiar flag interface** — supports `-i/-x/-y/-o/-p/-g/-b/-m/-a/-f/-c/-t/-n`
-  workflows plus long-form observation and recall options.
+- **Flexible seeding** — optional category/rank-based seeding (`--flexible-seed`)
+  recovers divergent NLR/RNL loci that exact motif-id seed combinations miss.
+- **Familiar flag interface** — supports `-i/-x/-y/-o/-t/-n` workflows plus
+  long-form recall and observability options.
 
 ## Quick Start
 
@@ -82,30 +85,29 @@ to `-h` for brief help and `--help` for the full reference.
 ### Examples
 
 ```bash
-# 1. Basic loci annotation (uses built-in mot.txt / store.txt)
-fastnlr -i genome.fasta -o out
+# 1. Basic full run (uses built-in mot.txt / store.txt)
+#    -> results/<genome>.nlr.txt, .nlr.gff, .nlr.bed, .motifs.bed,
+#       .nbarc.fasta, .loci.fasta, .stats.tsv, .summary.txt, .plots/
+fastnlr -i genome.fasta -o results
 
-# 2. Prefix-derived subfiles + multithreading
-#    -> out/out.nlr.txt, out/out.nlr.gff, out/out.nlr.bed,
-#       out/out.motifs.bed, out/out.nbarc.fasta
-fastnlr -i genome.fasta -o out -t 8
+# 2. Multithreading
+fastnlr -i genome.fasta -o results -t 8
 
-# 3. Full run: report + summary + plots + checkpoint resume
-fastnlr -i genome.fasta -o out \
-  --stats stats.tsv --summary --plot plots/ --checkpoint ckpt/
+# 3. Checkpoint resume (skip scan on rerun)
+fastnlr -i genome.fasta -o results --checkpoint ckpt/
 
-# 4. Extract NLR loci sequences (±2000 bp flanking) across ALL contigs
-fastnlr -i genome.fasta -o out -f genome.fasta loci.fasta 2000
+# 4. Flexible seeding for divergent NLR/RNL
+fastnlr -i genome.fasta -o results --flexible-seed 3
 
-# 5. Custom motif config override
-fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o out
+# 5. Loci sequence flanking length (default 2000)
+fastnlr -i genome.fasta -o results --flank 5000
 
-# 6. Resume from checkpoint after an interrupted run
-fastnlr -i genome.fasta -o out --checkpoint ckpt/
+# 6. Custom motif config override
+fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o results
 
 # 7. Optional RNL/helper-CC + TIR extended library (28 motifs)
 source data/motif_library_rnl_tir/flags.sh
-fastnlr -i genome.fasta -o out \
+fastnlr -i genome.fasta -o results \
   -x data/motif_library_rnl_tir/mot.txt \
   -y data/motif_library_rnl_tir/store.txt \
   --motif-category "$TIS_MOTIF_CATEGORY" \
@@ -138,19 +140,15 @@ fastnlr -i genome.fasta -o out \
 | `--motif-accept-p <p>` | Final motif-accept p-value threshold (default `1e-5`). |
 | `--motif-prelim-p <p>` | Fragment prefilter p-value threshold (default `1e-4`). |
 | `--relaxed-seed <n>` | Relaxed seeding: accept a consecutive hit run with at least `n` NB-ARC motifs (off by default). |
+| `--flexible-seed <n>` | Flexible seeding: seed when at least `n` NB-ARC motifs appear in rank order (category/rank-based instead of exact motif-id combinations). |
+| `--require-ploop` | Require the P-loop motif (`motif_1`) for `--flexible-seed` (higher precision). |
 
-**Output** — `-o <dir>` is required; by default the full output set is written.
+**Output** — `-o <dir>` is required; the full output set is written by default.
 
 | Flag | Description |
 |------|-------------|
-| `-o <OUTPUT.DIR>` | Output directory. **Required.** |
-| `-g <gff>` | NLR loci (GFF3). |
-| `-b <bed>` | NLR loci (BED12, color-coded). |
-| `-m <bed>` | Motif intervals (BED). |
-| `-a <fasta>` | NB-ARC multiple alignment (fasta). |
-| `-f <genome> <out> <bp>` | Loci sequences (fasta) with flanking bp; extracts from every contig. |
-| `-c <tsv>` | Export precomputed motif results (reusable as checkpoint import). |
-| `-p, --output-prefix <p>` | Output prefix (default: `out`); auto-derives the full output set. |
+| `-o <OUTPUT.DIR>` | Output directory (created if missing). All results are written here with the input genome filename as prefix. **Required.** |
+| `--flank <bp>` | Flanking bases for loci sequence extraction (default `2000`). |
 
 **Run control**
 
@@ -161,9 +159,6 @@ fastnlr -i genome.fasta -o out \
 | `--checkpoint <dir>` | Save/load motif results to skip rescan. |
 | `--tmpdir <dir>` | Temp directory. |
 | `--progress <auto\|bar\|simple\|off>` | Progress bar (default auto). |
-| `--stats <file>` | TSV statistics report. |
-| `--plot <dir>` | PNG statistics plots. |
-| `--summary` | Per-chromosome summary to stdout. |
 | `--log-level <lvl>` | trace/debug/info/warn/error (default info). |
 
 Run `fastnlr --help` for the full, grouped reference.
@@ -189,23 +184,29 @@ fastnlr -i genome.fasta -o out \
 
 `flags.sh` contains the complete parameter lists; adjust `-x`/`-y` paths if you copy the files elsewhere. The companion [`data/motif_library_rnl_tir/README.md`](data/motif_library_rnl_tir/README.md) records the motif-design rationale, benchmark results, and regeneration workflow.
 
-For sensitivity tuning on divergent NLRs, three additional flags are available: `--motif-accept-p`, `--motif-prelim-p`, and `--relaxed-seed` (see the flag tables below).
+For sensitivity tuning on divergent NLRs, additional flags are available: `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed`, and `--flexible-seed` (see the flag tables below).
 
 ## Output Formats
 
-- **`-o <dir>` output directory** — by default contains `out.nlr.txt`, `out.nlr.gff`,
-  `out.nlr.bed`, `out.motifs.bed`, and `out.nbarc.fasta`.
-- **`out.nlr.txt`** — one row per NLR: `seqname, name, domain-class, start, end, strand, motif-list`.
-- **`-g` GFF3** — header relabeled for FastNLR with a live system timestamp; `source` column = `FastNLR`.
+`-o <dir>` is the output directory and `<prefix>` is the input genome filename
+(without the `.fa`/`.fasta`/`.fna`/`.gz` extension). FastNLR writes the complete
+result set by default:
+
+- **`<prefix>.nlr.txt`** — one row per NLR: `seqname, name, domain-class, start, end, strand, motif-list`.
+- **`<prefix>.nlr.gff`** — GFF3 with a live system timestamp; `source` column = `FastNLR`.
   ```
   ##gff-version 2
-  ##source-version FastNLR V1.2.0
-  ##date 2026-08-20 09:30:01
+  ##source-version FastNLR V1.3.0
+  ##date 2026-09-24 10:00:00
   ##Type DNA
   ```
-- **`-b` BED12** — color-coded blocks (green = complete, orange = partial, red = contains stop codon); reverse-strand blocks reversed.
-- **`-a` NB-ARC alignment** — P-loop-anchored multiple alignment with gap-padding for missing motifs.
-- **`-f` loci fasta** — extracted ±flanking sequence, reverse-complemented on the reverse strand, 100 bp per line.
+- **`<prefix>.nlr.bed`** — BED12, color-coded blocks (green = complete, orange = partial, red = contains stop codon); reverse-strand blocks reversed.
+- **`<prefix>.motifs.bed`** — motif intervals with p-values.
+- **`<prefix>.nbarc.fasta`** — P-loop-anchored NB-ARC multiple alignment with gap-padding.
+- **`<prefix>.loci.fasta`** — extracted ±flanking sequence, reverse-complemented on the reverse strand, 100 bp per line.
+- **`<prefix>.stats.tsv`** — global / per-chromosome / per-motif statistics.
+- **`<prefix>.summary.txt`** — human-readable run summary (NLR counts, class counts, output files).
+- **`<prefix>.plots/`** — PNG statistics plots: motif counts, per-chromosome NLR counts, and NLR-type counts.
 
 ## Architecture
 
@@ -229,11 +230,11 @@ nlr-cli      clap CLI entry + pipeline orchestration (rayon + checkpoint + SIGIN
 
 FastNLR enforces coordinate-consistent behavior across its output formats:
 
-1. `-a` uses corrected P-loop location logic.
-2. `-a` replaces stop codons and unknown amino acids with `_`.
-3. `-f` applies a unified coordinate clamp on the last contig.
-4. `-f` extracts loci from every contig, not only the first.
-5. `-f` keeps extracted sequence coordinates consistent with the reported GFF/BED coordinates.
+1. The NB-ARC alignment FASTA uses corrected P-loop location logic.
+2. The NB-ARC alignment FASTA replaces stop codons and unknown amino acids with `_`.
+3. The loci FASTA applies a unified coordinate clamp on the last contig.
+4. The loci FASTA extracts loci from every contig, not only the first.
+5. The loci FASTA keeps extracted sequence coordinates consistent with the reported GFF/BED coordinates.
 6. `##date` reflects the current system time.
 7. GFF `##source-version` and the `source` column are labeled `FastNLR`.
 8. p-values in motif BED and export TSV use scientific notation for very small values.

@@ -401,7 +401,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.2.0</span>
+      <span class="ver">v1.3.0</span>
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -568,7 +568,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.2.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.3.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 cd fastnlr-linux-x86_64
 ./fastnlr --version
@@ -590,8 +590,10 @@ cargo build --release
       </div>
 
       <p class="lead reveal" style="margin-top: 26px; font-size: 15px;">
-        The <code>-o</code> directory contains <code>out.nlr.txt</code>, <code>out.nlr.gff</code>,
-        <code>out.nlr.bed</code>, <code>out.motifs.bed</code>, and <code>out.nbarc.fasta</code>.
+        The <code>-o</code> directory contains the full result set prefixed by the genome
+        filename: <code>*.nlr.txt</code>, <code>*.nlr.gff</code>, <code>*.nlr.bed</code>,
+        <code>*.motifs.bed</code>, <code>*.nbarc.fasta</code>, <code>*.loci.fasta</code>,
+        <code>*.stats.tsv</code>, <code>*.summary.txt</code>, and <code>*.plots/</code>.
       </p>
     </div>
   </div>
@@ -611,19 +613,19 @@ cargo build --release
     <div class="usage-grid">
       <div class="usage-item reveal">
         <div class="u-label">Basic annotation</div>
-        <code>fastnlr -i genome.fasta -o out</code>
+        <code>fastnlr -i genome.fasta -o results</code>
       </div>
       <div class="usage-item reveal">
-        <div class="u-label">Full run with reporting</div>
-        <code>fastnlr -i genome.fasta -o out --stats stats.tsv --summary --plot plots/ --checkpoint ckpt/</code>
+        <div class="u-label">Multithreading</div>
+        <code>fastnlr -i genome.fasta -o results -t 8</code>
       </div>
       <div class="usage-item reveal">
-        <div class="u-label">Extract loci sequences</div>
-        <code>fastnlr -i genome.fasta -o out -f genome.fasta loci.fasta 2000</code>
+        <div class="u-label">Flexible seeding</div>
+        <code>fastnlr -i genome.fasta -o results --flexible-seed 3</code>
       </div>
       <div class="usage-item reveal">
         <div class="u-label">Custom motif config</div>
-        <code>fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o out</code>
+        <code>fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o results</code>
       </div>
     </div>
   </div>

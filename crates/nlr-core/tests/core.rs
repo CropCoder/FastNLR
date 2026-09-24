@@ -4,7 +4,7 @@
 mod tests {
     use nlr_core::motif::Motif;
     use nlr_core::motif_list::MotifList;
-    use nlr_core::signature_def::AnnotatorSignatureDefinition;
+    use nlr_core::signature_def::{AnnotatorSignatureDefinition, FlexibleSeedConfig};
     use nlr_core::strand::Strand;
 
     fn def() -> AnnotatorSignatureDefinition {
@@ -91,5 +91,32 @@ mod tests {
         let a2 = MotifList::new("a".into(), vec![am]);
         let b2 = MotifList::new("b".into(), vec![bm]);
         assert!(a2.can_be_merged_with(&b2, 500, &d));
+    }
+
+    #[test]
+    fn flexible_seed_rank_monotonic() {
+        let d = def();
+        let cfg = FlexibleSeedConfig { min_nbarc: 3, require_ploop: false };
+        // RNL 形状 [6,4,10,3,2]：rank 5,6,8,9,11 递增
+        assert!(d.is_seed_flexible(&[6, 4, 10, 3, 2], &cfg));
+        // 缺 P-loop，require_ploop=true 时不通过
+        let cfg_ploop = FlexibleSeedConfig { min_nbarc: 3, require_ploop: true };
+        assert!(!d.is_seed_flexible(&[6, 4, 10, 3, 2], &cfg_ploop));
+        // 含 P-loop 时通过
+        assert!(d.is_seed_flexible(&[1, 6, 4], &cfg_ploop));
+        // rank 反序（2,3,12,10 -> 11,9,10,8 非单调）
+        assert!(!d.is_seed_flexible(&[2, 3, 12, 10], &cfg));
+        // 数量不足
+        assert!(!d.is_seed_flexible(&[1, 6], &cfg));
+    }
+
+    #[test]
+    fn flexible_signature_filter() {
+        let d = def();
+        let cfg = FlexibleSeedConfig { min_nbarc: 3, require_ploop: false };
+        // RNL 串不含既有 signature，但柔性预过滤应放行
+        assert!(d.has_signature_flexible(&[6, 4, 10, 3, 2], &cfg));
+        // 既有 signature 命中的仍保留
+        assert!(d.has_signature_flexible(&[1, 6, 4, 5], &cfg));
     }
 }

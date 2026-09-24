@@ -22,6 +22,8 @@ pub struct RunStats {
     pub per_chromosome: BTreeMap<String, (usize, usize, usize)>,
     /// Hit count per motif id.
     pub motif_counts: BTreeMap<u8, usize>,
+    /// NLR 结构域类型计数（domain_string -> count）。
+    pub nlr_type_counts: BTreeMap<String, usize>,
 }
 
 /// Aggregate statistics from run results.
@@ -52,6 +54,11 @@ pub fn collect(
         }
     }
 
+    let mut nlr_type_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for list in nlrs {
+        *nlr_type_counts.entry(list.domain_string(def)).or_default() += 1;
+    }
+
     RunStats {
         seq_count,
         motif_total,
@@ -59,6 +66,7 @@ pub fn collect(
         nlr_complete,
         per_chromosome,
         motif_counts,
+        nlr_type_counts,
     }
 }
 
