@@ -24,7 +24,7 @@ pub struct RunConfig {
     pub store_file: Option<PathBuf>,
     /// Fragment length (default 20000).
     pub fragment_length: usize,
-    /// Overlap (default 5000).
+    /// Overlap (default 2000).
     pub overlap: usize,
     /// Thread count (default auto-detected).
     pub threads: usize,
@@ -93,7 +93,7 @@ impl RunConfig {
             mot_file,
             store_file,
             fragment_length: 20000,
-            overlap: 5000,
+            overlap: 2000,
             threads: std::thread::available_parallelism()
                 .map(|n| n.get())
                 .unwrap_or(1),
@@ -204,7 +204,7 @@ pub fn run_with_progress(
                     if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
                         return None;
                     }
-                    Some(scan_one_fragment(fragment, &parser, &signature_def))
+                    Some(scan_one_fragment(fragment, &parser))
                 })
                 .collect()
         });
@@ -234,6 +234,15 @@ pub fn run_with_progress(
     for v in motifs_by_seq.values_mut() {
         v.sort();
         dedup_adjacent(v);
+    }
+
+    // 3.5. Signature 预过滤：按 (contig, strand, frame) 的局部 motif 簇判定，与切片边界无关。
+    //      簇间距取 fragment_length（20 kb），与旧实现单个 fragment 的判定尺度对齐，
+    //      但改由 motif 自身坐标定义簇，故不受切片相位影响。
+    //      必须在排序 + 去重之后执行，因为簇的切分依赖排序结果。
+    let cluster_gap = config.fragment_length as u64;
+    for v in motifs_by_seq.values_mut() {
+        filter_motifs_by_signature(v, &signature_def, cluster_gap);
     }
 
     // 4. Assemble NLRs per contig. Contigs are independent, so this is parallelized;
@@ -281,7 +290,6 @@ pub fn run_with_progress(
 fn scan_one_fragment(
     fragment: &nlr_seq::translate::BioSequence,
     parser: &nlr_scan::MotifParser,
-    signature_def: &AnnotatorSignatureDefinition,
 ) -> Vec<(String, Motif)> {
     let (id, offset) = parse_fragment_id(&fragment.identifier);
     let fragment_len = fragment.len() as u64; // actual length (last fragment may be < fragment_length)
@@ -292,15 +300,8 @@ fn scan_one_fragment(
         if list.motifs.is_empty() {
             continue;
         }
-        let ids: Vec<u8> = list.motifs.iter().map(|m| m.id).collect();
-        let keep = if let Some(cfg) = signature_def.flexible_seed() {
-            signature_def.has_signature_flexible(&ids, &cfg)
-        } else {
-            signature_def.has_signature(&ids)
-        };
-        if !keep {
-            continue;
-        }
+        // 注意：signature 预过滤已从片段级上移到 (contig, strand, frame) 级，
+        // 见 `filter_motifs_by_signature`。此处只负责扫描与坐标映射。
         let (frame, strand) = parse_frame(&pseq.identifier);
         for motif in list.motifs {
             let mut m = motif;
@@ -377,6 +378,72 @@ fn dedup_adjacent(motifs: &mut Vec<Motif>) {
         }
         i += 1;
     }
+}
+
+/// 局部 motif 簇级的 signature 预过滤（与切片边界无关）。
+///
+/// 背景：旧实现把预过滤放在单个 fragment（约 20 kb 窗口、单帧）上，匹配不到 signature 就把该
+/// fragment 的全部命中丢掉。signature 要求 motif 邻接，因此切片边界会切断邻接关系，结果随
+/// overlap / fragment_length 变化（实测同一区间在不同边界下 motif 数不同，个别位点丢失 LRR）。
+///
+/// 现改为按 (contig, strand, frame) 分组、再按 motif 自身坐标切成局部簇：
+/// - 分组键只依赖 motif 的链与读码框，簇边界只依赖相邻 motif 的间距，与切片边界无关；
+/// - `motifs` 已按「链优先 + 坐标」排序，组内顺序即该读码框的翻译顺序（正向升序、反向降序）；
+/// - 相邻 motif 间距超过 `cluster_gap` 即断开新簇，等价于把「一个局部候选位点区域」当作判定单元，
+///   与旧实现的 20 kb 窗口尺度接近但相位固定，故能保留过滤强度又消除边界依赖。
+fn filter_motifs_by_signature(
+    motifs: &mut Vec<Motif>,
+    def: &AnnotatorSignatureDefinition,
+    cluster_gap: u64,
+) {
+    if motifs.is_empty() {
+        return;
+    }
+    // 6 个桶：正向 0/1/2 帧 + 反向 0/1/2 帧；桶内索引保持排序后的翻译顺序。
+    let mut buckets: [Vec<usize>; 6] = Default::default();
+    for (i, m) in motifs.iter().enumerate() {
+        let base = if m.strand == nlr_core::strand::Strand::Forward { 0 } else { 3 };
+        buckets[base + (m.frame as usize % 3)].push(i);
+    }
+
+    let mut keep = vec![false; motifs.len()];
+    for bucket in buckets.iter() {
+        if bucket.is_empty() {
+            continue;
+        }
+        // 沿翻译顺序把该帧的 motif 切成局部簇（间距 > cluster_gap 断开）。
+        let mut start = 0usize;
+        while start < bucket.len() {
+            let mut end = start + 1;
+            while end < bucket.len() {
+                let prev = &motifs[bucket[end - 1]];
+                let cur = &motifs[bucket[end]];
+                if cur.dna_start.abs_diff(prev.dna_start) > cluster_gap {
+                    break;
+                }
+                end += 1;
+            }
+            // 簇内命中任一 signature（或满足柔性播种）则保留整簇。
+            let ids: Vec<u8> = bucket[start..end].iter().map(|&i| motifs[i].id).collect();
+            let matched = match def.flexible_seed() {
+                Some(cfg) => def.has_signature_flexible(&ids, &cfg),
+                None => def.has_signature(&ids),
+            };
+            if matched {
+                for &i in &bucket[start..end] {
+                    keep[i] = true;
+                }
+            }
+            start = end;
+        }
+    }
+
+    let mut idx = 0usize;
+    motifs.retain(|_| {
+        let k = keep[idx];
+        idx += 1;
+        k
+    });
 }
 
 /// Flatten all motifs into a list (for `-m` / `-c` output).
