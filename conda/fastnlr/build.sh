@@ -2,7 +2,7 @@
 set -euxo pipefail
 
 cargo-bundle-licenses --format yaml --output "${SRC_DIR}/THIRDPARTY.yml"
-cargo install --locked --no-track --root "${PREFIX}" --path crates/nlr-cli
+cargo install --locked --no-track --bins --root "${PREFIX}" --path crates/nlr-cli
 
 mkdir -p "${PREFIX}/licenses"
 cp "${SRC_DIR}/THIRDPARTY.yml" "${PREFIX}/licenses/THIRDPARTY.yml"

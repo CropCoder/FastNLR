@@ -20,13 +20,11 @@ requirements:
     - {{ compiler('c') }}
     - {{ stdlib("c") }}
     - cargo-bundle-licenses
-  host:
-    - pkg-config
-  run:
 
 test:
   commands:
     - fastnlr --version
+    - fastnlr --help
 
 about:
   home: https://github.com/CropCoder/FastNLR
