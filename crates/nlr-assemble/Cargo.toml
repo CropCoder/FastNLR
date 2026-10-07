@@ -9,4 +9,4 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-nlr-core = { path = "../nlr-core", version = "1.0.0" }
+nlr-core = { path = "../nlr-core", version = "1.3.0" }

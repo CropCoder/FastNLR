@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-nlr-core = { path = "../nlr-core", version = "1.0.0" }
-nlr-config = { path = "../nlr-config", version = "1.0.0" }
-nlr-seq = { path = "../nlr-seq", version = "1.0.0" }
+nlr-core = { path = "../nlr-core", version = "1.3.0" }
+nlr-config = { path = "../nlr-config", version = "1.3.0" }
+nlr-seq = { path = "../nlr-seq", version = "1.3.0" }
 wide = { workspace = true }
