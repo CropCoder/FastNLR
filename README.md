@@ -9,7 +9,7 @@ A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.3.1-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.3.2-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 [![Platform](https://img.shields.io/badge/platform-linux%20x86__64-lightgrey.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Features](#features) · [Quick Start](#quick-start) · [Usage](#usage) · [Extended motif library](#extended-motif-library) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Citation](#citation)
@@ -196,7 +196,7 @@ result set by default:
 - **`<prefix>.nlr.gff`** — GFF3 with a live system timestamp; `source` column = `FastNLR`.
   ```
   ##gff-version 2
-  ##source-version FastNLR V1.3.1
+  ##source-version FastNLR V1.3.2
   ##date 2026-09-24 10:00:00
   ##Type DNA
   ```

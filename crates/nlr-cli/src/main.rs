@@ -26,7 +26,7 @@ const HELP_BANNER: &str = r#"   ____           __   _  __ __    ___
  / _/ / _ `/(_-</ __//    // /__ / , _/
 /_/   \_,_//___/\__//_/|_//____//_/|_| 
 
-FastNLR v1.3.1
+FastNLR v1.3.2
 
 Author:     Jiwen Zhao (https://github.com/CropCoder)
 Repository: https://github.com/CropCoder/FastNLR
@@ -57,7 +57,7 @@ fn print_no_args_help() {
     version,
     before_help = HELP_BANNER,
     long_version = concat!(
-        "1.3.1\n",
+        "1.3.2\n",
         "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
