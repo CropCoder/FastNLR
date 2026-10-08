@@ -487,20 +487,51 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
     tracing::info!("expected outputs: {}", targets.join(", "));
 }
 
-/// Read peak resident set size from `/proc/self/status` (Linux).
-fn read_peak_rss_mb() -> f64 {
-    let status = match std::fs::read_to_string("/proc/self/status") {
-        Ok(s) => s,
-        Err(_) => return 0.0,
-    };
-    for line in status.lines() {
-        if let Some(value) = line.strip_prefix("VmHWM:") {
-            if let Ok(kb) = value.trim().split_whitespace().next().unwrap_or("0").parse::<f64>() {
-                return kb / 1024.0;
+/// 峰值常驻内存（MB）。
+///
+/// - Linux：读 `/proc/self/status` 的 `VmHWM`（单位 kB）；
+/// - macOS：`getrusage(RUSAGE_SELF).ru_maxrss`（单位字节）；
+/// - 其它平台：返回 `None`，摘要里显示 `n/a`。
+///
+/// 旧实现只支持 Linux，在 macOS/Windows 上恒返回 0，摘要会打印误导性的 `0.00 MB`。
+fn read_peak_rss_mb() -> Option<f64> {
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        for line in status.lines() {
+            if let Some(value) = line.strip_prefix("VmHWM:") {
+                let kb: f64 = value.split_whitespace().next()?.parse().ok()?;
+                return Some(kb / 1024.0);
             }
         }
+        None
     }
-    0.0
+
+    #[cfg(target_os = "macos")]
+    {
+        // SAFETY: getrusage 只写入调用方提供的结构体，失败时返回非 0。
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        let rc = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+        if rc == 0 {
+            // macOS 的 ru_maxrss 单位是字节（Linux 是 kB，故这条分支不共用换算）。
+            Some(usage.ru_maxrss as f64 / (1024.0 * 1024.0))
+        } else {
+            None
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        None
+    }
+}
+
+/// 摘要中的峰值内存文本：取不到时显示 `n/a`，避免出现误导性的 0。
+fn format_peak_rss(peak_mb: Option<f64>) -> String {
+    match peak_mb {
+        Some(mb) => format!("{:.2} MB", mb),
+        None => "n/a".to_string(),
+    }
 }
 
 /// 生成运行摘要文本（写入 .summary.txt 并打印到 stdout）。
@@ -510,7 +541,7 @@ fn build_summary(
     result: &nlr_cli::RunResult,
     written: &[PathBuf],
     elapsed: std::time::Duration,
-    peak_rss_mb: f64,
+    peak_rss_mb: Option<f64>,
 ) -> String {
     use std::fmt::Write as _;
     let def = &result.def;
@@ -537,7 +568,7 @@ fn build_summary(
             .unwrap_or("unknown")
     );
     let _ = writeln!(s, "# threads\t{}", config.threads);
-    let _ = writeln!(s, "# peak memory\t{:.2} MB", peak_rss_mb);
+    let _ = writeln!(s, "# peak memory\t{}", format_peak_rss(peak_rss_mb));
     let _ = writeln!(s, "# elapsed\t{:.2}s", elapsed.as_secs_f64());
     let _ = writeln!(s, "# NLR loci\t{}", result.nlrs.len());
     let _ = writeln!(s, "# complete NLR\t{}", complete);
@@ -658,4 +689,22 @@ fn write_outputs(
     written.push(p3);
 
     Ok(written)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_peak_rss, read_peak_rss_mb};
+
+    #[test]
+    fn peak_rss_text_is_explicit_when_unavailable() {
+        assert_eq!(format_peak_rss(Some(2048.0)), "2048.00 MB");
+        assert_eq!(format_peak_rss(None), "n/a");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn peak_rss_is_available_on_linux() {
+        let v = read_peak_rss_mb();
+        assert!(v.is_some_and(|mb| mb > 0.0), "Linux 上应能读到峰值内存: {v:?}");
+    }
 }

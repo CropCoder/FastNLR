@@ -55,6 +55,8 @@ tempfile = "3.10"
 memmap2 = "0.9"
 # SIMD vectorization (cross-window parallel scoring)
 wide = "0.7"
+# platform process metrics (macOS peak RSS via getrusage)
+libc = "0.2"
 
 [profile.release]
 opt-level = 3

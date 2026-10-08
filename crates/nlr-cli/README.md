@@ -121,6 +121,8 @@ All outputs are written by default; there is no opt-in flag per format.
 - Locus extraction reads the genome through `nlr_seq::fasta::read_all`, so peak memory for a
   full run scales with the genome size during the output stage.
 - The GFF date header uses UTC.
+- Peak memory is reported on Linux (`/proc/self/status`) and macOS (`getrusage`); on other
+  platforms the summary prints `n/a` instead of a misleading `0.00 MB`.
 
 ## Testing
 
