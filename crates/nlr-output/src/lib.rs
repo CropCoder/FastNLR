@@ -206,14 +206,15 @@ pub fn write_nbarc_alignment_fasta<W: Write>(
         let mut sequence = list.motifs[ploop_idx].protein_sequence.clone();
 
         // Starting one past ploop, concatenate along motif_order.
-        let mut idx = ploop_idx + 1;
+        // 游标只在命中期望 motif 时向后推进：中间夹带的重复 motif（例如重复的 motif_6）或
+        // 非 NB-ARC motif（例如 LRR）会被跳过而不占位，避免一次失配导致后续全部填 gap。
+        let mut cursor = ploop_idx + 1;
         for &expected in motif_order.iter().skip(1) {
-            // If the current motif matches expected, append; otherwise pad with '-'.
-            let matched = list.motifs.get(idx).filter(|m| m.id == expected);
-            match matched {
-                Some(m) => {
-                    sequence.push_str(&m.protein_sequence);
-                    idx += 1;
+            // 从游标起向后查找期望的 NB-ARC motif；找不到则按共识长度补 gap。
+            match list.motifs[cursor..].iter().position(|m| m.id == expected) {
+                Some(offset) => {
+                    sequence.push_str(&list.motifs[cursor + offset].protein_sequence);
+                    cursor += offset + 1;
                 }
                 None => {
                     let gap_len = def.consensus(expected).len();
