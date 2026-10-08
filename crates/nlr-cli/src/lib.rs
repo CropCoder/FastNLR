@@ -365,8 +365,8 @@ fn parse_frame(id: &str) -> (u8, nlr_core::strand::Strand) {
 
 /// Remove adjacent duplicates with the same motif id and DNA start.
 ///
-/// The loop advances after every deletion without retrying the same position. Given three
-/// identical adjacent motifs, this keeps the first two.
+/// 删除后不推进索引，因此连续三个及以上相同命中也能全部去掉（只保留第一条）；
+/// 旧实现在删除后仍前进，遇到三个相同相邻 motif 会残留一条。
 fn dedup_adjacent(motifs: &mut Vec<Motif>) {
     let mut i = 0;
     while i < motifs.len() {
@@ -375,8 +375,9 @@ fn dedup_adjacent(motifs: &mut Vec<Motif>) {
             && motifs[i].dna_start == motifs[i + 1].dna_start
         {
             motifs.remove(i + 1);
+        } else {
+            i += 1;
         }
-        i += 1;
     }
 }
 
@@ -502,4 +503,32 @@ pub fn load_checkpoint(
         motifs_by_seq,
         def,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nlr_core::strand::Strand;
+
+    fn dna_motif(id: u8, start: u64) -> Motif {
+        let mut m = Motif::new_protein(id, "chr1".to_string(), 1, "AAA".to_string(), 1e-6);
+        m.set_dna("chr1".to_string(), start, 20_000, 0, Strand::Forward);
+        m
+    }
+
+    #[test]
+    fn dedup_adjacent_removes_all_consecutive_duplicates() {
+        // 连续三个及以上相同命中（同 id 同坐标）应全部收敛为一条。
+        let mut motifs = vec![
+            dna_motif(6, 100),
+            dna_motif(6, 100),
+            dna_motif(6, 100),
+            dna_motif(4, 200),
+            dna_motif(4, 200),
+            dna_motif(6, 300),
+        ];
+        dedup_adjacent(&mut motifs);
+        let keys: Vec<(u8, u64)> = motifs.iter().map(|m| (m.id, m.dna_start)).collect();
+        assert_eq!(keys, vec![(6, 100), (4, 200), (6, 300)]);
+    }
 }
