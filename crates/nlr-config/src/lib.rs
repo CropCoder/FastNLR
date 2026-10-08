@@ -49,6 +49,30 @@ impl MotifDefinition {
         let pwm = Self::pwm_from(mot, &lengths);
         let cdf = Self::cdf_from(store);
         let max_length = lengths.iter().copied().max().unwrap_or(0);
+
+        // 一致性校验：mot.txt 与 store.txt 的最大 id 各自独立推导，二者不一致时
+        // `score_thresholds()`/`cdf()` 会按 mot.txt 的 id 索引 store.txt 的表而越界 panic。
+        // 这里提前拦截并给出明确的 motif 列表，而不是等到查表时崩溃。
+        let missing: Vec<String> = (1..=max_motif_id)
+            .filter(|&id| lengths[id as usize] > 0)
+            .filter(|&id| match cdf.get(id as usize) {
+                Some(table) => table.is_empty(),
+                None => true,
+            })
+            .map(|id| format!("motif_{}", id))
+            .collect();
+        if !missing.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "store.txt has no CDF table for {}: mot.txt declares up to motif_{} but store.txt only covers up to motif_{}",
+                    missing.join(", "),
+                    max_motif_id,
+                    cdf.len().saturating_sub(1),
+                ),
+            ));
+        }
+
         Ok(MotifDefinition {
             pwm,
             cdf,
@@ -180,7 +204,10 @@ impl MotifDefinition {
         }
 
         // Second pass: fill.
-        let mut cdf: Vec<Vec<f64>> = (0..slot_count).map(|i| vec![0.0; max_idx[i] + 1]).collect();
+        // 未在 store.txt 出现的分数段默认 1.0（不显著），而不是 0.0：0.0 会被当成
+        // "极显著"，一旦自定义表缺行就会凭空产生高分命中。内置表 0..max 无缺行，
+        // 表尾不可达分数的 0.0 都是显式写出的，故不受影响。
+        let mut cdf: Vec<Vec<f64>> = (0..slot_count).map(|i| vec![1.0; max_idx[i] + 1]).collect();
         for line in text.lines() {
             let cols: Vec<&str> = line.split_whitespace().collect();
             if cols.len() < 2 {
@@ -244,13 +271,10 @@ impl MotifDefinition {
     pub fn cdf(&self, id: MotifId, score: i32) -> f64 {
         let idx = score.max(0) as usize;
         let arr = &self.cdf[id as usize];
-        if idx < arr.len() {
-            arr[idx]
-        } else {
-            // Score beyond table upper bound -> highly significant (right-tail p ~= 0).
-            // Out-of-range scores are treated as highly significant.
-            0.0
-        }
+        // 分数超出 CDF 表覆盖范围时，真实 p 值只会比表内最后一个更小，因此用表内最后一个
+        // （最小）p 值作为保守上界。旧实现直接返回 0.0，等于把"未知"当成"极显著"，
+        // 一旦自定义 store.txt 的分数区间不足就会静默产生大量假阳性。
+        arr.get(idx).copied().unwrap_or_else(|| arr.last().copied().unwrap_or(1.0))
     }
 
     /// Precompute integer thresholds where `p < thresh <=> score >= T(id)`.
@@ -262,8 +286,10 @@ impl MotifDefinition {
         let mut thresholds = vec![0i32; self.cdf.len()];
         for id in 1..=self.max_motif_id {
             let arr = &self.cdf[id as usize];
-            // Find first score where cdf[score] < thresh (CDF is decreasing).
-            let mut t = arr.len() as i32;
+            // 找首个满足 cdf[score] < thresh 的分数（CDF 递减）。若表内没有任何分数满足，
+            // 说明该 motif 不可能达到该显著性，用 i32::MAX 表示"没有窗口能通过预筛"；
+            // 这与 cdf() 对越界分数返回表内最小 p 值的语义一致（也 >= thresh，会被拒）。
+            let mut t = i32::MAX;
             for (score, &v) in arr.iter().enumerate() {
                 if v < thresh {
                     t = score as i32;

@@ -51,3 +51,41 @@ fn score_non_ascii_returns_zero() {
     // '*' (42) is less than 'A', should return 0.
     assert_eq!(def.score(4, 0, b'*'), 0);
 }
+
+#[test]
+fn missing_cdf_table_is_an_error_not_a_panic() {
+    // mot.txt 声明两个 motif，store.txt 只覆盖 motif_1：旧实现会在 score_thresholds() 越界 panic。
+    let mot = "motif_1@0@G 10\nmotif_2@0@K 10\n";
+    let store = "motif_1@0 1.0\nmotif_1@10 1e-9\n";
+    let err = match MotifDefinition::load_from_str(mot, store) {
+        Ok(_) => panic!("mot/store 不一致时应返回错误"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(msg.contains("motif_2"), "错误信息应指明缺失的 motif: {msg}");
+    assert!(msg.contains("store.txt"), "错误信息应指明问题文件: {msg}");
+}
+
+#[test]
+fn cdf_out_of_range_uses_last_tabulated_value() {
+    // 表只覆盖到 score=5，最后一个表项是 1e-3。
+    let mot = "motif_1@0@G 10\n";
+    let store = "motif_1@0 1.0\nmotif_1@5 1e-3\n";
+    let def = MotifDefinition::load_from_str(mot, store).unwrap();
+    // 表内查询照旧。
+    assert_eq!(def.cdf(1, 5), 1e-3);
+    // 越界查询返回表内最后一个（最小）p 值，而不是旧实现的 0.0。
+    assert_eq!(def.cdf(1, 9999), 1e-3);
+    assert_ne!(def.cdf(1, 9999), 0.0);
+}
+
+#[test]
+fn score_thresholds_never_matching_marks_motif_unreachable() {
+    // 表内所有 p 值都 >= 阈值 1e-4，说明该 motif 不可能达到该显著性。
+    let mot = "motif_1@0@G 10\n";
+    let store = "motif_1@0 1.0\nmotif_1@5 1.0\n";
+    let def = MotifDefinition::load_from_str(mot, store).unwrap();
+    let t = def.score_thresholds(1e-4);
+    assert_eq!(t[1], i32::MAX, "无任何分数达标时应标记为不可达");
+}

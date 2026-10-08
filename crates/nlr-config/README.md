@@ -48,8 +48,17 @@ motif_1@30 1e-7
 ```
 
 One entry per line: `motif@score pvalue`. The table is a **right-tail** CDF:
-`p = P(random score >= score)`, monotonically decreasing in score. Scores beyond the table's
-upper bound are treated as highly significant (`p = 0.0`).
+`p = P(random score >= score)`, monotonically decreasing in score.
+
+Two under-specified cases are handled conservatively, so that an incomplete custom table can
+never fabricate significant hits:
+
+- scores **beyond the table's upper bound** return the table's last (smallest) p-value, which is
+  a valid upper bound for the true p-value;
+- score slots **missing from the table** default to `p = 1.0` (not significant) instead of `0.0`.
+
+In addition, `load` / `load_from_str` reject a profile pair whose files disagree on the motif
+ids, rather than panicking later during scoring.
 
 ## Public API
 
@@ -62,8 +71,8 @@ upper bound are treated as highly significant (`p = 0.0`).
 | `motif_names()` | ids in order of first appearance — this is the scan iteration order |
 | `length(id)` / `max_length()` | motif width in amino acids |
 | `score(id, position, aa)` | PWM lookup; returns `0` for characters below `A` or outside `A..Z` |
-| `cdf(id, score)` | p-value lookup; out-of-range scores return `0.0` |
-| `score_thresholds(thresh)` | per-motif integer score `T` such that `score >= T` implies `p < thresh` |
+| `cdf(id, score)` | p-value lookup; out-of-range scores return the last tabulated value |
+| `score_thresholds(thresh)` | per-motif integer score `T` such that `score >= T` implies `p < thresh`; `i32::MAX` means no score can reach the threshold |
 | `parse_motif_line(line)` | parses one exported TSV motif row into `(id, protein id, position, pvalue)` |
 
 `MotifId` is re-exported as a `u8` alias.
@@ -97,6 +106,8 @@ assert!(def.cdf(1, 20) < 1e-5);
   numeric fields are skipped.
 - Ids may be sparse; absent ids become zero-length motifs and are effectively inert.
 - The CDF is right-tailed and decreasing — callers must not treat it as a left-tail probability.
+- `mot.txt` and `store.txt` must cover the same motif ids; a motif declared without a CDF table
+  is reported as an `InvalidData` error.
 
 ## Testing
 
