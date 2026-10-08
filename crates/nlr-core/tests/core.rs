@@ -119,4 +119,26 @@ mod tests {
         // 既有 signature 命中的仍保留
         assert!(d.has_signature_flexible(&[1, 6, 4, 5], &cfg));
     }
+
+    #[test]
+    fn remove_redundant_motifs_keeps_first() {
+        // 两条 (id, dna_start, dna_end) 完全相同、仅 p 值不同的记录应视为重复。
+        // position=1 时 dna_start 就等于 offset，便于直接断言坐标。
+        let mut a = protein_motif(6, 1, "AAA", 1e-6);
+        a.set_dna("chr1".into(), 100, 20000, 0, Strand::Forward);
+        let mut b = a.clone();
+        b.pvalue = 1e-3;
+        let mut c = protein_motif(6, 1, "AAA", 1e-6);
+        c.set_dna("chr1".into(), 200, 20000, 0, Strand::Forward);
+
+        let mut list = MotifList::new("chr1_nlr1".to_string(), vec![a, b, c]);
+        assert_eq!(list.motifs.len(), 3);
+
+        list.remove_redundant_motifs();
+        assert_eq!(list.motifs.len(), 2);
+        // 稳定排序后保留先出现的那条。
+        assert_eq!(list.motifs[0].dna_start, 100);
+        assert_eq!(list.motifs[0].pvalue, 1e-6);
+        assert_eq!(list.motifs[1].dna_start, 200);
+    }
 }

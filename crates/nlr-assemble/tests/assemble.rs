@@ -45,3 +45,27 @@ fn no_seed_no_nlr() {
     let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &def());
     assert!(nlrs.is_empty());
 }
+
+#[test]
+fn overlapping_seeds_do_not_duplicate_motifs() {
+    // 间距 300/300/150/150 bp（均 <= distance_within_motif_combination = 500）会形成互相重叠的种子：
+    // [1,6] 命中后，[6,4,5]、[4,5,10] 又从各自起点重复并入相同的 motif。
+    let motifs = vec![
+        dna_motif(1, 0, Strand::Forward),
+        dna_motif(6, 300, Strand::Forward),
+        dna_motif(4, 600, Strand::Forward),
+        dna_motif(5, 750, Strand::Forward),
+        dna_motif(10, 900, Strand::Forward),
+    ];
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &def());
+    assert_eq!(nlrs.len(), 1);
+
+    let ids: Vec<u8> = nlrs[0].motifs.iter().map(|m| m.id).collect();
+    assert_eq!(ids, vec![1, 6, 4, 5, 10], "位点内不应出现重复 motif");
+
+    let mut keys: Vec<(u8, u64)> = nlrs[0].motifs.iter().map(|m| (m.id, m.dna_start)).collect();
+    let total = keys.len();
+    keys.sort();
+    keys.dedup();
+    assert_eq!(keys.len(), total, "同一 (id, dna_start) 只能出现一次");
+}
