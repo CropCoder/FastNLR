@@ -9,7 +9,7 @@ A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.3.2-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 [![Platform](https://img.shields.io/badge/platform-linux%20x86__64-lightgrey.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Features](#features) · [Quick Start](#quick-start) · [Usage](#usage) · [Extended motif library](#extended-motif-library) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Citation](#citation)
@@ -26,6 +26,7 @@ NLR genes encode a major class of plant intracellular immune receptors and are a
 
 - **Zero-config, self-contained binary** — the standard `mot.txt` (PWM) and `store.txt` (CDF) configs are embedded at compile time. Run on any FASTA with no extra files; override with `-x`/`-y` when you need custom motifs.
 - **Extensible motif libraries** — supports more than the built-in 20 motifs, plus CLI-declared domain categories, seed combinations, and signatures. An optional RNL/helper-CC + TIR library is included for recovering RNL and TIR-only loci.
+- **Protein input mode** — `fastnlr --protein -i proteins.fa -o out` scans a protein FASTA with a bundled HMMER 3.4 port (Pfam NB-ARC / TIR / Rx_N / RPW8 with gathering thresholds) plus the PWM LRR motifs, and reports the domain architecture and NLR class per protein. No genome coordinates are involved; `--hmm` adds custom domain models.
 - **High performance** — Rust + [rayon](https://github.com/rayon-rs/rayon) multithreading, memory-mapped large-file FASTA parsing, and SIMD (`wide`) cross-window scoring. Typical plant genomes finish in seconds to minutes.
 - **Coordinate-consistent output** — loci FASTA extraction matches the GFF/BED coordinates exactly; see [Implementation notes](#implementation-notes).
 - **Resumable runs** — `--checkpoint` saves motif results after the scan; reruns skip the expensive scan and go straight to assembly.
@@ -113,6 +114,13 @@ fastnlr -i genome.fasta -o results \
   --motif-category "$TIS_MOTIF_CATEGORY" \
   --seed-combination "$TIS_SEED_COMBINATION" \
   --signature "$TIS_SIGNATURE"
+
+# 8. Protein mode: HMMER domain scan on a protein FASTA (no genome coordinates)
+#    -> <prefix>.domains.tsv, <prefix>.nlr.tsv, <prefix>.summary.txt, <prefix>.plots/
+fastnlr --protein -i proteins.fa -o protein_results
+
+# 9. Protein mode with custom domain models (replaces/adds by accession)
+fastnlr --protein -i proteins.fa -o protein_results --hmm my_domains.hmm
 ```
 
 ### Flags
@@ -161,6 +169,13 @@ fastnlr -i genome.fasta -o results \
 | `--progress <auto\|bar\|simple\|off>` | Progress bar (default auto). |
 | `--log-level <lvl>` | trace/debug/info/warn/error (default info). |
 
+**Protein mode**
+
+| Flag | Description |
+|------|-------------|
+| `--protein` | Treat `-i` as a protein FASTA and scan domains with HMMER instead of translating a genome. Mutually exclusive with the genome-only flags (`--flank`, `--relaxed-seed`, `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`). |
+| `--hmm <FILE>` | Extra HMM domain models (repeatable, may hold several models per file). A model with the same accession replaces the built-in one; new accessions are appended. |
+
 Run `fastnlr --help` for the full, grouped reference.
 
 ## Extended motif library
@@ -196,7 +211,7 @@ result set by default:
 - **`<prefix>.nlr.gff`** — GFF3 with a live system timestamp; `source` column = `FastNLR`.
   ```
   ##gff-version 2
-  ##source-version FastNLR V1.3.2
+  ##source-version FastNLR V1.4.0
   ##date 2026-09-24 10:00:00
   ##Type DNA
   ```
@@ -208,6 +223,19 @@ result set by default:
 - **`<prefix>.summary.txt`** — human-readable run summary (NLR counts, class counts, output files).
 - **`<prefix>.plots/`** — PNG statistics plots: motif counts, per-chromosome NLR counts, and NLR-type counts.
 
+### Protein mode (`--protein`)
+
+Protein sequences have no genome coordinates, so protein mode writes its own, smaller result set
+instead of the genome-coordinate files above:
+
+- **`<prefix>.domains.tsv`** — one row per domain hit: protein id, source (`hmm`/`pwm`), model,
+  model name, category, protein coordinates, bitscore, p-value and whether it passed the Pfam GA
+  threshold.
+- **`<prefix>.nlr.tsv`** — one row per NLR candidate: class (`CC-NBARC-LRR`, `TIR-NBARC`, ...),
+  N-terminal domain, `has_nbarc` / `has_tir` / `has_lrr`, completeness and a compact domain map.
+- **`<prefix>.summary.txt`** — model set, thresholds, counts by class, output file list.
+- **`<prefix>.plots/`** — `01-nlr-types.png` and `02-domain-counts.png`.
+
 ## Architecture
 
 FastNLR is a layered Cargo workspace — each crate has a single responsibility and the dependency graph flows bottom-up:
@@ -218,6 +246,7 @@ nlr-config   parse mot.txt (PWM) / store.txt (CDF); built-in embed and >20-motif
 nlr-seq      six-frame translation, reverse complement, codon table, FASTA reader, chopper
 nlr-scan     sliding-window scoring + non-overlap arbitration + signature pre-filter (SIMD)
 nlr-assemble findSeeds -> mergeSeeds -> elongate three-step assembly
+nlr-domain   protein mode: HMMER domain scanning (NB-ARC/TIR/CC) + NLR architecture classification
 nlr-output   txt/GFF/BED/motifBED/alignment-fasta/loci-fasta/TSV output
 nlr-report   run statistics aggregation
 nlr-plot     plotters statistics plots (bundled font backend, no system font deps)

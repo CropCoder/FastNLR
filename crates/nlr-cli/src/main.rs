@@ -20,13 +20,16 @@ use nlr_core::signature_def::FlexibleSeedConfig;
 /// Valid log-level values (for --log-level validation and hints).
 const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
 
+/// 位点序列提取的默认侧翼长度（`--flank` 未给出时）。
+const DEFAULT_FLANK: u64 = 2000;
+
 /// CLI banner and project metadata shown at the top of `fastnlr --help`.
 const HELP_BANNER: &str = r#"   ____           __   _  __ __    ___ 
   / __/___ _ ___ / /_ / |/ // /   / _ \
  / _/ / _ `/(_-</ __//    // /__ / , _/
 /_/   \_,_//___/\__//_/|_//____//_/|_| 
 
-FastNLR v1.3.2
+FastNLR v1.4.0
 
 Author:     Jiwen Zhao (https://github.com/CropCoder)
 Repository: https://github.com/CropCoder/FastNLR
@@ -57,7 +60,7 @@ fn print_no_args_help() {
     version,
     before_help = HELP_BANNER,
     long_version = concat!(
-        "1.3.2\n",
+        "1.4.0\n",
         "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
@@ -114,9 +117,21 @@ struct Cli {
     )]
     output_dir: PathBuf,
 
-    /// Flanking bases for loci sequence extraction (default 2000)
-    #[arg(long, default_value_t = 2000, help_heading = "Output")]
-    flank: u64,
+    /// Flanking bases for loci sequence extraction (default 2000; genome mode only)
+    #[arg(long, value_name = "BP", help_heading = "Output")]
+    flank: Option<u64>,
+
+    // ===== Protein mode =====
+    /// Protein input mode: scan a protein FASTA for NLR domains with HMMER instead of
+    /// six-frame translating a genome. Writes domains.tsv / nlr.tsv / summary.txt / plots
+    /// and does not produce genome-coordinate outputs (GFF/BED/loci FASTA).
+    #[arg(long, help_heading = "Protein mode")]
+    protein: bool,
+
+    /// Extra HMM domain models for protein mode (repeatable, may hold multiple models per file).
+    /// A model with the same accession replaces the built-in one; new accessions are added.
+    #[arg(long = "hmm", value_name = "FILE", num_args = 1.., help_heading = "Protein mode")]
+    hmm: Vec<PathBuf>,
 
     // ===== Performance tuning =====
     /// Thread count (default: auto-detect core count; -t N overrides)
@@ -206,6 +221,12 @@ fn main() {
     // Configure temp dir (--tmpdir > TMPDIR/TEMP > system temp).
     let _tmpdir = setup_tmpdir(&cli);
 
+    // 蛋白模式：输入是蛋白 FASTA，走 HMMER + PWM 的独立流水线，产出独立结果集。
+    if cli.protein {
+        run_protein_mode(&cli, start);
+        return;
+    }
+
     let mut config = RunConfig::new(cli.input.clone(), cli.mot.clone(), cli.store.clone());
     if let Some(t) = cli.threads {
         config.threads = t;
@@ -275,6 +296,109 @@ fn main() {
             std::process::exit(2);
         }
     }
+}
+
+/// 蛋白模式入口：读蛋白 FASTA → HMMER 结构域 + PWM LRR → 写独立结果集。
+fn run_protein_mode(cli: &Cli, start: Instant) {
+    let mut config = nlr_cli::ProteinConfig::new(cli.input.clone());
+    if let Some(t) = cli.threads {
+        config.threads = t;
+    }
+    config.batch = cli.seqs_per_thread;
+    config.mot_file = cli.mot.clone();
+    config.store_file = cli.store.clone();
+    config.motif_accept_p = cli.motif_accept_p;
+    config.motif_prelim_p = cli.motif_prelim_p;
+    config.hmm_files = cli.hmm.clone();
+
+    let prefix = genome_prefix(&cli.input);
+    tracing::info!(
+        "protein mode: input={} | built-in models=NB-ARC,TIR,Rx_N,RPW8 | extra HMM files={} | threads={} | output={}",
+        cli.input.display(),
+        cli.hmm.len(),
+        config.threads,
+        cli.output_dir.display()
+    );
+
+    let pb = make_progress_bar(&cli.progress, estimate_protein_count(&cli.input));
+    let result = match nlr_cli::run_protein(&config, pb.as_ref()) {
+        Ok(r) => r,
+        Err(e) => {
+            if let Some(pb) = &pb {
+                pb.finish_and_clear();
+                eprintln!();
+            }
+            print_cli_error(&format!("protein run failed: {}", e));
+            std::process::exit(2);
+        }
+    };
+    if let Some(pb) = &pb {
+        let total = pb.length().unwrap_or(0);
+        pb.set_position(total);
+        pb.finish();
+    }
+
+    let meta = nlr_cli::ProteinRunMeta {
+        input_name: cli
+            .input
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        threads: config.threads,
+        elapsed: start.elapsed(),
+        lrr_threshold: config.motif_accept_p,
+        hmm_files: cli.hmm.iter().map(|p| p.display().to_string()).collect(),
+    };
+
+    let written = match nlr_cli::write_protein_outputs(&cli.output_dir, &prefix, &result, &meta) {
+        Ok(w) => w,
+        Err(e) => {
+            print_cli_error(&format!("output write failed: {}", e));
+            std::process::exit(3);
+        }
+    };
+
+    // 摘要已写入文件，同时打印到 stdout（与 DNA 模式一致）。
+    let summary_path = cli.output_dir.join(format!("{prefix}.summary.txt"));
+    if let Ok(summary) = std::fs::read_to_string(&summary_path) {
+        print!("{summary}");
+    }
+    let nlr_total = result.records.iter().filter(|r| r.arch.is_nlr).count();
+    tracing::info!(
+        "protein run complete: {} proteins, {} NLR candidates, {} files written",
+        result.records.len(),
+        nlr_total,
+        written.len()
+    );
+}
+
+/// 估算蛋白序列条数（仅未压缩 FASTA；gzip 返回 0，进度条转为不确定态）。
+fn estimate_protein_count(path: &PathBuf) -> u64 {
+    use std::io::{BufRead, Read, Seek, SeekFrom};
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+    let mut magic = [0u8; 2];
+    if file.read_exact(&mut magic).is_err() || magic == [0x1f, 0x8b] {
+        return 0;
+    }
+    if file.seek(SeekFrom::Start(0)).is_err() {
+        return 0;
+    }
+    let mut count = 0u64;
+    for line in std::io::BufReader::new(file).lines() {
+        match line {
+            Ok(l) => {
+                if l.starts_with('>') {
+                    count += 1;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    count
 }
 
 /// Initialize logging (invalid level falls back to info).
@@ -402,6 +526,48 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
                 ));
             }
         }
+    }
+
+    // Protein mode: extra HMM files must exist, and genome-only flags must not be used.
+    if cli.protein {
+        for path in &cli.hmm {
+            if !path.is_file() {
+                return Err(format!(
+                    "--hmm file does not exist or is not a file: {}",
+                    path.display()
+                ));
+            }
+        }
+        let mut conflicts: Vec<&str> = Vec::new();
+        if cli.flank.is_some() {
+            conflicts.push("--flank");
+        }
+        if cli.relaxed_seed.is_some() {
+            conflicts.push("--relaxed-seed");
+        }
+        if cli.flexible_seed.is_some() {
+            conflicts.push("--flexible-seed");
+        }
+        if cli.require_ploop {
+            conflicts.push("--require-ploop");
+        }
+        if !cli.extra_seeds.is_empty() {
+            conflicts.push("--seed-combination");
+        }
+        if !cli.extra_signatures.is_empty() {
+            conflicts.push("--signature");
+        }
+        if cli.checkpoint.is_some() {
+            conflicts.push("--checkpoint");
+        }
+        if !conflicts.is_empty() {
+            return Err(format!(
+                "--protein 模式不支持基因组专属参数: {}（这些参数只作用于 DNA 流水线）",
+                conflicts.join(", ")
+            ));
+        }
+    } else if !cli.hmm.is_empty() {
+        return Err("--hmm 只在 --protein 模式下有效".to_string());
     }
 
     // log-level validity.
@@ -636,8 +802,8 @@ fn write_outputs(
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
     written.push(p);
 
-    // 位点序列 fasta（从 -i 基因组提取，flank 由 --flank 控制）
-    match nlr_seq::fasta::read_all(&cli.input) {
+        // 位点序列 fasta（从 -i 基因组提取，flank 由 --flank 控制）
+        match nlr_seq::fasta::read_all(&cli.input) {
         Ok(contigs) => {
             let pairs: Vec<(&str, &str)> = contigs
                 .iter()
@@ -647,7 +813,7 @@ fn write_outputs(
             let mut f = std::fs::File::create(&p).map_err(|e| {
                 std::io::Error::other(format!("cannot create {}: {}", p.display(), e))
             })?;
-            nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank)
+            nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank.unwrap_or(DEFAULT_FLANK))
                 .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
             written.push(p);
         }

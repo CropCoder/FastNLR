@@ -24,9 +24,11 @@ that in-tree imports and integration tests stay stable.
 fastnlr -i genome.fasta -o results
 fastnlr -i genome.fasta -o results -t 8
 fastnlr -i genome.fasta -o results --checkpoint ckpt/ --flexible-seed 3
+fastnlr --protein -i proteins.fa -o protein_results
 ```
 
 `-i` and `-o` are required; the built-in motif profiles are used unless `-x` / `-y` are given.
+With `--protein`, `-i` is read as a protein FASTA (see [Protein mode](#protein-mode)).
 
 ### Flag groups
 
@@ -40,6 +42,28 @@ fastnlr -i genome.fasta -o results --checkpoint ckpt/ --flexible-seed 3
 | Observability | `--progress <auto\|bar\|simple\|off>`, `--log-level <level>` |
 | Recall | `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed <n>`, `--flexible-seed <n>`, `--require-ploop` |
 | Motif library metadata | `--motif-category <ID=CAT>`, `--seed-combination <IDS>`, `--signature <IDS>` |
+| Protein mode | `--protein`, `--hmm <FILE>` (repeatable) |
+
+## Protein mode
+
+`--protein` switches the input from a genome to a protein FASTA and replaces six-frame motif
+scanning with HMMER domain scanning:
+
+- **Domains** — four curated Pfam models are embedded and scored with their gathering
+  thresholds: NB-ARC (`PF00931`), TIR (`PF01582`), Rx_N (`PF18052`, CNL-type CC) and RPW8
+  (`PF05659`, RNL/helper CC). `--hmm <FILE>` adds user models; a model with the same accession
+  replaces the built-in one.
+- **LRR** — called with the existing PWM motifs (`motif_9` / `motif_11`) rather than Pfam LRR
+  models, which are far less sensitive on NLRs.
+- **Classification** — `nterm` is the N-terminal-most TIR/CC domain before the NB-ARC domain;
+  `class` collapses adjacent equal categories (`CC-NBARC-LRR`); `complete` means NB-ARC + LRR;
+  a protein is an NLR candidate when it has NB-ARC, or TIR together with LRR.
+- **Genome-only flags are rejected** in this mode: `--flank`, `--relaxed-seed`,
+  `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`.
+
+Outputs: `<prefix>.domains.tsv`, `<prefix>.nlr.tsv`, `<prefix>.summary.txt` and
+`<prefix>.plots/{01-nlr-types.png,02-domain-counts.png}`. The genome-coordinate outputs
+(GFF/BED/motifs BED/loci FASTA/NB-ARC alignment) are intentionally not produced.
 
 ## Pipeline
 

@@ -1,0 +1,13 @@
+[package]
+name = "nlr-domain"
+description = "HMMER-based protein domain scanning and NLR architecture classification for FastNLR"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+nlr-core = { path = "../nlr-core", version = "1.4.0" }
+hmmer-pure-rs = { workspace = true }

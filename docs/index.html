@@ -401,7 +401,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.3.2</span>
+      <span class="ver">v1.4.0</span>
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
@@ -521,6 +521,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 
       <div class="card reveal">
         <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h10M4 17h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Protein mode</h3>
+        <p>Run <code>--protein</code> on a protein FASTA to scan NLR domains with a bundled HMMER 3.4 port (Pfam NB-ARC / TIR / Rx_N / RPW8, gathering thresholds) plus the PWM LRR motifs, and get a domain architecture call per protein.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 14-4M20 12a8 8 0 0 1-14 4M12 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
         <h3>Resumable runs</h3>
@@ -568,7 +576,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.3.2/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.4.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 cd fastnlr-linux-x86_64
 ./fastnlr --version

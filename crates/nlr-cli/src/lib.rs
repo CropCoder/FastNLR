@@ -316,25 +316,28 @@ fn scan_one_fragment(
 
 /// Resolve mot/store sources (user path takes precedence over built-in) and load MotifDefinition.
 fn load_motif_definition(config: &RunConfig) -> std::io::Result<nlr_config::MotifDefinition> {
-    let mot_owned;
-    let mot_str: &str = match &config.mot_file {
-        Some(p) => {
-            mot_owned = std::fs::read_to_string(p)
-                .map_err(|e| std::io::Error::other(format!("cannot read mot file {}: {}", p.display(), e)))?;
-            &mot_owned
-        }
-        None => EMBEDDED_MOT,
+    let (mot_str, store_str) = load_profile_text(&config.mot_file, &config.store_file)?;
+    nlr_config::MotifDefinition::load_from_str(&mot_str, &store_str)
+}
+
+/// 读取 mot/store 文本：用户路径优先，否则回落到编译期内嵌的默认配置。
+fn load_profile_text(
+    mot_file: &Option<PathBuf>,
+    store_file: &Option<PathBuf>,
+) -> std::io::Result<(String, String)> {
+    let mot = match mot_file {
+        Some(p) => std::fs::read_to_string(p).map_err(|e| {
+            std::io::Error::other(format!("cannot read mot file {}: {}", p.display(), e))
+        })?,
+        None => EMBEDDED_MOT.to_string(),
     };
-    let store_owned;
-    let store_str: &str = match &config.store_file {
-        Some(p) => {
-            store_owned = std::fs::read_to_string(p)
-                .map_err(|e| std::io::Error::other(format!("cannot read store file {}: {}", p.display(), e)))?;
-            &store_owned
-        }
-        None => EMBEDDED_STORE,
+    let store = match store_file {
+        Some(p) => std::fs::read_to_string(p).map_err(|e| {
+            std::io::Error::other(format!("cannot read store file {}: {}", p.display(), e))
+        })?,
+        None => EMBEDDED_STORE.to_string(),
     };
-    nlr_config::MotifDefinition::load_from_str(mot_str, store_str)
+    Ok((mot, store))
 }
 
 /// Parse fragment id "{id}_{offset}" -> (id, offset).
@@ -503,6 +506,348 @@ pub fn load_checkpoint(
         motifs_by_seq,
         def,
     }))
+}
+
+// =====================================================================================
+// 蛋白模式（--protein）：HMMER 结构域扫描 + PWM LRR 判定，输出独立结果集（无基因组坐标）
+// =====================================================================================
+
+/// 蛋白模式运行配置。
+pub struct ProteinConfig {
+    pub input_fasta: PathBuf,
+    /// 用户追加/覆盖的 HMM 文件（可含多个模型）。
+    pub hmm_files: Vec<PathBuf>,
+    pub mot_file: Option<PathBuf>,
+    pub store_file: Option<PathBuf>,
+    pub threads: usize,
+    /// 每批处理的蛋白条数（控制内存与进度粒度）。
+    pub batch: usize,
+    /// LRR PWM 的最终接受阈值。
+    pub motif_accept_p: f64,
+    /// LRR PWM 的预筛阈值。
+    pub motif_prelim_p: f64,
+}
+
+impl ProteinConfig {
+    pub fn new(input_fasta: PathBuf) -> Self {
+        ProteinConfig {
+            input_fasta,
+            hmm_files: Vec::new(),
+            mot_file: None,
+            store_file: None,
+            threads: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1),
+            batch: 256,
+            motif_accept_p: 1e-5,
+            motif_prelim_p: 1e-4,
+        }
+    }
+}
+
+/// 单条蛋白的判定结果。
+pub struct ProteinRecord {
+    pub id: String,
+    pub length: usize,
+    pub arch: nlr_domain::NlrArchitecture,
+    /// 全部被 HMMER 报告的结构域命中（含未通过 GA 的，写入 domains.tsv）。
+    pub hits: Vec<nlr_domain::DomainHit>,
+    /// PWM 的 LRR 命中：(motif id, start, end, pvalue)，坐标均为蛋白上的 1-based 闭区间。
+    pub lrr_sites: Vec<(u8, usize, usize, f64)>,
+}
+
+impl ProteinRecord {
+    /// 通过 GA 的 HMM 命中，按位置排序。
+    pub fn passed_domains(&self) -> Vec<&nlr_domain::DomainHit> {
+        self.hits.iter().filter(|h| h.passed).collect()
+    }
+}
+
+/// 蛋白模式整体结果。
+pub struct ProteinResult {
+    /// 全部输入蛋白的判定，按 id 排序（并行扫描后统一排序，保证输出可复现）。
+    pub records: Vec<ProteinRecord>,
+    /// 内置 + 用户模型的展示串，例如 `PF00931(NB-ARC)`。
+    pub model_labels: Vec<String>,
+}
+
+/// 蛋白模式运行元信息（用于写摘要）。
+pub struct ProteinRunMeta {
+    pub input_name: String,
+    pub threads: usize,
+    pub elapsed: std::time::Duration,
+    pub lrr_threshold: f64,
+    pub hmm_files: Vec<String>,
+}
+
+/// 蛋白模式主流程：读蛋白 FASTA → 并行结构域扫描 → 汇总。
+pub fn run_protein(
+    config: &ProteinConfig,
+    progress: Option<&indicatif::ProgressBar>,
+) -> std::io::Result<ProteinResult> {
+    // 1) 模型库：内置 4 个精选 Pfam 模型 + 用户 --hmm 覆盖/追加。
+    let mut library = nlr_domain::HmmLibrary::from_embedded();
+    for path in &config.hmm_files {
+        let added = library.add_file(path)?;
+        tracing::info!("loaded {added} domain model(s) from {}", path.display());
+    }
+    let model_labels: Vec<String> = library
+        .models()
+        .iter()
+        .map(|m| format!("{}({})", m.acc, m.name))
+        .collect();
+
+    // 2) LRR 用现有 PWM（motif 9/11），与 DNA 模式共用同一份表与阈值。
+    let (mot, store) = load_profile_text(&config.mot_file, &config.store_file)?;
+    let definition = nlr_config::MotifDefinition::load_from_str(&mot, &store)?;
+    let parser = std::sync::Arc::new(nlr_scan::MotifParser::with_thresholds(
+        definition,
+        config.motif_prelim_p,
+        config.motif_accept_p,
+    ));
+    let signature_def = nlr_core::signature_def::AnnotatorSignatureDefinition::new();
+
+    // 3) 流式读蛋白 + 批量并行扫描（扫描器在工作线程内构造，OProfile 不是 Send）。
+    let mut reader = nlr_seq::fasta::FastaReader::from_file(&config.input_fasta)?;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(config.threads.max(1))
+        .build()
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
+    let batch_size = config.batch.max(1);
+    let mut records: Vec<ProteinRecord> = Vec::new();
+    let mut scanned = 0u64;
+    loop {
+        let mut batch: Vec<nlr_seq::translate::BioSequence> = Vec::with_capacity(batch_size);
+        while batch.len() < batch_size {
+            match reader.read_entry() {
+                Some(seq) => batch.push(seq),
+                None => break,
+            }
+        }
+        if batch.is_empty() {
+            break;
+        }
+
+        let batch_records: Vec<ProteinRecord> = pool.install(|| {
+            use rayon::prelude::*;
+            batch
+                .par_iter()
+                .map_init(
+                    || library.scanner(),
+                    |scanner, seq| scan_one_protein(scanner, &parser, &signature_def, seq),
+                )
+                .collect()
+        });
+        scanned += batch_records.len() as u64;
+        records.extend(batch_records);
+        if let Some(pb) = progress {
+            pb.set_position(scanned);
+        }
+    }
+
+    records.sort_by(|a, b| a.id.cmp(&b.id));
+    tracing::info!("protein scan complete: {scanned} sequences");
+    Ok(ProteinResult {
+        records,
+        model_labels,
+    })
+}
+
+/// 扫描单条蛋白：HMM 结构域 + PWM LRR → 架构判定。
+fn scan_one_protein(
+    scanner: &mut nlr_domain::Scanner,
+    parser: &nlr_scan::MotifParser,
+    signature_def: &nlr_core::signature_def::AnnotatorSignatureDefinition,
+    seq: &nlr_seq::translate::BioSequence,
+) -> ProteinRecord {
+    let hits = scanner.scan_protein(&seq.identifier, &seq.sequence);
+
+    // PWM 只取 LRR 类 motif（默认 motif_9 / motif_11），find_motifs 内部已按 accept 阈值过滤。
+    let list = parser.find_motifs(&seq.identifier, &seq.sequence);
+    let mut lrr_sites: Vec<(u8, usize, usize, f64)> = list
+        .motifs
+        .iter()
+        .filter(|m| signature_def.is_lrr(m.id))
+        .map(|m| {
+            let start = m.position as usize;
+            let end = start + m.protein_sequence.len().saturating_sub(1);
+            (m.id, start, end, m.pvalue)
+        })
+        .collect();
+    lrr_sites.sort_by_key(|(_, s, e, _)| (*s, *e));
+
+    let arch = nlr_domain::classify(&hits, lrr_sites.len());
+    ProteinRecord {
+        id: seq.identifier.clone(),
+        length: seq.sequence.len(),
+        arch,
+        hits,
+        lrr_sites,
+    }
+}
+
+/// 写出蛋白模式结果集（domains.tsv / nlr.tsv / summary.txt / plots）。
+pub fn write_protein_outputs(
+    output_dir: &std::path::Path,
+    prefix: &str,
+    result: &ProteinResult,
+    meta: &ProteinRunMeta,
+) -> std::io::Result<Vec<PathBuf>> {
+    use std::collections::BTreeMap;
+    use std::io::Write as _;
+
+    std::fs::create_dir_all(output_dir)?;
+    let mut written: Vec<PathBuf> = Vec::new();
+
+    // 结构域明细：HMM 命中 + PWM LRR 命中。
+    let p = output_dir.join(format!("{prefix}.domains.tsv"));
+    let mut f = std::fs::File::create(&p)?;
+    writeln!(
+        f,
+        "#protein_id\tsource\tmodel\tmodel_name\tcategory\tstart\tend\tbitscore\tpvalue\tpassed"
+    )?;
+    for r in &result.records {
+        for h in &r.hits {
+            writeln!(
+                f,
+                "{}\thmm\t{}\t{}\t{}\t{}\t{}\t{:.1}\t{}\t{}",
+                r.id,
+                h.model_acc,
+                h.model_name,
+                h.category.as_str(),
+                h.start,
+                h.end,
+                h.bitscore,
+                nlr_core::motif::format_double_java(h.pvalue),
+                h.passed
+            )?;
+        }
+        for (id, start, end, pvalue) in &r.lrr_sites {
+            writeln!(
+                f,
+                "{}\tpwm\tmotif_{}\tLRR\tLRR\t{}\t{}\t.\t{}\ttrue",
+                r.id,
+                id,
+                start,
+                end,
+                nlr_core::motif::format_double_java(*pvalue)
+            )?;
+        }
+    }
+    written.push(p);
+
+    // NLR 候选汇总。
+    let p = output_dir.join(format!("{prefix}.nlr.tsv"));
+    let mut f = std::fs::File::create(&p)?;
+    writeln!(
+        f,
+        "#protein_id\tlength\tclass\tnterm\thas_nbarc\thas_tir\thas_lrr\tcomplete\tn_domains\tdomains"
+    )?;
+    let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut model_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut nlr_total = 0usize;
+    let mut complete_total = 0usize;
+    for r in &result.records {
+        let passed = r.passed_domains();
+        for h in &passed {
+            *model_counts.entry(h.model_name.clone()).or_default() += 1;
+        }
+        if !r.lrr_sites.is_empty() {
+            *model_counts.entry("LRR(PWM)".to_string()).or_default() += 1;
+        }
+        if !r.arch.is_nlr {
+            continue;
+        }
+        nlr_total += 1;
+        if r.arch.complete {
+            complete_total += 1;
+        }
+        *type_counts.entry(r.arch.class.clone()).or_default() += 1;
+
+        // 结构域摘要：HMM 通过 GA 的命中 + LRR 位点，按起点排序。
+        let mut items: Vec<(usize, String)> = passed
+            .iter()
+            .map(|h| (h.start, format!("{}:{}-{}", h.model_name, h.start, h.end)))
+            .collect();
+        items.extend(
+            r.lrr_sites
+                .iter()
+                .map(|(id, s, e, _)| (*s, format!("motif_{id}:{s}-{e}"))),
+        );
+        items.sort();
+        let domains = items
+            .iter()
+            .map(|(_, s)| s.clone())
+            .collect::<Vec<_>>()
+            .join(";");
+        writeln!(
+            f,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            r.id,
+            r.length,
+            r.arch.class,
+            r.arch.nterm,
+            r.arch.has_nbarc,
+            r.arch.has_tir,
+            r.arch.has_lrr,
+            r.arch.complete,
+            items.len(),
+            domains
+        )?;
+    }
+    written.push(p);
+
+    // 统计图（复用 nlr-plot 的通用计数柱状图）。
+    let plot_dir = output_dir.join(format!("{prefix}.plots"));
+    std::fs::create_dir_all(&plot_dir)?;
+    let p1 = plot_dir.join("01-nlr-types.png");
+    if let Err(e) = nlr_plot::plot_counts(&p1, "NLR types (protein mode)", "protein count", &type_counts)
+    {
+        tracing::warn!("NLR type plot generation failed: {e}");
+    }
+    written.push(p1);
+    let p2 = plot_dir.join("02-domain-counts.png");
+    if let Err(e) = nlr_plot::plot_counts(&p2, "Domain hits (protein mode)", "hit count", &model_counts)
+    {
+        tracing::warn!("domain count plot generation failed: {e}");
+    }
+    written.push(p2);
+
+    // 运行摘要。
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(s, "# FastNLR protein-mode run summary");
+    let _ = writeln!(s, "# input file\t{}", meta.input_name);
+    let _ = writeln!(s, "# threads\t{}", meta.threads);
+    let _ = writeln!(s, "# elapsed\t{:.2}s", meta.elapsed.as_secs_f64());
+    let _ = writeln!(s, "# domain models\t{}", result.model_labels.join(", "));
+    if !meta.hmm_files.is_empty() {
+        let _ = writeln!(s, "# user HMM files\t{}", meta.hmm_files.join(", "));
+    }
+    let _ = writeln!(
+        s,
+        "# LRR model\tPWM motif_9/motif_11 (p < {})",
+        meta.lrr_threshold
+    );
+    let _ = writeln!(s, "# proteins scanned\t{}", result.records.len());
+    let _ = writeln!(s, "# NLR candidates\t{}", nlr_total);
+    let _ = writeln!(s, "# complete (NB-ARC + LRR)\t{}", complete_total);
+    let _ = writeln!(s, "# NLR types (count desc):");
+    let mut types: Vec<(&String, &usize)> = type_counts.iter().collect();
+    types.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    for (class, count) in types {
+        let _ = writeln!(s, "# {}\t{}", count, class);
+    }
+    let _ = writeln!(s, "# output files:");
+    for path in &written {
+        let _ = writeln!(s, "# {}", path.display());
+    }
+    let p = output_dir.join(format!("{prefix}.summary.txt"));
+    std::fs::write(&p, &s)?;
+    written.push(p);
+
+    Ok(written)
 }
 
 #[cfg(test)]

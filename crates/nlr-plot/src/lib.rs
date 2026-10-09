@@ -149,12 +149,25 @@ pub fn plot_nlr_type_counts(
     path: &Path,
     stats: &RunStats,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    plot_counts(path, "NLR types", "NLR count", &stats.nlr_type_counts)
+}
+
+/// 通用分类计数柱状图（按数量降序、名称升序），供 DNA 与蛋白两种模式复用。
+///
+/// - `data` 为空时画一张只有坐标轴的空白图（保持文件存在，避免下游读取失败）；
+/// - x 轴为分类名（分段坐标，柱居中），y 轴为计数。
+pub fn plot_counts(
+    path: &Path,
+    caption: &str,
+    y_desc: &str,
+    data: &std::collections::BTreeMap<String, usize>,
+) -> Result<(), Box<dyn std::error::Error>> {
     ensure_font_registered();
     let root = BitMapBackend::new(path, (1200, 800)).into_drawing_area();
     root.fill(&WHITE)?;
 
     // 按计数降序、类型名升序排序。
-    let mut types: Vec<(&String, &usize)> = stats.nlr_type_counts.iter().collect();
+    let mut types: Vec<(&String, &usize)> = data.iter().collect();
     types.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
     let names: Vec<String> = types.iter().map(|(name, _)| name.to_string()).collect();
     let counts: Vec<i32> = types.iter().map(|(_, c)| **c as i32).collect();
@@ -162,7 +175,7 @@ pub fn plot_nlr_type_counts(
     let max_count = counts.iter().copied().max().unwrap_or(1).max(1);
 
     let mut chart = ChartBuilder::on(&root)
-        .caption("NLR types", ("sans-serif", 24))
+        .caption(caption, ("sans-serif", 24))
         .margin(20)
         .x_label_area_size(90)
         .y_label_area_size(60)
@@ -183,7 +196,7 @@ pub fn plot_nlr_type_counts(
                 String::new()
             }
         })
-        .y_desc("NLR count")
+        .y_desc(y_desc)
         .axis_desc_style(("sans-serif", 14))
         .x_label_style(("sans-serif", 9))
         .draw()?;

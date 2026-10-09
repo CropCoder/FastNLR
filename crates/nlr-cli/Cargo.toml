@@ -20,14 +20,15 @@ name = "fastnlr"
 path = "src/main.rs"
 
 [dependencies]
-nlr-core = { path = "../nlr-core", version = "1.3.2" }
-nlr-config = { path = "../nlr-config", version = "1.3.2" }
-nlr-seq = { path = "../nlr-seq", version = "1.3.2" }
-nlr-scan = { path = "../nlr-scan", version = "1.3.2" }
-nlr-assemble = { path = "../nlr-assemble", version = "1.3.2" }
-nlr-output = { path = "../nlr-output", version = "1.3.2" }
-nlr-report = { path = "../nlr-report", version = "1.3.2" }
-nlr-plot = { path = "../nlr-plot", version = "1.3.2" }
+nlr-core = { path = "../nlr-core", version = "1.4.0" }
+nlr-config = { path = "../nlr-config", version = "1.4.0" }
+nlr-seq = { path = "../nlr-seq", version = "1.4.0" }
+nlr-scan = { path = "../nlr-scan", version = "1.4.0" }
+nlr-assemble = { path = "../nlr-assemble", version = "1.4.0" }
+nlr-domain = { path = "../nlr-domain", version = "1.4.0" }
+nlr-output = { path = "../nlr-output", version = "1.4.0" }
+nlr-report = { path = "../nlr-report", version = "1.4.0" }
+nlr-plot = { path = "../nlr-plot", version = "1.4.0" }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
