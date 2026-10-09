@@ -9,5 +9,5 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-nlr-report = { path = "../nlr-report", version = "1.3.2" }
+nlr-report = { path = "../nlr-report", version = "1.4.0" }
 plotters = { workspace = true }
