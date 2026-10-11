@@ -26,7 +26,12 @@ fn motif_cmp_groups_by_dna_sequence_id() {
     // Correct order: m2(500) < m1(1000), because sorted by dna_start.
     let mut v = vec![m1.clone(), m2.clone()];
     v.sort();
-    assert_eq!(v[0].dna_start, 500, "should sort by dna_start, got {:?}", v.iter().map(|m| m.dna_start).collect::<Vec<_>>());
+    assert_eq!(
+        v[0].dna_start,
+        500,
+        "should sort by dna_start, got {:?}",
+        v.iter().map(|m| m.dna_start).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -42,7 +47,7 @@ fn can_be_merged_rank_equal_non_lrr_rejected() {
 
     let a = MotifList::new("a".into(), vec![m1, m2]); // rank 4,5 monotonic
     let b = MotifList::new("b".into(), vec![m3]); // rank 4
-    // After merge rank 4,5,4 -> 4 then 4 again (non-LRR), should reject.
+                                                  // After merge rank 4,5,4 -> 4 then 4 again (non-LRR), should reject.
     assert!(!a.can_be_merged_with(&b, 10000, &d));
 }
 
@@ -52,7 +57,10 @@ fn span_reverse_strand() {
     let mut m = Motif::new_protein(1, "p".into(), 1, "AAA".into(), 1e-6);
     m.set_dna("chr1".into(), 100, 20000, 0, Strand::Reverse);
     // Reverse strand: dna_start = 100 + 20000 - ((1+3-1)*3) = 20100 - 9 = 20091; dna_end = 100 + 20000 - 0 = 20100
-    assert!(m.dna_start < m.dna_end, "reverse strand dna_start should be < dna_end");
+    assert!(
+        m.dna_start < m.dna_end,
+        "reverse strand dna_start should be < dna_end"
+    );
     let list = MotifList::new("x".into(), vec![m]);
     let (start, end) = list.span();
     assert!(start < end);
@@ -70,5 +78,9 @@ fn elongate_uses_dynamic_first_motif() {
     assert_eq!(list.first_motif().dna_start, 500);
     // After adding a motif with dna_start=300, first_motif should become 300.
     list.add_motif(m4);
-    assert_eq!(list.first_motif().dna_start, 300, "after add_motif, first_motif should update dynamically");
+    assert_eq!(
+        list.first_motif().dna_start,
+        300,
+        "after add_motif, first_motif should update dynamically"
+    );
 }

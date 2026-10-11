@@ -39,14 +39,23 @@ pub fn plot_motif_counts(path: &Path, stats: &RunStats) -> Result<(), Box<dyn st
     let max_id = ids.iter().copied().max().unwrap_or(1);
     let x_hi = max_id as i32 + 1;
     let n_segments = (max_id - min_id + 1) as usize;
-    let max_count = stats.motif_counts.values().copied().max().unwrap_or(1).max(1) as i32;
+    let max_count = stats
+        .motif_counts
+        .values()
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1) as i32;
 
     let mut chart = ChartBuilder::on(&root)
         .caption("Motif hit counts", ("sans-serif", 24))
         .margin(20)
         .x_label_area_size(40)
         .y_label_area_size(60)
-        .build_cartesian_2d((min_id as i32..x_hi).into_segmented(), 0i32..(max_count + 1))?;
+        .build_cartesian_2d(
+            (min_id as i32..x_hi).into_segmented(),
+            0i32..(max_count + 1),
+        )?;
 
     chart
         .configure_mesh()

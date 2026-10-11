@@ -67,7 +67,7 @@ mod tests {
         let complete = MotifList::new(
             "x".into(),
             vec![
-                protein_motif(1, 1, "P", 1e-6), // P-loop
+                protein_motif(1, 1, "P", 1e-6),  // P-loop
                 protein_motif(9, 20, "L", 1e-6), // LRR
             ],
         );
@@ -96,11 +96,17 @@ mod tests {
     #[test]
     fn flexible_seed_rank_monotonic() {
         let d = def();
-        let cfg = FlexibleSeedConfig { min_nbarc: 3, require_ploop: false };
+        let cfg = FlexibleSeedConfig {
+            min_nbarc: 3,
+            require_ploop: false,
+        };
         // RNL 形状 [6,4,10,3,2]：rank 5,6,8,9,11 递增
         assert!(d.is_seed_flexible(&[6, 4, 10, 3, 2], &cfg));
         // 缺 P-loop，require_ploop=true 时不通过
-        let cfg_ploop = FlexibleSeedConfig { min_nbarc: 3, require_ploop: true };
+        let cfg_ploop = FlexibleSeedConfig {
+            min_nbarc: 3,
+            require_ploop: true,
+        };
         assert!(!d.is_seed_flexible(&[6, 4, 10, 3, 2], &cfg_ploop));
         // 含 P-loop 时通过
         assert!(d.is_seed_flexible(&[1, 6, 4], &cfg_ploop));
@@ -113,7 +119,10 @@ mod tests {
     #[test]
     fn flexible_signature_filter() {
         let d = def();
-        let cfg = FlexibleSeedConfig { min_nbarc: 3, require_ploop: false };
+        let cfg = FlexibleSeedConfig {
+            min_nbarc: 3,
+            require_ploop: false,
+        };
         // RNL 串不含既有 signature，但柔性预过滤应放行
         assert!(d.has_signature_flexible(&[6, 4, 10, 3, 2], &cfg));
         // 既有 signature 命中的仍保留

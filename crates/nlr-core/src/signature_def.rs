@@ -13,7 +13,6 @@
 /// files can carry additional motifs (for example RNL/helper-CC and TIR family profiles).
 pub type MotifId = u8;
 
-
 /// Domain category.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DomainCategory {
@@ -27,7 +26,7 @@ pub enum DomainCategory {
 
 impl DomainCategory {
     /// Construct from a category string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s {
             "NBARC" => DomainCategory::Nbarc,
             "LRR" => DomainCategory::Lrr,
@@ -56,8 +55,8 @@ pub const PLOOP_MOTIF: MotifId = 1;
 
 /// Rank table (index = motif id; `RANKS[0]` is an unused placeholder).
 pub const RANKS: [u8; 29] = [
-    0, 4, 11, 9, 6, 7, 5, 13, 12, 14, 8, 14, 10, 3, 3, 2, 2, 1, 1, 14, 15,
-    14,     14,     14,     14,     14,     14,     14, 14,   // 8 个 RNL(helper) 专用 CC motif（不参与 NB-ARC 排序）
+    0, 4, 11, 9, 6, 7, 5, 13, 12, 14, 8, 14, 10, 3, 3, 2, 2, 1, 1, 14, 15, 14, 14, 14, 14, 14, 14,
+    14, 14, // 8 个 RNL(helper) 专用 CC motif（不参与 NB-ARC 排序）
 ];
 
 /// Category table (index = motif id).
@@ -87,10 +86,10 @@ pub const CATEGORIES: [DomainCategory; 29] = [
     DomainCategory::Cc,     // 22（新增 CC 家族 motif）
     DomainCategory::Cc,     // 23（新增 CC 家族 motif）
     DomainCategory::Cc,     // 24（新增 CC 家族 motif）
-    DomainCategory::Tir,     // 25（新增 TIR 家族 motif）
-    DomainCategory::Tir,     // 26（新增 TIR 家族 motif）
-    DomainCategory::Tir,     // 27（新增 TIR 家族 motif）
-    DomainCategory::Tir,     // 28（新增 TIR 家族 motif）
+    DomainCategory::Tir,    // 25（新增 TIR 家族 motif）
+    DomainCategory::Tir,    // 26（新增 TIR 家族 motif）
+    DomainCategory::Tir,    // 27（新增 TIR 家族 motif）
+    DomainCategory::Tir,    // 28（新增 TIR 家族 motif）
 ];
 
 /// RGB color table (index = motif id).
@@ -118,12 +117,12 @@ pub const RGB_COLORS: [[u8; 3]; 29] = [
     [255, 255, 0],   // 20
     [255, 128, 0],   // 21（RNL CC）
     [255, 192, 0],   // 22（RNL CC）
-    [255, 64, 0],   // 23（RNL CC）
+    [255, 64, 0],    // 23（RNL CC）
     [255, 96, 32],   // 24（RNL CC）
-    [255, 160, 64],   // 25（RNL CC）
+    [255, 160, 64],  // 25（RNL CC）
     [255, 128, 0],   // 26（RNL CC）
     [255, 192, 0],   // 27（RNL CC）
-    [255, 64, 0],   // 28（RNL CC）
+    [255, 64, 0],    // 28（RNL CC）
 ];
 
 /// Enabled seed combinations.
@@ -171,27 +170,34 @@ pub const SIGNATURES: &[&[MotifId]] = &[
 /// Index 0 is a placeholder; only NB-ARC motifs (1,2,3,4,5,6,10,12) have values.
 pub const CONSENSUS_SEQUENCES: [&str; 29] = [
     "",
-    "PIWGMGGVGKTTLARAVYNDP",          // 1 (P-loop)
-    "LKPCFLYCAIFPEDYMIDKNKLIWLWMAE",  // 2
-    "CGGLPLAIKVWGGMLAGKQKT",          // 3
-    "YLVVLDDVWDTDQWD",                // 4
-    "NGSRIIITTRNKHVANYMCT",           // 5
-    "HFDCRAWVCVSQQYDMKKVLRDIIQQVGG",  // 6
-    "",                                // 7
-    "",                                // 8
-    "",                                // 9
-    "LSHEESWQLFHQHAF",                // 10
-    "",                                // 11
-    "IMPVLRLSYHHLPYH",                // 12
-    "", "", "", "", "", "", "", "",    // 13..20
-    "",                                // 21（RNL CC，非 NB-ARC）
-    "",                                // 22（RNL CC，非 NB-ARC）
-    "",                                // 23（RNL CC，非 NB-ARC）
-    "",                                // 24（RNL CC，非 NB-ARC）
-    "",                                // 25（RNL CC，非 NB-ARC）
-    "",                                // 26（RNL CC，非 NB-ARC）
-    "",                                // 27（RNL CC，非 NB-ARC）
-    "",                                // 28（RNL CC，非 NB-ARC）
+    "PIWGMGGVGKTTLARAVYNDP",         // 1 (P-loop)
+    "LKPCFLYCAIFPEDYMIDKNKLIWLWMAE", // 2
+    "CGGLPLAIKVWGGMLAGKQKT",         // 3
+    "YLVVLDDVWDTDQWD",               // 4
+    "NGSRIIITTRNKHVANYMCT",          // 5
+    "HFDCRAWVCVSQQYDMKKVLRDIIQQVGG", // 6
+    "",                              // 7
+    "",                              // 8
+    "",                              // 9
+    "LSHEESWQLFHQHAF",               // 10
+    "",                              // 11
+    "IMPVLRLSYHHLPYH",               // 12
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "", // 13..20
+    "", // 21（RNL CC，非 NB-ARC）
+    "", // 22（RNL CC，非 NB-ARC）
+    "", // 23（RNL CC，非 NB-ARC）
+    "", // 24（RNL CC，非 NB-ARC）
+    "", // 25（RNL CC，非 NB-ARC）
+    "", // 26（RNL CC，非 NB-ARC）
+    "", // 27（RNL CC，非 NB-ARC）
+    "", // 28（RNL CC，非 NB-ARC）
 ];
 
 /// Convert a motif id to a "motif_N" string.
@@ -249,13 +255,20 @@ impl AnnotatorSignatureDefinition {
     }
 
     /// 声明内置表之外 motif 的域类别（外部 mot.txt 带更多 motif 时使用）。
-    pub fn with_extra_categories(mut self, m: std::collections::HashMap<MotifId, DomainCategory>) -> Self {
+    pub fn with_extra_categories(
+        mut self,
+        m: std::collections::HashMap<MotifId, DomainCategory>,
+    ) -> Self {
         self.extra_categories = m;
         self
     }
 
     /// 外部库额外声明的播种组合 / signature（内置表之外新 motif 的配套规则）。
-    pub fn with_extra_rules(mut self, seeds: Vec<Vec<MotifId>>, signatures: Vec<Vec<MotifId>>) -> Self {
+    pub fn with_extra_rules(
+        mut self,
+        seeds: Vec<Vec<MotifId>>,
+        signatures: Vec<Vec<MotifId>>,
+    ) -> Self {
         self.extra_seeds = seeds;
         self.extra_signatures = signatures;
         self
@@ -285,7 +298,10 @@ impl AnnotatorSignatureDefinition {
         if let Some(c) = self.extra_categories.get(&id) {
             return *c;
         }
-        CATEGORIES.get(id as usize).copied().unwrap_or(DomainCategory::Na)
+        CATEGORIES
+            .get(id as usize)
+            .copied()
+            .unwrap_or(DomainCategory::Na)
     }
 
     /// Whether it is LRR.
@@ -339,15 +355,15 @@ impl AnnotatorSignatureDefinition {
         let extra = self.extra_seeds.iter().map(|v| v.as_slice());
         SEED_COMBINATIONS
             .iter()
-            .map(|v| *v)
+            .copied()
             .chain(extra)
             .any(|s: &[MotifId]| {
-            if s.iter().any(|&i| i > BUILTIN_MOTIF_COUNT) {
-                s.len() <= seq.len() && seq.windows(s.len()).any(|w| w == s)
-            } else {
-                s == seq
-            }
-        })
+                if s.iter().any(|&i| i > BUILTIN_MOTIF_COUNT) {
+                    s.len() <= seq.len() && seq.windows(s.len()).any(|w| w == s)
+                } else {
+                    s == seq
+                }
+            })
     }
 
     /// 宽松播种（新增）：连续命中的 motif 串里 NB-ARC 类 motif 数 ≥ min_nbarc 即视为 seed。
@@ -390,12 +406,11 @@ impl AnnotatorSignatureDefinition {
         let extra = self.extra_signatures.iter().map(|v| v.as_slice());
         SIGNATURES
             .iter()
-            .map(|v| *v)
+            .copied()
             .chain(extra)
             .any(|sig: &[MotifId]| {
-            sig.len() <= ids.len()
-                && ids.windows(sig.len()).any(|w| w == sig)
-        })
+                sig.len() <= ids.len() && ids.windows(sig.len()).any(|w| w == sig)
+            })
     }
 
     /// Derive the domain string from a motif list.

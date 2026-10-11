@@ -134,7 +134,12 @@ impl BioSequence {
         }
         let count = sample
             .bytes()
-            .filter(|b| matches!(b, b'A' | b'T' | b'G' | b'C' | b'N' | b'a' | b't' | b'g' | b'c' | b'n'))
+            .filter(|b| {
+                matches!(
+                    b,
+                    b'A' | b'T' | b'G' | b'C' | b'N' | b'a' | b't' | b'g' | b'c' | b'n'
+                )
+            })
             .count();
         count as f64 / sample.len() as f64 > 0.5
     }
@@ -144,7 +149,10 @@ impl BioSequence {
         if self.description.is_empty() {
             format!(">{}\n{}\n", self.identifier, self.sequence)
         } else {
-            format!(">{} {}\n{}\n", self.identifier, self.description, self.sequence)
+            format!(
+                ">{} {}\n{}\n",
+                self.identifier, self.description, self.sequence
+            )
         }
     }
 }

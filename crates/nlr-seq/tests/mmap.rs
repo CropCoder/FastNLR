@@ -38,7 +38,10 @@ fn mmap_chopper_matches_reader() {
     }
 
     // Both paths should produce identical output.
-    assert_eq!(mmap_seqs, reader_seqs, "mmap and reader paths produced inconsistent output");
+    assert_eq!(
+        mmap_seqs, reader_seqs,
+        "mmap and reader paths produced inconsistent output"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

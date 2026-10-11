@@ -4,9 +4,7 @@ use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
 use nlr_core::strand::Strand;
-use nlr_output::{
-    write_nbarc_alignment_fasta, write_nlr_bed, write_nlr_gff, write_report_txt,
-};
+use nlr_output::{write_nbarc_alignment_fasta, write_nlr_bed, write_nlr_gff, write_report_txt};
 
 fn def() -> AnnotatorSignatureDefinition {
     AnnotatorSignatureDefinition::new()
@@ -99,7 +97,11 @@ fn nbarc_alignment_survives_duplicate_motifs() {
     let seq = s.lines().nth(1).unwrap().trim_end();
 
     assert_eq!(seq.len(), NBARC_ALIGNMENT_LEN);
-    assert_eq!(seq.matches('-').count(), 0, "重复 motif 不应导致后续块全部变成 gap");
+    assert_eq!(
+        seq.matches('-').count(),
+        0,
+        "重复 motif 不应导致后续块全部变成 gap"
+    );
 }
 
 #[test]

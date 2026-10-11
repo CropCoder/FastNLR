@@ -2,11 +2,11 @@
 //!
 //! Emits global + per-chromosome + motif dimension statistics, in TSV format (deterministic order).
 
-use std::io::Write;
-use std::collections::BTreeMap;
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
+use std::collections::BTreeMap;
+use std::io::Write;
 
 /// Run statistics result (for TSV output).
 pub struct RunStats {
@@ -39,7 +39,10 @@ pub fn collect(
 
     let mut per_chromosome: BTreeMap<String, (usize, usize, usize)> = BTreeMap::new();
     for (seq, motifs) in motifs_by_seq {
-        let nlr_for_seq = nlrs.iter().filter(|l| l.sequence_name() == seq.as_str()).count();
+        let nlr_for_seq = nlrs
+            .iter()
+            .filter(|l| l.sequence_name() == seq.as_str())
+            .count();
         let complete_for_seq = nlrs
             .iter()
             .filter(|l| l.sequence_name() == seq.as_str() && l.is_complete_nlr(def))

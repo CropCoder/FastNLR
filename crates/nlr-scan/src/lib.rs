@@ -123,15 +123,23 @@ impl MotifParser {
             let mut j = 0;
             while j + SIMD_LANES <= j_end {
                 let scores = self.score_batch_simd(bytes, motif_id, ws, j);
-                for lane in 0..SIMD_LANES {
-                    let kmer_score = scores[lane];
+                for (lane, &kmer_score) in scores.iter().enumerate() {
                     if kmer_score < prelim_t {
                         // p >= 1e-4, not significant, skip.
                         continue;
                     }
                     let pos = j + lane;
                     let pvalue = self.definition.cdf(motif_id, kmer_score);
-                    self.arbitrate(motif_id, pos, ws, pvalue, &mut hits, &mut pvalues, maxws, seq_len);
+                    self.arbitrate(
+                        motif_id,
+                        pos,
+                        ws,
+                        pvalue,
+                        &mut hits,
+                        &mut pvalues,
+                        maxws,
+                        seq_len,
+                    );
                 }
                 j += SIMD_LANES;
             }
@@ -140,7 +148,16 @@ impl MotifParser {
                 let kmer_score = self.score_at(bytes, motif_id, ws, j);
                 if kmer_score >= prelim_t {
                     let pvalue = self.definition.cdf(motif_id, kmer_score);
-                    self.arbitrate(motif_id, j, ws, pvalue, &mut hits, &mut pvalues, maxws, seq_len);
+                    self.arbitrate(
+                        motif_id,
+                        j,
+                        ws,
+                        pvalue,
+                        &mut hits,
+                        &mut pvalues,
+                        maxws,
+                        seq_len,
+                    );
                 }
                 j += 1;
             }
@@ -150,6 +167,9 @@ impl MotifParser {
     }
 
     /// Non-overlap arbitration (single window, extracted for reuse).
+    // 说明：该函数是扫描热路径中抽出的内联辅助函数，参数虽多但都是就地借用的
+    // 状态切片，打包成结构体反而会增加一次间接访问，故保留长参数列表。
+    #[allow(clippy::too_many_arguments)]
     #[inline]
     fn arbitrate(
         &self,
@@ -224,13 +244,18 @@ impl MotifParser {
     /// SIMD batch scoring: accumulate integer scores in parallel for 8 consecutive windows
     /// `[pos, pos+8)`.
     #[inline]
-    fn score_batch_simd(&self, bytes: &[u8], motif_id: u8, ws: usize, pos: usize) -> [i32; SIMD_LANES] {
+    fn score_batch_simd(
+        &self,
+        bytes: &[u8],
+        motif_id: u8,
+        ws: usize,
+        pos: usize,
+    ) -> [i32; SIMD_LANES] {
         use wide::i32x8;
         let mut acc = i32x8::splat(0);
         for i in 0..ws {
-            let lane: [i32; SIMD_LANES] = std::array::from_fn(|l| {
-                self.definition.score(motif_id, i, bytes[pos + l + i]) as i32
-            });
+            let lane: [i32; SIMD_LANES] =
+                std::array::from_fn(|l| self.definition.score(motif_id, i, bytes[pos + l + i]));
             acc += i32x8::from(lane);
         }
         acc.to_array()

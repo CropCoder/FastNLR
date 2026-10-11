@@ -79,7 +79,11 @@ fn outputs_have_no_duplicate_bed_blocks() {
         .map(|s| s.parse().unwrap())
         .collect();
     assert_eq!(sizes.len(), starts.len());
-    assert_eq!(cols[9].parse::<usize>().unwrap(), starts.len(), "blockCount 与块数不符");
+    assert_eq!(
+        cols[9].parse::<usize>().unwrap(),
+        starts.len(),
+        "blockCount 与块数不符"
+    );
 
     let mut blocks: Vec<(u64, u64)> = starts
         .iter()
@@ -100,5 +104,9 @@ fn outputs_have_no_duplicate_bed_blocks() {
     // txt 的 motif 列表长度必须与 BED 块数一致（两者同源）。
     let txt = std::fs::read_to_string(out_dir.join("fixture.nlr.txt")).unwrap();
     let cols: Vec<&str> = txt.trim_end().split('\t').collect();
-    assert_eq!(cols[6].split(',').count(), blocks.len(), "txt motif 列表长度 != BED 块数");
+    assert_eq!(
+        cols[6].split(',').count(),
+        blocks.len(),
+        "txt motif 列表长度 != BED 块数"
+    );
 }

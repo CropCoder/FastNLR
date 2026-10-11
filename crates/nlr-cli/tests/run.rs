@@ -5,14 +5,29 @@ use std::io::Write;
 /// Precise back-translation (to construct DNA that hits motifs).
 fn back_translate(prot: &str) -> String {
     let mut map = std::collections::HashMap::new();
-    map.insert('P', "CCG"); map.insert('I', "ATT"); map.insert('W', "TGG");
-    map.insert('G', "GGT"); map.insert('M', "ATG"); map.insert('V', "GTT");
-    map.insert('K', "AAA"); map.insert('T', "ACT"); map.insert('L', "CTT");
-    map.insert('A', "GCT"); map.insert('R', "CGT"); map.insert('Y', "TAT");
-    map.insert('N', "AAT"); map.insert('D', "GAT"); map.insert('H', "CAT");
-    map.insert('F', "TTT"); map.insert('C', "TGT"); map.insert('S', "TCT");
-    map.insert('Q', "CAG"); map.insert('E', "GAA");
-    prot.chars().map(|a| map.get(&a).copied().unwrap_or("GGG")).collect::<String>()
+    map.insert('P', "CCG");
+    map.insert('I', "ATT");
+    map.insert('W', "TGG");
+    map.insert('G', "GGT");
+    map.insert('M', "ATG");
+    map.insert('V', "GTT");
+    map.insert('K', "AAA");
+    map.insert('T', "ACT");
+    map.insert('L', "CTT");
+    map.insert('A', "GCT");
+    map.insert('R', "CGT");
+    map.insert('Y', "TAT");
+    map.insert('N', "AAT");
+    map.insert('D', "GAT");
+    map.insert('H', "CAT");
+    map.insert('F', "TTT");
+    map.insert('C', "TGT");
+    map.insert('S', "TCT");
+    map.insert('Q', "CAG");
+    map.insert('E', "GAA");
+    prot.chars()
+        .map(|a| map.get(&a).copied().unwrap_or("GGG"))
+        .collect::<String>()
 }
 
 #[test]

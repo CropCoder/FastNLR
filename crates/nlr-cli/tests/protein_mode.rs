@@ -30,7 +30,11 @@ fn protein_mode_writes_its_own_output_set() {
     assert!(status.success(), "protein mode 运行失败: {status}");
 
     // 蛋白模式的 4 类输出。
-    for name in ["nlr_proteins.domains.tsv", "nlr_proteins.nlr.tsv", "nlr_proteins.summary.txt"] {
+    for name in [
+        "nlr_proteins.domains.tsv",
+        "nlr_proteins.nlr.tsv",
+        "nlr_proteins.summary.txt",
+    ] {
         assert!(out_dir.join(name).is_file(), "缺少输出文件 {name}");
     }
     for name in ["01-nlr-types.png", "02-domain-counts.png"] {
@@ -40,8 +44,14 @@ fn protein_mode_writes_its_own_output_set() {
         );
     }
     // 不应产生基因组坐标类输出。
-    for name in ["nlr_proteins.nlr.gff", "nlr_proteins.nlr.bed", "nlr_proteins.motifs.bed",
-                 "nlr_proteins.loci.fasta", "nlr_proteins.nbarc.fasta", "nlr_proteins.stats.tsv"] {
+    for name in [
+        "nlr_proteins.nlr.gff",
+        "nlr_proteins.nlr.bed",
+        "nlr_proteins.motifs.bed",
+        "nlr_proteins.loci.fasta",
+        "nlr_proteins.nbarc.fasta",
+        "nlr_proteins.stats.tsv",
+    ] {
         assert!(!out_dir.join(name).exists(), "蛋白模式不应生成 {name}");
     }
 
@@ -83,7 +93,9 @@ fn protein_mode_writes_its_own_output_set() {
     let (start, end): (usize, usize) = (cols[5].parse().unwrap(), cols[6].parse().unwrap());
     assert!(start < end && end <= 926);
     // LRR 由 PWM 提供。
-    assert!(dom.lines().any(|l| l.contains("RPM1_ARATH") && l.contains("\tpwm\t")));
+    assert!(dom
+        .lines()
+        .any(|l| l.contains("RPM1_ARATH") && l.contains("\tpwm\t")));
 }
 
 #[test]
@@ -104,7 +116,10 @@ fn protein_mode_rejects_genome_only_flags() {
         .unwrap();
     assert!(!output.status.success(), "冲突参数应导致失败");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--checkpoint"), "错误信息应指出冲突参数: {stderr}");
+    assert!(
+        stderr.contains("--checkpoint"),
+        "错误信息应指出冲突参数: {stderr}"
+    );
 }
 
 #[test]

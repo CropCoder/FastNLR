@@ -79,7 +79,10 @@ impl RunConfig {
                 }
                 if let Some((id, cat)) = kv.split_once('=') {
                     if let Ok(id) = id.trim().parse::<u8>() {
-                        m.insert(id, DomainCategory::from_str(cat.trim().to_uppercase().as_str()));
+                        m.insert(
+                            id,
+                            DomainCategory::parse(cat.trim().to_uppercase().as_str()),
+                        );
                     }
                 }
             }
@@ -87,7 +90,11 @@ impl RunConfig {
         m
     }
 
-    pub fn new(input_fasta: PathBuf, mot_file: Option<PathBuf>, store_file: Option<PathBuf>) -> Self {
+    pub fn new(
+        input_fasta: PathBuf,
+        mot_file: Option<PathBuf>,
+        store_file: Option<PathBuf>,
+    ) -> Self {
         RunConfig {
             input_fasta,
             mot_file,
@@ -143,13 +150,18 @@ pub fn run_with_progress(
     let def_cfg = load_motif_definition(config)?;
     let mut signature_def = AnnotatorSignatureDefinition::new()
         .with_extra_categories(RunConfig::parse_motif_categories(&config.motif_categories))
-        .with_extra_rules(RunConfig::parse_id_lists(&config.extra_seeds),
-                          RunConfig::parse_id_lists(&config.extra_signatures));
+        .with_extra_rules(
+            RunConfig::parse_id_lists(&config.extra_seeds),
+            RunConfig::parse_id_lists(&config.extra_signatures),
+        );
     if let Some(cfg) = config.flexible_seed {
         signature_def = signature_def.with_flexible_seed(cfg);
     }
     let parser = nlr_scan::MotifParser::with_thresholds(
-        def_cfg, config.motif_prelim_p, config.motif_accept_p);
+        def_cfg,
+        config.motif_prelim_p,
+        config.motif_accept_p,
+    );
     let parser = std::sync::Arc::new(parser);
 
     // 1.5 Checkpoint resume: if a checkpoint exists, assemble and return (skip scan).
@@ -406,7 +418,11 @@ fn filter_motifs_by_signature(
     // 6 个桶：正向 0/1/2 帧 + 反向 0/1/2 帧；桶内索引保持排序后的翻译顺序。
     let mut buckets: [Vec<usize>; 6] = Default::default();
     for (i, m) in motifs.iter().enumerate() {
-        let base = if m.strand == nlr_core::strand::Strand::Forward { 0 } else { 3 };
+        let base = if m.strand == nlr_core::strand::Strand::Forward {
+            0
+        } else {
+            3
+        };
         buckets[base + (m.frame as usize % 3)].push(i);
     }
 
@@ -497,7 +513,8 @@ pub fn load_checkpoint(
     seq_ids.sort();
     for seq_id in seq_ids {
         let ms = motifs_by_seq.get(seq_id).unwrap().clone();
-        let mut assembled = nlr_assemble::assemble(seq_id, ms, &nlr_assemble::AssembleParams::default(), &def);
+        let mut assembled =
+            nlr_assemble::assemble(seq_id, ms, &nlr_assemble::AssembleParams::default(), &def);
         nlrs.append(&mut assembled);
     }
     tracing::info!("checkpoint loaded: {} sequences", motifs_by_seq.len());
@@ -802,14 +819,22 @@ pub fn write_protein_outputs(
     let plot_dir = output_dir.join(format!("{prefix}.plots"));
     std::fs::create_dir_all(&plot_dir)?;
     let p1 = plot_dir.join("01-nlr-types.png");
-    if let Err(e) = nlr_plot::plot_counts(&p1, "NLR types (protein mode)", "protein count", &type_counts)
-    {
+    if let Err(e) = nlr_plot::plot_counts(
+        &p1,
+        "NLR types (protein mode)",
+        "protein count",
+        &type_counts,
+    ) {
         tracing::warn!("NLR type plot generation failed: {e}");
     }
     written.push(p1);
     let p2 = plot_dir.join("02-domain-counts.png");
-    if let Err(e) = nlr_plot::plot_counts(&p2, "Domain hits (protein mode)", "hit count", &model_counts)
-    {
+    if let Err(e) = nlr_plot::plot_counts(
+        &p2,
+        "Domain hits (protein mode)",
+        "hit count",
+        &model_counts,
+    ) {
         tracing::warn!("domain count plot generation failed: {e}");
     }
     written.push(p2);

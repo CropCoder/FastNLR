@@ -175,10 +175,16 @@ impl MotifDefinition {
             let mut m = 0usize;
             for line in text.lines() {
                 let cols: Vec<&str> = line.split_whitespace().collect();
-                if cols.is_empty() { continue; }
+                if cols.is_empty() {
+                    continue;
+                }
                 let parts: Vec<&str> = cols[0].split('@').collect();
-                if parts.len() < 2 { continue; }
-                if let Some(i) = Self::parse_motif_id(parts[0]) { m = m.max(i as usize); }
+                if parts.len() < 2 {
+                    continue;
+                }
+                if let Some(i) = Self::parse_motif_id(parts[0]) {
+                    m = m.max(i as usize);
+                }
             }
             m + 1
         };
@@ -274,7 +280,9 @@ impl MotifDefinition {
         // 分数超出 CDF 表覆盖范围时，真实 p 值只会比表内最后一个更小，因此用表内最后一个
         // （最小）p 值作为保守上界。旧实现直接返回 0.0，等于把"未知"当成"极显著"，
         // 一旦自定义 store.txt 的分数区间不足就会静默产生大量假阳性。
-        arr.get(idx).copied().unwrap_or_else(|| arr.last().copied().unwrap_or(1.0))
+        arr.get(idx)
+            .copied()
+            .unwrap_or_else(|| arr.last().copied().unwrap_or(1.0))
     }
 
     /// Precompute integer thresholds where `p < thresh <=> score >= T(id)`.

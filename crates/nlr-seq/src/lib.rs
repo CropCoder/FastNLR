@@ -2,8 +2,8 @@
 //!
 //! Sequence-processing primitives: translation, reverse complement, codon table, FASTA reading, and chopping.
 
-pub mod codon;
 pub mod chopper;
+pub mod codon;
 pub mod fasta;
 pub mod translate;
 

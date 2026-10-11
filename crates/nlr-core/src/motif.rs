@@ -27,7 +27,7 @@ pub fn format_double_java(d: f64) -> String {
         };
     }
     let abs = d.abs();
-    if abs >= 1e-3 && abs < 1e7 {
+    if (1e-3..1e7).contains(&abs) {
         format!("{}", d)
     } else {
         format!("{:e}", d).replace('e', "E")
@@ -238,7 +238,10 @@ impl Ord for Motif {
             }
         } else {
             // DNA unset: sort by protein id + position.
-            if self.protein_sequence_id.eq_ignore_ascii_case(&other.protein_sequence_id) {
+            if self
+                .protein_sequence_id
+                .eq_ignore_ascii_case(&other.protein_sequence_id)
+            {
                 self.position.cmp(&other.position)
             } else {
                 self.protein_sequence_id.cmp(&other.protein_sequence_id)

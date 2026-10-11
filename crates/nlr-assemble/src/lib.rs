@@ -7,10 +7,10 @@
 //!   monotonic;
 //! - elongate: extend at both ends by rank rules, with usedMotifs dedup.
 
-use std::collections::HashSet;
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
+use std::collections::HashSet;
 
 /// Three-step assembly parameters.
 #[derive(Debug, Clone, Copy)]
@@ -48,8 +48,12 @@ pub fn assemble(
     // Sort (forward strand ascending / reverse strand descending).
     motifs.sort();
 
-    let seeds = find_seeds(&motifs, params.distance_within_motif_combination, def,
-                           params.relaxed_seed_min_nbarc);
+    let seeds = find_seeds(
+        &motifs,
+        params.distance_within_motif_combination,
+        def,
+        params.relaxed_seed_min_nbarc,
+    );
     let merged = merge_seeds(seeds, params.distance_between_motif_combinations, def);
     let mut pre_nlrs = elongate(merged, &motifs, params.distance_for_elongating, def);
 
@@ -103,7 +107,11 @@ fn find_seeds(
                 };
                 if seeded {
                     count += 1;
-                    let name = format!("{}_nlr{}", motifs[i].dna_sequence_id.as_deref().unwrap_or(""), count);
+                    let name = format!(
+                        "{}_nlr{}",
+                        motifs[i].dna_sequence_id.as_deref().unwrap_or(""),
+                        count
+                    );
                     seeds.push(MotifList::new(name, potential));
                     break;
                 }
@@ -160,7 +168,11 @@ fn elongate(
 
     for mut list in merged_seeds {
         // Entry check: skip if the seed contains an already-used motif.
-        if list.motifs.iter().any(|m| used.contains(&(m.id, m.dna_start))) {
+        if list
+            .motifs
+            .iter()
+            .any(|m| used.contains(&(m.id, m.dna_start)))
+        {
             continue;
         }
 

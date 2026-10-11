@@ -34,7 +34,10 @@ fn read_fasta(path: &str) -> Vec<(String, String)> {
 }
 
 fn fixtures() -> Vec<(String, String)> {
-    read_fasta(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/nlr_proteins.fa"))
+    read_fasta(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/nlr_proteins.fa"
+    ))
 }
 
 /// 确定性打乱（xorshift + Fisher-Yates），用于阴性对照。
@@ -54,8 +57,11 @@ fn shuffled(seq: &str, seed: u64) -> String {
 #[test]
 fn embedded_models_find_expected_domain_architecture() {
     let library = HmmLibrary::from_embedded();
-    assert_eq!(library.models().len(), 5,
-               "内置应为 NB-ARC/TIR/Rx_N/RPW8/R1-type 五个模型");
+    assert_eq!(
+        library.models().len(),
+        5,
+        "内置应为 NB-ARC/TIR/Rx_N/RPW8/R1-type 五个模型"
+    );
 
     let mut scanner = library.scanner();
     let mut seen = 0;
@@ -76,8 +82,16 @@ fn embedded_models_find_expected_domain_architecture() {
                     .iter()
                     .find(|h| h.category == DomainCategory::Nbarc)
                     .expect("RPM1 应有 NB-ARC");
-                assert!((cc.bitscore - 56.2).abs() < 0.5, "Rx_N bitscore 漂移: {}", cc.bitscore);
-                assert!((nb.bitscore - 193.2).abs() < 0.5, "NB-ARC bitscore 漂移: {}", nb.bitscore);
+                assert!(
+                    (cc.bitscore - 56.2).abs() < 0.5,
+                    "Rx_N bitscore 漂移: {}",
+                    cc.bitscore
+                );
+                assert!(
+                    (nb.bitscore - 193.2).abs() < 0.5,
+                    "NB-ARC bitscore 漂移: {}",
+                    nb.bitscore
+                );
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
                 assert!(arch.has_nbarc && !arch.has_lrr && !arch.complete);
@@ -87,7 +101,11 @@ fn embedded_models_find_expected_domain_architecture() {
                     .iter()
                     .find(|h| h.category == DomainCategory::Tir)
                     .expect("RPS4 应有 TIR");
-                assert!((tir.bitscore - 166.2).abs() < 0.5, "TIR bitscore 漂移: {}", tir.bitscore);
+                assert!(
+                    (tir.bitscore - 166.2).abs() < 0.5,
+                    "TIR bitscore 漂移: {}",
+                    tir.bitscore
+                );
                 assert_eq!(arch.nterm, "TIR");
                 assert_eq!(arch.class, "TIR-NBARC");
                 assert!(arch.has_tir && arch.has_nbarc && !arch.complete);
@@ -97,7 +115,11 @@ fn embedded_models_find_expected_domain_architecture() {
                     .iter()
                     .find(|h| h.model_acc == "PF05659")
                     .expect("ADR1 应有 RPW8");
-                assert!((rpw8.bitscore - 41.5).abs() < 0.5, "RPW8 bitscore 漂移: {}", rpw8.bitscore);
+                assert!(
+                    (rpw8.bitscore - 41.5).abs() < 0.5,
+                    "RPW8 bitscore 漂移: {}",
+                    rpw8.bitscore
+                );
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
             }
@@ -107,7 +129,11 @@ fn embedded_models_find_expected_domain_architecture() {
                     .iter()
                     .find(|h| h.model_acc == "PF12061")
                     .expect("Prf 应有 R1-type(PF12061) 命中");
-                assert!((r1t.bitscore - 34.0).abs() < 0.5, "PF12061 bitscore 漂移: {}", r1t.bitscore);
+                assert!(
+                    (r1t.bitscore - 34.0).abs() < 0.5,
+                    "PF12061 bitscore 漂移: {}",
+                    r1t.bitscore
+                );
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
             }
@@ -209,5 +235,8 @@ fn user_models_override_embedded_models_by_accession() {
     assert_eq!(added, 1);
     assert_eq!(library.models().len(), before, "同 accession 应覆盖");
     // 分类映射：未知 accession 归为 NA，只报告不参与判定。
-    assert_eq!(nlr_domain::category_for_accession("PF99999"), DomainCategory::Na);
+    assert_eq!(
+        nlr_domain::category_for_accession("PF99999"),
+        DomainCategory::Na
+    );
 }

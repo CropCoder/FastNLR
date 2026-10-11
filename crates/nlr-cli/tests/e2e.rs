@@ -3,11 +3,9 @@
 #[test]
 fn consensus_sequence_hits_motif1() {
     // Use the built-in embedded mot/store (self-contained, no external files).
-    let def = nlr_config::MotifDefinition::load_from_str(
-        nlr_cli::EMBEDDED_MOT,
-        nlr_cli::EMBEDDED_STORE,
-    )
-    .unwrap();
+    let def =
+        nlr_config::MotifDefinition::load_from_str(nlr_cli::EMBEDDED_MOT, nlr_cli::EMBEDDED_STORE)
+            .unwrap();
     let parser = nlr_scan::MotifParser::new(def);
 
     // motif_1 consensus used directly as the protein sequence (3x repeat).
@@ -21,11 +19,9 @@ fn consensus_sequence_hits_motif1() {
 
 #[test]
 fn full_pipeline_assembles_nlr_from_dna() {
-    let def_cfg = nlr_config::MotifDefinition::load_from_str(
-        nlr_cli::EMBEDDED_MOT,
-        nlr_cli::EMBEDDED_STORE,
-    )
-    .unwrap();
+    let def_cfg =
+        nlr_config::MotifDefinition::load_from_str(nlr_cli::EMBEDDED_MOT, nlr_cli::EMBEDDED_STORE)
+            .unwrap();
     let parser = nlr_scan::MotifParser::new(def_cfg);
     let signature = nlr_core::signature_def::AnnotatorSignatureDefinition::new();
 
@@ -76,12 +72,27 @@ fn full_pipeline_assembles_nlr_from_dna() {
 /// Simple back-translation (only for constructing test DNA).
 fn back_translate(prot: &str) -> String {
     let mut map = std::collections::HashMap::new();
-    map.insert('P', "CCG"); map.insert('I', "ATT"); map.insert('W', "TGG");
-    map.insert('G', "GGT"); map.insert('M', "ATG"); map.insert('V', "GTT");
-    map.insert('K', "AAA"); map.insert('T', "ACT"); map.insert('L', "CTT");
-    map.insert('A', "GCT"); map.insert('R', "CGT"); map.insert('Y', "TAT");
-    map.insert('N', "AAT"); map.insert('D', "GAT"); map.insert('H', "CAT");
-    map.insert('F', "TTT"); map.insert('C', "TGT"); map.insert('S', "TCT");
-    map.insert('Q', "CAG"); map.insert('E', "GAA");
-    prot.chars().map(|a| map.get(&a).copied().unwrap_or("GGG")).collect::<String>()
+    map.insert('P', "CCG");
+    map.insert('I', "ATT");
+    map.insert('W', "TGG");
+    map.insert('G', "GGT");
+    map.insert('M', "ATG");
+    map.insert('V', "GTT");
+    map.insert('K', "AAA");
+    map.insert('T', "ACT");
+    map.insert('L', "CTT");
+    map.insert('A', "GCT");
+    map.insert('R', "CGT");
+    map.insert('Y', "TAT");
+    map.insert('N', "AAT");
+    map.insert('D', "GAT");
+    map.insert('H', "CAT");
+    map.insert('F', "TTT");
+    map.insert('C', "TGT");
+    map.insert('S', "TCT");
+    map.insert('Q', "CAG");
+    map.insert('E', "GAA");
+    prot.chars()
+        .map(|a| map.get(&a).copied().unwrap_or("GGG"))
+        .collect::<String>()
 }

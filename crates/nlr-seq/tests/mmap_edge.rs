@@ -3,8 +3,11 @@
 use nlr_seq::SequenceChopper;
 use std::io::Write;
 
+/// (序列名, 序列) 列表，mmap 与 reader 两条路径的结果类型。
+type Fragments = Vec<(String, String)>;
+
 /// Chop the same input via both mmap and reader paths, returning both results.
-fn both_paths(data: &[u8], frag: usize, overlap: usize) -> (Vec<(String, String)>, Vec<(String, String)>) {
+fn both_paths(data: &[u8], frag: usize, overlap: usize) -> (Fragments, Fragments) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let uniq = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -67,19 +70,18 @@ fn no_trailing_newline_consistent() {
 
 #[test]
 fn multi_sequence_consistent() {
-    assert_consistent(
-        "multi",
-        b">chr1\nACGTACGTACGT\n>chr2\nTTTTGGGG\n",
-        4,
-        2,
-    );
+    assert_consistent("multi", b">chr1\nACGTACGTACGT\n>chr2\nTTTTGGGG\n", 4, 2);
 }
 
 #[test]
 fn crlf_does_not_pollute_sequence() {
     // Under CRLF the first fragment should be exactly ACGT (no \r).
     let (mmap_out, _) = both_paths(b">chr1\r\nACGTACGTACGT\r\n", 4, 2);
-    assert_eq!(mmap_out[0].1, "ACGT", "first fragment should not contain \\r, got {:?}", mmap_out[0].1);
+    assert_eq!(
+        mmap_out[0].1, "ACGT",
+        "first fragment should not contain \\r, got {:?}",
+        mmap_out[0].1
+    );
     // 12 bases, frag=4 overlap=2 -> 5 fragments.
     assert_eq!(mmap_out.len(), 5);
     // No fragment should contain \r.

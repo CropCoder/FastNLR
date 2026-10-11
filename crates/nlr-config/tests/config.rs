@@ -17,8 +17,15 @@ fn load_real_config() {
     let mut names = def.motif_names().to_vec();
     names.sort();
     let builtins: Vec<u8> = (1..=20).collect();
-    assert!(names.len() >= builtins.len(), "should load at least 20 motifs, got {}", names.len());
-    assert!(builtins.iter().all(|i| names.contains(i)), "missing built-in motifs");
+    assert!(
+        names.len() >= builtins.len(),
+        "should load at least 20 motifs, got {}",
+        names.len()
+    );
+    assert!(
+        builtins.iter().all(|i| names.contains(i)),
+        "missing built-in motifs"
+    );
     assert_eq!(def.max_motif_id(), *names.last().unwrap());
 
     // Maximum motif length = 50 (per documentation).
@@ -30,7 +37,11 @@ fn load_real_config() {
     // PWM score range 0..=100, CDF index queryable.
     // motif_4@0@A = 27 (first line of mot.txt, known value).
     let s = def.score(4, 0, b'A');
-    assert!(s >= 0 && s <= 100, "PWM score should be in 0..=100, got {}", s);
+    assert!(
+        (0..=100).contains(&s),
+        "PWM score should be in 0..=100, got {}",
+        s
+    );
 }
 
 #[test]
