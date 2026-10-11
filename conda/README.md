@@ -55,3 +55,17 @@ For every new tag:
 
 3. Reset `build: number` to `0`.
 4. Apply the identical change to `bioconda/bioconda-recipes`.
+
+> **Always diff against `bioconda/bioconda-recipes` master, never overwrite it with this
+> copy.** Bioconda reviewers edit recipes during review (they added `license_family`,
+> `doc_url` and `extra.additional-platforms` to this one), and those edits live only on
+> master. Before opening an update PR, fetch the merged recipe and rebase this copy on it:
+>
+> ```bash
+> curl -sS https://raw.githubusercontent.com/bioconda/bioconda-recipes/master/recipes/fastnlr/meta.yaml \
+>   -o /tmp/meta_master.yaml
+> diff -u /tmp/meta_master.yaml conda/fastnlr/meta.yaml   # expect only version + sha256
+> ```
+>
+> Dropping `extra.additional-platforms` would silently drop the linux-aarch64 and
+> osx-arm64 builds.
