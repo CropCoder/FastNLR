@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "fastnlr"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "clap",
  "ctrlc",
@@ -534,14 +534,14 @@ dependencies = [
 
 [[package]]
 name = "nlr-assemble"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "nlr-core",
 ]
 
 [[package]]
 name = "nlr-config"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "memmap2",
  "nlr-core",
@@ -549,11 +549,11 @@ dependencies = [
 
 [[package]]
 name = "nlr-core"
-version = "1.4.0"
+version = "1.4.1"
 
 [[package]]
 name = "nlr-domain"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "hmmer-pure-rs",
  "nlr-core",
@@ -561,14 +561,14 @@ dependencies = [
 
 [[package]]
 name = "nlr-output"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "nlr-core",
 ]
 
 [[package]]
 name = "nlr-plot"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "nlr-report",
  "plotters",
@@ -576,14 +576,14 @@ dependencies = [
 
 [[package]]
 name = "nlr-report"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "nlr-core",
 ]
 
 [[package]]
 name = "nlr-scan"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "nlr-config",
  "nlr-core",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "nlr-seq"
-version = "1.4.0"
+version = "1.4.1"
 dependencies = [
  "flate2",
  "memmap2",
