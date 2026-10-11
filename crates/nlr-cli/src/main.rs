@@ -313,7 +313,7 @@ fn run_protein_mode(cli: &Cli, start: Instant) {
 
     let prefix = genome_prefix(&cli.input);
     tracing::info!(
-        "protein mode: input={} | built-in models=NB-ARC,TIR,Rx_N,RPW8 | extra HMM files={} | threads={} | output={}",
+        "protein mode: input={} | built-in models=NB-ARC,TIR,Rx_N,RPW8,R1-type | extra HMM files={} | threads={} | output={}",
         cli.input.display(),
         cli.hmm.len(),
         config.threads,

@@ -19,7 +19,7 @@ The crate has no notion of genome coordinates — protein mode works on sequence
 
 ## Domain evidence: HMMER only for NB-ARC / TIR / CC
 
-Four curated Pfam models are embedded (see `data/README.md` for provenance and licence):
+Five curated Pfam models are embedded (see `data/README.md` for provenance and licence):
 
 | Accession | Model | Category | GA (sequence / domain) |
 |---|---|---|---|
@@ -27,9 +27,12 @@ Four curated Pfam models are embedded (see `data/README.md` for provenance and l
 | PF01582 | TIR | TIR | 21.3 / 21.3 |
 | PF18052 | Rx_N | CC | 27.7 / 27.7 |
 | PF05659 | RPW8 | CC | 30.4 / 30.4 |
+| PF12061 | R1-type (Pfam short name `NB-LRR`) | CC | 28.7 / 28.7 |
 
-Two models cover CC because their specificity differs: Rx_N recovers the CC domain of CNL-type
-receptors, RPW8 the CC/RPW8 domain of RNL/helper NLRs (ADR1/NRG1/NRC).
+Three models cover the CC family because their specificity differs: Rx_N recovers the CC domain
+of most CNL-type receptors, RPW8 the CC/RPW8 domain of RNL/helper NLRs (ADR1/NRG1), and PF12061
+the R1-type N-terminal domain of the NRC-clade CNLs (RefPlantNLR `Structure` letter `B`;
+NbPRFa/NbPRFb/Prf/R1).
 
 **LRR is deliberately not modelled here.** Seven Pfam LRR models combined reach only 47.5%
 sensitivity on the RefPlantNLR gold set, while FastNLR's PWM LRR motifs reach 99.5%; the CLI

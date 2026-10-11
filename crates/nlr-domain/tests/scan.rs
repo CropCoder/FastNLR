@@ -54,7 +54,8 @@ fn shuffled(seq: &str, seed: u64) -> String {
 #[test]
 fn embedded_models_find_expected_domain_architecture() {
     let library = HmmLibrary::from_embedded();
-    assert_eq!(library.models().len(), 4, "内置应为 NB-ARC/TIR/Rx_N/RPW8 四个模型");
+    assert_eq!(library.models().len(), 5,
+               "内置应为 NB-ARC/TIR/Rx_N/RPW8/R1-type 五个模型");
 
     let mut scanner = library.scanner();
     let mut seen = 0;
@@ -100,10 +101,20 @@ fn embedded_models_find_expected_domain_architecture() {
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
             }
+            "Q96485_SOLLC" => {
+                // Prf（番茄）：NRC 支系 CNL，N 端为 R1 型结构域（PF12061），无 PF18052/PF05659 命中。
+                let r1t = passed
+                    .iter()
+                    .find(|h| h.model_acc == "PF12061")
+                    .expect("Prf 应有 R1-type(PF12061) 命中");
+                assert!((r1t.bitscore - 34.0).abs() < 0.5, "PF12061 bitscore 漂移: {}", r1t.bitscore);
+                assert_eq!(arch.nterm, "CC");
+                assert_eq!(arch.class, "CC-NBARC");
+            }
             other => panic!("unexpected fixture {other}"),
         }
     }
-    assert_eq!(seen, 3);
+    assert_eq!(seen, 4);
 }
 
 #[test]

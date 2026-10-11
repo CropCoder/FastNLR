@@ -1,12 +1,13 @@
 # Test fixtures
 
-`nlr_proteins.fa` holds three full-length NLR proteins used by `tests/scan.rs`:
+`nlr_proteins.fa` holds four full-length NLR proteins used by `tests/scan.rs`:
 
 | Identifier | UniProt | Protein | Expected architecture |
 |---|---|---|---|
 | `RPM1_ARATH` | Q39214 | Arabidopsis RPM1 | CC(Rx_N)-NB-ARC-LRR (CNL) |
 | `RPS4L_ARATH` | Q9SCX6 | Arabidopsis RPS4 | TIR-NB-ARC-LRR (TNL) |
 | `ADR1_ARATH` | Q9FW44 | Arabidopsis ADR1 | CC(RPW8)-NB-ARC (RNL) |
+| `Q96485_SOLLC` | Q96485 | Tomato Prf | CC(R1-type, PF12061)-NB-ARC-LRR (NRC-clade CNL) |
 
 Source: UniProtKB (https://rest.uniprot.org/uniprotkb/<acc>.fasta), retrieved 2026-10-09.
 UniProt data is distributed under CC BY 4.0; the sequences are reproduced here unmodified

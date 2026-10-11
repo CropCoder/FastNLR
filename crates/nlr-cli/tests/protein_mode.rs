@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-/// 三个真实 NLR（CNL/TNL/RNL）组成的 fixture，与 nlr-domain 的集成测试共用。
+/// 四个真实 NLR（CNL/TNL/RNL + NRC 支系 B 型 CNL）组成的 fixture，与 nlr-domain 的集成测试共用。
 fn fixture() -> &'static str {
     concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -52,7 +52,7 @@ fn protein_mode_writes_its_own_output_set() {
         .filter(|l| !l.starts_with('#'))
         .map(|l| l.split('\t').collect())
         .collect();
-    assert_eq!(rows.len(), 3, "fixture 应产生 3 条 NLR 候选");
+    assert_eq!(rows.len(), 4, "fixture 应产生 4 条 NLR 候选");
     for r in &rows {
         assert_eq!(r.len(), 10, "nlr.tsv 应为 10 列: {r:?}");
     }
@@ -65,6 +65,8 @@ fn protein_mode_writes_its_own_output_set() {
     assert_eq!(class_of("RPM1_ARATH"), "CC-NBARC-LRR");
     assert_eq!(class_of("RPS4L_ARATH"), "TIR-NBARC-LRR");
     assert_eq!(class_of("ADR1_ARATH"), "CC-NBARC-LRR");
+    // Prf（NRC 支系 CNL）：N 端由 PF12061(R1-type) 判定为 CC。
+    assert_eq!(class_of("Q96485_SOLLC"), "CC-NBARC-LRR");
 
     // domains.tsv：RPM1 的 NB-ARC 命中应通过 GA 且坐标落在蛋白范围内。
     let dom = std::fs::read_to_string(out_dir.join("nlr_proteins.domains.tsv")).unwrap();

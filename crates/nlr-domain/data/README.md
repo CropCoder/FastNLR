@@ -1,6 +1,6 @@
 # Curated domain models for FastNLR protein mode
 
-These four Pfam profile HMMs are embedded into the `nlr-domain` crate and used by
+These five Pfam profile HMMs are embedded into the `nlr-domain` crate and used by
 `fastnlr --protein` to locate NLR characteristic domains.
 
 | File | Pfam accession | Name | Category | GA (sequence / domain) |
@@ -9,15 +9,18 @@ These four Pfam profile HMMs are embedded into the `nlr-domain` crate and used b
 | `PF01582.hmm` | PF01582.26 | TIR | TIR | 21.3 / 21.3 |
 | `PF18052.hmm` | PF18052.7 | Rx_N | CC | 27.7 / 27.7 |
 | `PF05659.hmm` | PF05659.17 | RPW8 | CC | 30.4 / 30.4 |
+| `PF12061.hmm` | PF12061.14 | R1-type (Pfam short name *NB-LRR*, "Late blight resistance protein R1") | CC | 28.7 / 28.7 |
 
 ## Why these models
 
 - **PF00931 (NB-ARC)** and **PF01582 (TIR)** are the diagnostic domains of the two major
   NLR branches; both are used with their Pfam gathering thresholds.
-- **PF18052 (Rx_N)** covers the CC domain of CNL-type receptors, **PF05659 (RPW8)** covers the
-  CC/RPW8 domain of RNL/helper NLRs (ADR1/NRG1/NRC). They are kept as separate models because
-  their specificity differs: on the RefPlantNLR gold set Rx_N recovers 249/263 CC-type
-  proteins while RPW8 only fires on the RNL subset.
+- Three CC-family models are kept separate because their specificity differs:
+  **PF18052 (Rx_N)** covers the CC domain of most CNL-type receptors, **PF05659 (RPW8)** covers
+  the CC/RPW8 domain of RNL/helper NLRs (ADR1/NRG1), and **PF12061** covers the R1-type
+  N-terminal domain of the NRC-clade CNLs (NbPRFa/NbPRFb/Prf/R1, RefPlantNLR `Structure`
+  letter `B`). Without PF12061 the protein mode missed the N-terminal domain of three of the
+  four `B`-type CNLs in the gold set and called them `NBARC-LRR` instead of `CC-NBARC-LRR`.
 - **LRR is deliberately not modelled here.** Seven Pfam LRR models combined reach only 47.5%
   sensitivity on RefPlantNLR NLRs, whereas FastNLR's existing PWM motifs reach 99.5%. Protein
   mode therefore calls LRR with the PWM motifs (motif_9/motif_11) and only the domains above

@@ -17,7 +17,7 @@ import os
 import sys
 import urllib.request
 
-MODELS = ["PF00931", "PF01582", "PF18052", "PF05659"]
+MODELS = ["PF00931", "PF01582", "PF18052", "PF05659", "PF12061"]
 URL = "https://www.ebi.ac.uk/interpro/wwwapi/entry/pfam/{acc}/?annotation=hmm"
 
 

@@ -24,7 +24,7 @@ pub use nlr_core::signature_def::DomainCategory;
 ///
 /// 取自 InterPro/Pfam 的 HMM（见 `data/README.md` 与 `data/fetch_hmms.py`）：
 /// NB-ARC 与 TIR 是 NLR 的核心结构域；Rx_N 覆盖 CNL 型 CC，RPW8 覆盖 RNL/helper 型 CC。
-pub const EMBEDDED_MODELS: [(&str, &str, DomainCategory, &str); 4] = [
+pub const EMBEDDED_MODELS: [(&str, &str, DomainCategory, &str); 5] = [
     (
         "PF00931",
         "NB-ARC",
@@ -48,6 +48,12 @@ pub const EMBEDDED_MODELS: [(&str, &str, DomainCategory, &str); 4] = [
         "RPW8",
         DomainCategory::Cc,
         include_str!("../data/PF05659.hmm"),
+    ),
+    (
+        "PF12061",
+        "R1-type",
+        DomainCategory::Cc,
+        include_str!("../data/PF12061.hmm"),
     ),
 ];
 
@@ -116,7 +122,7 @@ pub fn category_for_accession(acc: &str) -> DomainCategory {
     match acc.split('.').next().unwrap_or(acc) {
         "PF00931" => DomainCategory::Nbarc,
         "PF01582" => DomainCategory::Tir,
-        "PF18052" | "PF05659" => DomainCategory::Cc,
+        "PF18052" | "PF05659" | "PF12061" => DomainCategory::Cc,
         _ => DomainCategory::Na,
     }
 }
