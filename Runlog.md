@@ -592,3 +592,16 @@
 - 验证：`cargo test --workspace --locked` 60 项全通过；`cargo build --release --locked` 成功，
   `fastnlr --version` 输出 `fastnlr 1.4.1`；在 20 kb 合成序列上跑通全流程，GFF 头部为
   `##source-version FastNLR V1.4.1`，9 类输出文件齐备。
+- 提交与发布（5 个提交，均为规约式前缀、不含工具署名）：
+  `a250eae style:` → `a0fbb41 refactor:` → `20ddd40 build: bump version to 1.4.1`
+  → `fe4f1bd docs:` → `0c92263 chore:`，推送到 `origin/main`；随后打注解标签 `v1.4.1` 并推送，
+  触发 Release 工作流（run 38116894688，2m48s，成功）。
+- Release 资产 6 个齐备（linux-gnu / apple-darwin / windows-msvc 三个 archive + 三个 `.sha256`），
+  校验发布版 Linux 二进制 `--version` 输出 `fastnlr 1.4.1`。
+- conda 同步：`v1.4.1` tarball sha256 = `ea174c2c3fb8a1e776d29baaae0a864c728978a48271683795905361cf63df25`
+  （两次独立下载一致），写入 `conda/fastnlr/meta.yaml` 后以 `13e87a5 build: update conda source hash
+  for v1.4.1` 推送。CI（push main）与 GitHub Pages 部署均为 success，线上主页已含
+  `conda install bioconda::fastnlr` 与 v1.4.1。
+- 遗留（需用户决定，未执行）：① 向 `bioconda/bioconda-recipes` 提 PR 把配方由 1.4.0 升到 1.4.1
+  （v1.4.0 走过 PR 流程，本次未动外部仓库）；② crates.io 是否同步发布 1.4.1 的 10 个 crate；
+  ③ 是否把 `cargo fmt --check` 与 `cargo clippy -D warnings` 加入 CI（涉及 CI 配置，未擅自修改）。
