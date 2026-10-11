@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>FastNLR — Fast NLR Immune-Receptor Locus Annotation for Plant Genomes</title>
-<meta name="description" content="FastNLR is a high-speed, accurate NLR annotation tool for plant genomes. It scans six reading frames for amino-acid motifs and assembles NLR immune-receptor loci." />
+<meta name="description" content="FastNLR is a high-speed, accurate NLR annotation tool for plant genomes, installable from bioconda with a single conda install bioconda::fastnlr. It scans six reading frames for amino-acid motifs and assembles NLR immune-receptor loci." />
 <meta name="author" content="Jiwen Zhao (https://github.com/CropCoder)" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>" />
 
@@ -14,9 +14,9 @@
     1. 全局设计变量与 reset
     2. 导航栏 Navbar
     3. Hero 首屏（含终端演示窗口）
-    4. Features 特性卡片
-    5. Quick Start 快速开始（tab 切换）
-    6. Usage 用法示例
+    4. Install 安装（Conda / 预编译二进制 / 源码构建 tab 切换）
+    5. Usage 用法示例
+    6. Features 特性卡片
     7. Architecture 架构（流水线 + crate 分层）
     8. Performance 性能
     9. Correctness 正确性 / 修复清单
@@ -212,6 +212,18 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .hero-meta .m { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--ink-3); }
 .hero-meta .m b { color: var(--ink); font-weight: 650; }
 
+/* 首屏安装条（bioconda 一行安装） */
+.hero-install {
+  display: inline-flex; align-items: center; gap: 10px; margin-top: 26px;
+  padding: 10px 16px; border-radius: 12px; background: #0f172a; color: #e8eef8;
+  font-size: 13.5px; box-shadow: var(--shadow-md);
+}
+.hero-install .hi-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: #7dd3b0;
+}
+.hero-install code { font-family: var(--mono); color: #e8eef8; }
+
 /* 终端演示窗口 */
 .term {
   border-radius: var(--radius-lg); overflow: hidden;
@@ -231,7 +243,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ============================================================
-   4. Features 特性卡片
+   4. 组件：卡片网格（Features 特性卡片）
    ============================================================ */
 .grid { display: grid; gap: 22px; }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
@@ -263,7 +275,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .card p { font-size: 14.5px; color: var(--ink-2); }
 
 /* ============================================================
-   5. Quick Start 快速开始
+   5. 组件：安装 tab 与代码块（Install 安装）
    ============================================================ */
 .tabs { display: inline-flex; gap: 4px; background: #eef1f6; padding: 4px; border-radius: 12px; margin: 26px 0 20px; }
 .tab {
@@ -287,7 +299,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .code .fn2 { color: #93c5fd; }
 
 /* ============================================================
-   6. Usage 用法示例
+   6. 组件：用法示例网格（Usage 用法示例）
    ============================================================ */
 .usage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 30px; }
 .usage-item { background: #fff; border: 1px solid var(--card-border); border-radius: var(--radius); padding: 20px 22px; }
@@ -401,12 +413,12 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.4.0</span>
+      <span class="ver">v1.4.1</span>
     </a>
     <div class="nav-links">
-      <a href="#features">Features</a>
-      <a href="#quickstart">Quick Start</a>
+      <a href="#install">Install</a>
       <a href="#usage">Usage</a>
+      <a href="#features">Features</a>
       <a href="#architecture">Architecture</a>
       <a href="#performance">Performance</a>
       <a href="#correctness">Correctness</a>
@@ -420,9 +432,9 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     </button>
   </div>
   <div class="mobile-menu" id="mobileMenu">
-    <a href="#features">Features</a>
-    <a href="#quickstart">Quick Start</a>
+    <a href="#install">Install</a>
     <a href="#usage">Usage</a>
+    <a href="#features">Features</a>
     <a href="#architecture">Architecture</a>
     <a href="#performance">Performance</a>
     <a href="#correctness">Correctness</a>
@@ -445,7 +457,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         multithreading, memory-mapped input, checkpoint resume, and coordinate-consistent output.
       </p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="#quickstart">
+        <a class="btn btn-primary" href="#install">
           Get started
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M5 12h14m-6-6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
@@ -454,10 +466,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
           View on GitHub
         </a>
       </div>
+      <div class="hero-install">
+        <span class="hi-label">Install</span>
+        <code>conda install bioconda::fastnlr</code>
+      </div>
       <div class="hero-meta">
         <div class="m"><b>GPL-3.0</b> License</div>
         <div class="m"><b>Rust 1.70+</b> toolchain</div>
-        <div class="m"><b>Linux x86_64</b> prebuilt binary</div>
+        <div class="m"><b>bioconda</b> Linux &amp; macOS</div>
       </div>
     </div>
 
@@ -484,99 +500,46 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 </header>
 
 <!-- ============================================================
-     Features 特性
+     Install 安装
      ============================================================ -->
-<section class="section" id="features">
+<section class="section section--tint" id="install">
   <div class="wrap">
     <div class="center reveal">
-      <span class="eyebrow">Features</span>
-      <h2 class="h2">Built for speed, shipped self-contained</h2>
-      <p class="lead">A self-contained pipeline that runs out of the box on any FASTA — no extra config files, no setup.</p>
-    </div>
-
-    <div class="grid grid-3" style="margin-top: 52px;">
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
-        </div>
-        <h3>High performance</h3>
-        <p>Rust with rayon multithreading, memory-mapped FASTA parsing, and SIMD (<code>wide</code>) cross-window scoring. Plant genomes finish in seconds to minutes.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18M5 5l14 14M19 5 5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </div>
-        <h3>Zero-config binary</h3>
-        <p>The standard <code>mot.txt</code> (PWM) and <code>store.txt</code> (CDF) configs are embedded at compile time. Run on any FASTA with no extra files.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <h3>Coordinate-consistent</h3>
-        <p>Loci extraction (<code>-f</code>) matches GFF/BED coordinates exactly across every contig.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h10M4 17h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </div>
-        <h3>Protein mode</h3>
-        <p>Run <code>--protein</code> on a protein FASTA to scan NLR domains with a bundled HMMER 3.4 port (Pfam NB-ARC / TIR / Rx_N / RPW8, gathering thresholds) plus the PWM LRR motifs, and get a domain architecture call per protein.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 14-4M20 12a8 8 0 0 1-14 4M12 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </div>
-        <h3>Resumable runs</h3>
-        <p><code>--checkpoint</code> saves motif results after the scan; reruns skip the expensive scanning step and go straight to assembly.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-6h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <h3>Rich reporting</h3>
-        <p>Human-readable summary, TSV statistics (global / per-chromosome / per-motif), and PNG plots out of the box — no external tools.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 12h10M4 16h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        </div>
-        <h3>Compatible flag interface</h3>
-        <p>Supports <code>-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n</code> workflows with a compatible command-line interface.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================
-     Quick Start 快速开始
-     ============================================================ -->
-<section class="section section--tint" id="quickstart">
-  <div class="wrap">
-    <div class="center reveal">
-      <span class="eyebrow">Quick Start</span>
-      <h2 class="h2">Up and running in seconds</h2>
-      <p class="lead">Grab the prebuilt binary, or compile from source. Both paths produce a single self-contained executable.</p>
+      <span class="eyebrow">Install</span>
+      <h2 class="h2">Up and running in one command</h2>
+      <p class="lead">Install from bioconda, grab the prebuilt binary, or compile from source. Every path produces the same self-contained executable.</p>
     </div>
 
     <div style="margin: 0 auto;">
       <div class="tabs reveal" role="tablist">
-        <button class="tab active" data-tab="binary" role="tab">Prebuilt binary</button>
+        <button class="tab active" data-tab="conda" role="tab">Conda</button>
+        <button class="tab" data-tab="binary" role="tab">Prebuilt binary</button>
         <button class="tab" data-tab="source" role="tab">Build from source</button>
       </div>
 
+      <!-- bioconda 安装（推荐） -->
+      <div class="code reveal" id="panel-conda">
+        <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="conda">Copy</button></div>
+        <pre id="code-conda"><span class="c"># recommended: install from bioconda</span>
+conda install <span class="opt">bioconda::fastnlr</span>
+
+<span class="c"># add channels explicitly if they are not in your conda config</span>
+<span class="c"># (conda-forge must come before bioconda)</span>
+conda install <span class="cmd">-c</span> conda-forge <span class="cmd">-c</span> bioconda <span class="opt">bioconda::fastnlr</span>
+
+<span class="c"># mamba / micromamba are drop-in and much faster</span>
+mamba install <span class="cmd">-c</span> conda-forge <span class="cmd">-c</span> bioconda <span class="opt">bioconda::fastnlr</span>
+
+<span class="c"># then annotate a genome</span>
+fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> result</pre>
+      </div>
+
       <!-- 预编译二进制 -->
-      <div class="code reveal" id="panel-binary">
+      <div class="code reveal" id="panel-binary" style="display: none;">
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.4.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.4.1/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 cd fastnlr-linux-x86_64
 ./fastnlr --version
@@ -602,6 +565,8 @@ cargo build --release
         filename: <code>*.nlr.txt</code>, <code>*.nlr.gff</code>, <code>*.nlr.bed</code>,
         <code>*.motifs.bed</code>, <code>*.nbarc.fasta</code>, <code>*.loci.fasta</code>,
         <code>*.stats.tsv</code>, <code>*.summary.txt</code>, and <code>*.plots/</code>.
+        Package page:
+        <a href="https://anaconda.org/bioconda/fastnlr" target="_blank" rel="noopener">anaconda.org/bioconda/fastnlr</a>.
       </p>
     </div>
   </div>
@@ -635,6 +600,93 @@ cargo build --release
         <div class="u-label">Custom motif config</div>
         <code>fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o results</code>
       </div>
+      <div class="usage-item reveal">
+        <div class="u-label">Extended RNL / TIR library</div>
+        <code>source data/motif_library_rnl_tir/flags.sh  # adds 8 motifs</code>
+      </div>
+      <div class="usage-item reveal">
+        <div class="u-label">Protein mode (HMM domains)</div>
+        <code>fastnlr --protein -i proteins.fa -o protein_results</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     Features 特性
+     ============================================================ -->
+<section class="section section--tint" id="features">
+  <div class="wrap">
+    <div class="center reveal">
+      <span class="eyebrow">Features</span>
+      <h2 class="h2">Built for speed, shipped self-contained</h2>
+      <p class="lead">A self-contained pipeline that installs from bioconda and runs out of the box on any FASTA — no extra config files, no setup.</p>
+    </div>
+
+    <div class="grid grid-3" style="margin-top: 52px;">
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>High performance</h3>
+        <p>Rust with rayon multithreading, memory-mapped FASTA parsing, and SIMD (<code>wide</code>) cross-window scoring. Plant genomes finish in seconds to minutes.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>One-line install</h3>
+        <p><code>conda install bioconda::fastnlr</code> — packaged on bioconda for linux-64, linux-aarch64, osx-64 and osx-arm64, so the binary lands straight in your working environment.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18M5 5l14 14M19 5 5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Zero-config binary</h3>
+        <p>The standard <code>mot.txt</code> (PWM) and <code>store.txt</code> (CDF) configs are embedded at compile time. Run on any FASTA with no extra files.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Coordinate-consistent</h3>
+        <p>Loci FASTA extraction matches the reported GFF/BED coordinates exactly across every contig.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h10M4 17h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Protein mode</h3>
+        <p>Run <code>--protein</code> on a protein FASTA to scan NLR domains with a bundled HMMER 3.4 port (Pfam NB-ARC / TIR / Rx_N / RPW8 / R1-type at gathering thresholds) plus the PWM LRR motifs, and get a domain architecture call per protein. <code>--hmm</code> adds your own models.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 14-4M20 12a8 8 0 0 1-14 4M12 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Resumable runs</h3>
+        <p><code>--checkpoint</code> saves motif results after the scan; reruns skip the expensive scanning step and go straight to assembly.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-6h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Rich reporting</h3>
+        <p>Human-readable summary, TSV statistics (global / per-chromosome / per-motif), and PNG plots out of the box — no external tools.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 12h10M4 16h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </div>
+        <h3>Compatible flag interface</h3>
+        <p>Supports the familiar <code>-i/-x/-y/-o/-t/-n</code> workflow, plus long-form recall and observability options.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -642,7 +694,7 @@ cargo build --release
 <!-- ============================================================
      Architecture 架构
      ============================================================ -->
-<section class="section section--tint" id="architecture">
+<section class="section" id="architecture">
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Architecture</span>
@@ -683,51 +735,76 @@ cargo build --release
 <!-- ============================================================
      Performance 性能
      ============================================================ -->
-<section class="section" id="performance">
+<section class="section section--tint" id="performance">
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Performance</span>
       <h2 class="h2">Genome-scale, memory-efficient</h2>
-      <p class="lead">Memory-mapped FASTA keeps peak RAM proportional to threads × batch × fragment length — independent of genome size.</p>
+      <p class="lead">Memory-mapped FASTA parsing and SIMD scoring keep throughput flat across two orders of magnitude of genome size. Measured on 18 plant genomes, 8 threads, median of 3 runs.</p>
     </div>
 
     <div class="stats-band reveal" style="margin-top: 44px;">
-      <div class="stat"><div class="val" data-count="14" data-suffix=" Gb">14 Gb</div><div class="lbl">Wheat genome</div></div>
-      <div class="stat"><div class="val" data-count="370" data-suffix=" Mb">370 Mb</div><div class="lbl">Rice genome</div></div>
+      <div class="stat"><div class="val" data-count="18">18</div><div class="lbl">Genomes benchmarked</div></div>
+      <div class="stat"><div class="val" data-count="60">60</div><div class="lbl">Tests passing</div></div>
       <div class="stat"><div class="val" data-count="6">6</div><div class="lbl">Reading frames</div></div>
-      <div class="stat"><div class="val" data-count="40">40</div><div class="lbl">Tests passing</div></div>
+      <div class="stat"><div class="val" data-count="4">4</div><div class="lbl">Conda platforms</div></div>
     </div>
 
     <div class="table reveal" style="margin-top: 44px;">
       <table>
-        <thead><tr><th>Genome</th><th>Size</th><th>Threads</th><th>Wall time (indicative)</th></tr></thead>
+        <thead><tr><th>Genome</th><th>Size</th><th>Threads</th><th>Wall time</th><th>Peak RSS</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Arabidopsis chr1</td><td>~30 Mb</td><td>8</td><td>a few seconds</td></tr>
-          <tr><td class="mono">Rice genome</td><td>~370 Mb</td><td>16</td><td>tens of seconds</td></tr>
-          <tr><td class="mono">Wheat genome</td><td>~14 Gb</td><td>32</td><td>minutes</td></tr>
+          <tr><td class="mono">Cucumis sativus</td><td>197 Mb</td><td>8</td><td>53.5 s</td><td>210 MB</td></tr>
+          <tr><td class="mono">Glycine max</td><td>991 Mb</td><td>8</td><td>269.5 s</td><td>968 MB</td></tr>
+          <tr><td class="mono">Hordeum vulgare</td><td>4.3 Gb</td><td>8</td><td>1174 s</td><td>4159 MB</td></tr>
+          <tr><td class="mono">Zanthoxylum bungeanum</td><td>4.7 Gb</td><td>8</td><td>1230 s</td><td>4625 MB</td></tr>
         </tbody>
       </table>
     </div>
+
+    <p class="lead reveal" style="margin-top: 26px; font-size: 15px;">
+      Throughput holds at roughly <b>3.7 Mb/s</b> end to end, and peak memory stays close to 1:1
+      with genome size (ratios 0.97–1.15 in the benchmark) — budget RAM of the same order as the
+      assembly. Multithreading scales 13–19× from 4 to 128 threads on the largest genomes; keep
+      <code>-t</code> at or below the physical core count, since oversubscription costs performance.
+    </p>
+
+    <div class="table reveal" style="margin-top: 34px;">
+      <table>
+        <thead><tr><th>Recall on RefPlantNLR (400 curated NLR CDS)</th><th>Gene recall</th><th>RNL / helper NLR</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">Default (20 motifs)</td><td>98.25%</td><td>3 / 8</td></tr>
+          <tr><td class="mono">Flexible seed</td><td>99.50%</td><td>8 / 8</td></tr>
+          <tr><td class="mono">Extended (28 motifs)</td><td>99.50%</td><td>8 / 8</td></tr>
+          <tr><td class="mono">Protein mode (HMM)</td><td>99.50%</td><td>8 / 8</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="lead reveal" style="margin-top: 22px; font-size: 15px;">
+      Protein mode gives the highest domain-architecture concordance with the curated annotation
+      (<b>95%</b>), and its LRR calls reach 99.7% sensitivity at 100% specificity.
+    </p>
   </div>
 </section>
 
 <!-- ============================================================
      Correctness 正确性 / 修复清单
      ============================================================ -->
-<section class="section section--tint" id="correctness">
+<section class="section" id="correctness">
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Correctness</span>
       <h2 class="h2">Implementation notes</h2>
-      <p class="lead">Unit and integration tests cover coordinate mapping, six-frame translation, motif scanning, assembly, and every output format.</p>
+      <p class="lead">60 unit and integration tests cover coordinate mapping, six-frame translation, motif scanning, three-step assembly, protein-mode domain classification, and every output format.</p>
     </div>
 
     <div class="fixes">
-      <div class="fix reveal"><span class="idx">1</span><span class="ft"><code>-a</code> uses corrected P-loop location logic.</span></div>
-      <div class="fix reveal"><span class="idx">2</span><span class="ft"><code>-a</code> replaces stop codons and unknown amino acids with <code>_</code>.</span></div>
-      <div class="fix reveal"><span class="idx">3</span><span class="ft"><code>-f</code> unified coordinate clamp on the last contig.</span></div>
-      <div class="fix reveal"><span class="idx">4</span><span class="ft"><code>-f</code> multi-contig extraction — extracts from every chromosome, not just the first.</span></div>
-      <div class="fix reveal"><span class="idx">5</span><span class="ft"><code>-f</code> extraction remains consistent with the reported coordinates.</span></div>
+      <div class="fix reveal"><span class="idx">1</span><span class="ft">The NB-ARC alignment FASTA uses corrected P-loop location logic.</span></div>
+      <div class="fix reveal"><span class="idx">2</span><span class="ft">The NB-ARC alignment FASTA replaces stop codons and unknown amino acids with <code>_</code>.</span></div>
+      <div class="fix reveal"><span class="idx">3</span><span class="ft">The loci FASTA applies a unified coordinate clamp on the last contig.</span></div>
+      <div class="fix reveal"><span class="idx">4</span><span class="ft">The loci FASTA extracts from every contig, not only the first.</span></div>
+      <div class="fix reveal"><span class="idx">5</span><span class="ft">The loci FASTA keeps extracted coordinates consistent with the reported GFF/BED coordinates.</span></div>
       <div class="fix reveal"><span class="idx">6</span><span class="ft"><code>##date</code> reflects the current system time.</span></div>
       <div class="fix reveal"><span class="idx">7</span><span class="ft">GFF <code>##source-version</code> and <code>source</code> column relabeled <code>FastNLR</code>.</span></div>
       <div class="fix reveal"><span class="idx">8</span><span class="ft">p-value rendering in motif BED / export TSV uses scientific notation for very small values.</span></div>
@@ -760,6 +837,7 @@ cargo build --release
     <div class="f-links">
       <a href="https://github.com/CropCoder/FastNLR" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/CropCoder/FastNLR/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://anaconda.org/bioconda/fastnlr" target="_blank" rel="noopener">bioconda</a>
       <a href="https://github.com/CropCoder/FastNLR/issues" target="_blank" rel="noopener">Issues</a>
     </div>
   </div>
@@ -797,7 +875,11 @@ cargo build --release
 
   // ---- 快速开始 tab 切换 ----
   var tabs = document.querySelectorAll('.tab');
-  var panels = { binary: document.getElementById('panel-binary'), source: document.getElementById('panel-source') };
+  var panels = {
+    conda: document.getElementById('panel-conda'),
+    binary: document.getElementById('panel-binary'),
+    source: document.getElementById('panel-source')
+  };
   tabs.forEach(function (tab) {
     tab.addEventListener('click', function () {
       tabs.forEach(function (t) { t.classList.remove('active'); });
