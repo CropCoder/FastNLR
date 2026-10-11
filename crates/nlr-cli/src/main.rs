@@ -1,7 +1,9 @@
 //! FastNLR command-line entry point.
 //!
-//! Provides short options `-i/-x/-y/-o/-g/-b/-m/-a/-f/-c/-t/-n`,
-//! plus enhancements `-p/--output-prefix/--tmpdir/--progress/--stats/--plot/--summary/--log-level`.
+//! Short options: `-i/-x/-y/-o/-t/-n`. Everything else — `--flank`, `--protein`,
+//! `--hmm`, `--checkpoint`, `--tmpdir`, `--progress`, `--log-level`, the recall
+//! enhancements and the custom-motif-library declarations — is long-form only;
+//! run `fastnlr --help` for the full reference.
 //!
 //! `-x`/`-y` are optional: when omitted, built-in mot.txt/store.txt (embedded at compile time)
 //! are used, so the tool runs out of the box for standard motif configs.
@@ -10,7 +12,7 @@
 //! pipeline orchestration, startup config summary and end-of-run summary,
 //! multi-format output writing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::Parser;
@@ -24,18 +26,23 @@ const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
 const DEFAULT_FLANK: u64 = 2000;
 
 /// CLI banner and project metadata shown at the top of `fastnlr --help`.
-const HELP_BANNER: &str = r#"   ____           __   _  __ __    ___ 
+/// 版本号取自 Cargo 包版本，避免升级版本时在多处遗漏。
+const HELP_BANNER: &str = concat!(
+    r#"   ____           __   _  __ __    ___ 
   / __/___ _ ___ / /_ / |/ // /   / _ \
  / _/ / _ `/(_-</ __//    // /__ / , _/
 /_/   \_,_//___/\__//_/|_//____//_/|_| 
 
-FastNLR v1.4.0
+FastNLR v"#,
+    env!("CARGO_PKG_VERSION"),
+    r#"
 
 Author:     Jiwen Zhao (https://github.com/CropCoder)
 Repository: https://github.com/CropCoder/FastNLR
 Releases:   https://github.com/CropCoder/FastNLR/releases
 Issues:     https://github.com/CropCoder/FastNLR/issues
-License:    GPL-3.0-only"#;
+License:    GPL-3.0-only"#
+);
 
 /// Print the compact no-argument help block.
 fn print_no_args_help() {
@@ -60,7 +67,8 @@ fn print_no_args_help() {
     version,
     before_help = HELP_BANNER,
     long_version = concat!(
-        "1.4.0\n",
+        env!("CARGO_PKG_VERSION"),
+        "\n",
         "Author:  Jiwen Zhao (https://github.com/CropCoder)\n",
         "Repo:    https://github.com/CropCoder/FastNLR\n",
         "Releases: https://github.com/CropCoder/FastNLR/releases\n",
@@ -100,11 +108,17 @@ struct Cli {
 
     // ===== Motif config (optional, built-in by default) =====
     /// mot.txt PWM config file (default: built-in embedded mot.txt)
-    #[arg(short = 'x', help_heading = "Motif config (optional, built-in by default)")]
+    #[arg(
+        short = 'x',
+        help_heading = "Motif config (optional, built-in by default)"
+    )]
     mot: Option<PathBuf>,
 
     /// store.txt CDF config file (default: built-in embedded store.txt)
-    #[arg(short = 'y', help_heading = "Motif config (optional, built-in by default)")]
+    #[arg(
+        short = 'y',
+        help_heading = "Motif config (optional, built-in by default)"
+    )]
     store: Option<PathBuf>,
 
     // ===== Output directory =====
@@ -139,7 +153,11 @@ struct Cli {
     threads: Option<usize>,
 
     /// Per-thread batch size (fragments; default 1000; affects memory and load granularity)
-    #[arg(short = 'n', default_value_t = 1000, help_heading = "Performance tuning")]
+    #[arg(
+        short = 'n',
+        default_value_t = 1000,
+        help_heading = "Performance tuning"
+    )]
     seqs_per_thread: usize,
 
     // ===== Run enhancements =====
@@ -279,7 +297,14 @@ fn main() {
 
             // End-of-run summary.
             let peak_rss_mb = read_peak_rss_mb();
-            let summary = build_summary(&cli, &config, &result, &written, start.elapsed(), peak_rss_mb);
+            let summary = build_summary(
+                &cli,
+                &config,
+                &result,
+                &written,
+                start.elapsed(),
+                peak_rss_mb,
+            );
             let summary_path = output_path(&cli.output_dir, &prefix, ".summary.txt");
             if let Err(e) = std::fs::write(&summary_path, &summary) {
                 tracing::warn!("summary write failed: {}", e);
@@ -599,7 +624,7 @@ fn print_cli_error(msg: &str) {
 }
 
 /// 从输入基因组文件名推导输出前缀（去掉 .fa/.fasta/.fna/.fas 与 .gz 扩展名）。
-fn genome_prefix(input: &PathBuf) -> String {
+fn genome_prefix(input: &Path) -> String {
     let name = input
         .file_name()
         .and_then(|n| n.to_str())
@@ -615,7 +640,7 @@ fn genome_prefix(input: &PathBuf) -> String {
 }
 
 /// 在输出目录下按「前缀 + 后缀」拼接输出文件路径。
-fn output_path(dir: &PathBuf, prefix: &str, suffix: &str) -> PathBuf {
+fn output_path(dir: &Path, prefix: &str, suffix: &str) -> PathBuf {
     dir.join(format!("{}{}", prefix, suffix))
 }
 
@@ -643,12 +668,22 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
     // 预期输出文件列表（默认全部输出）。
     let prefix = genome_prefix(&cli.input);
     let suffixes = [
-        ".nlr.txt", ".nlr.gff", ".nlr.bed", ".motifs.bed",
-        ".nbarc.fasta", ".loci.fasta", ".stats.tsv", ".summary.txt",
+        ".nlr.txt",
+        ".nlr.gff",
+        ".nlr.bed",
+        ".motifs.bed",
+        ".nbarc.fasta",
+        ".loci.fasta",
+        ".stats.tsv",
+        ".summary.txt",
     ];
     let targets: Vec<String> = suffixes
         .iter()
-        .map(|s| output_path(&cli.output_dir, &prefix, s).display().to_string())
+        .map(|s| {
+            output_path(&cli.output_dir, &prefix, s)
+                .display()
+                .to_string()
+        })
         .collect();
     tracing::info!("expected outputs: {}", targets.join(", "));
 }
@@ -716,7 +751,8 @@ fn build_summary(
         .iter()
         .filter(|l| l.is_complete_nlr(def))
         .count();
-    let mut type_counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    let mut type_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     for list in &result.nlrs {
         *type_counts.entry(list.domain_string(def)).or_default() += 1;
     }
@@ -802,8 +838,8 @@ fn write_outputs(
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
     written.push(p);
 
-        // 位点序列 fasta（从 -i 基因组提取，flank 由 --flank 控制）
-        match nlr_seq::fasta::read_all(&cli.input) {
+    // 位点序列 fasta（从 -i 基因组提取，flank 由 --flank 控制）
+    match nlr_seq::fasta::read_all(&cli.input) {
         Ok(contigs) => {
             let pairs: Vec<(&str, &str)> = contigs
                 .iter()
@@ -813,8 +849,13 @@ fn write_outputs(
             let mut f = std::fs::File::create(&p).map_err(|e| {
                 std::io::Error::other(format!("cannot create {}: {}", p.display(), e))
             })?;
-            nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank.unwrap_or(DEFAULT_FLANK))
-                .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+            nlr_output::write_nlr_loci_all(
+                &mut f,
+                nlrs,
+                &pairs,
+                cli.flank.unwrap_or(DEFAULT_FLANK),
+            )
+            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
             written.push(p);
         }
         Err(e) => {
@@ -836,7 +877,11 @@ fn write_outputs(
     // 图（PNG）
     let plot_dir = cli.output_dir.join(format!("{}.plots", prefix));
     std::fs::create_dir_all(&plot_dir).map_err(|e| {
-        std::io::Error::other(format!("cannot create plot dir {}: {}", plot_dir.display(), e))
+        std::io::Error::other(format!(
+            "cannot create plot dir {}: {}",
+            plot_dir.display(),
+            e
+        ))
     })?;
     let p1 = plot_dir.join("01-motif-counts.png");
     let p2 = plot_dir.join("02-chromosome-nlrs.png");
@@ -871,6 +916,9 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn peak_rss_is_available_on_linux() {
         let v = read_peak_rss_mb();
-        assert!(v.is_some_and(|mb| mb > 0.0), "Linux 上应能读到峰值内存: {v:?}");
+        assert!(
+            v.is_some_and(|mb| mb > 0.0),
+            "Linux 上应能读到峰值内存: {v:?}"
+        );
     }
 }

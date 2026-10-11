@@ -8,10 +8,10 @@
 //! 5. `##date` header set to the current system time;
 //! 6. GFF `##source-version` and source column relabeled `FastNLR`.
 
-use std::io::Write;
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
+use std::io::Write;
 
 /// Loci report txt (`-o`): no header, 7 columns per NLR.
 pub fn write_report_txt<W: Write>(
@@ -48,10 +48,14 @@ pub fn write_nlr_gff<W: Write>(
     complete_only: bool,
 ) -> std::io::Result<()> {
     writeln!(w, "##gff-version 2")?;
-    writeln!(w, "##source-version FastNLR V1.4.0")?;
+    // 版本号直接取自包版本，随 workspace 版本自动更新
+    writeln!(w, "##source-version FastNLR V{}", env!("CARGO_PKG_VERSION"))?;
     writeln!(w, "##date {}", date)?;
     writeln!(w, "##Type DNA")?;
-    writeln!(w, "#seqname\tsource\tfeature\tstart\tend\tscore\tstrand\tframe\tattribute")?;
+    writeln!(
+        w,
+        "#seqname\tsource\tfeature\tstart\tend\tscore\tstrand\tframe\tattribute"
+    )?;
 
     for list in nlrs {
         if complete_only && !list.is_complete_nlr(def) {
@@ -111,8 +115,16 @@ pub fn write_nlr_bed<W: Write>(
         };
 
         let block_count = list.motifs.len();
-        let sizes = block_sizes.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
-        let starts = block_starts.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
+        let sizes = block_sizes
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let starts = block_starts
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
 
         writeln!(
             w,
@@ -224,7 +236,7 @@ pub fn write_nbarc_alignment_fasta<W: Write>(
         }
 
         // Fix: actually replace stop codons and unknown aa.
-        sequence = sequence.replace('*', "_").replace('X', "_");
+        sequence = sequence.replace(['*', 'X'], "_");
 
         writeln!(w, ">{}\n{}", list.name, sequence)?;
     }
@@ -340,8 +352,5 @@ pub fn export_motifs<W: Write>(w: &mut W, motifs: &[Motif]) -> std::io::Result<(
 
 /// Motif TSV import (`-c` import): parse line by line.
 pub fn import_motifs(lines: &str) -> Vec<Motif> {
-    lines
-        .lines()
-        .filter_map(Motif::from_export_line)
-        .collect()
+    lines.lines().filter_map(Motif::from_export_line).collect()
 }
