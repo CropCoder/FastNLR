@@ -847,3 +847,22 @@
   - 过度切分 0 个基因。
 - 归档同步：TAIR12 模块输出重跑（214 位点 / 145 完整 / 39.4 s / 167 MB），
   `Fig11–Fig13`、模块 README 同步更新。
+
+### 文档精简、v1.5.0 发版与一次 CI 事故的处理（2026-10-12）
+
+- 文档重构：README 由 386 行精简到 174 行（保留简介、安装、快速开始、特性概要、性能与链接），
+  把完整参数表、输出格式、扩展 motif 库等细节迁移到官网主页 `docs/index.html`；主页新增
+  "CLI reference" 与 "Output formats" 两个使用说明模块（原 Usage 区块扩展为使用说明），
+  新增 "Extended RNL / TIR library" 小节，特性卡片补齐柔性播种/HMM 域判定/串联吸收三项，
+  并调整各区块底色 class 维持浅深交替。版本号全量升到 **1.5.0**（含 Cargo.toml/Cargo.lock、
+  各 crate 依赖约束、conda 配方、README 徽章与 GFF 示例、官网徽标与下载链接）。
+- **CI 事故与修复**：首次推送后 CI 失败，原因是新增的日志时间戳测试在 CI 上解析错位——
+  该环境的 `NO_COLOR` 未设置，tracing-subscriber 默认着色，日志行首带 ANSI 转义码
+  （本机因 `NO_COLOR=1` 而未暴露）。这同时暴露一个真实缺陷：**stdout 被重定向到文件或管道时
+  日志仍会写入 ANSI 转义码**，会污染日志文件并破坏下游解析。
+  - 修复：`init_logging` 改为 `with_ansi(stdout().is_terminal() && NO_COLOR 未设置)`，
+    仅在真实终端着色并遵循 `NO_COLOR` 约定；测试侧也增加 ANSI 清洗以提高健壮性。
+  - 实测：模拟 CI 条件（`env -u NO_COLOR` + 管道输出）下日志已无转义码；
+    `env -u NO_COLOR cargo test` 与常规 `cargo test` 均 69 项全通过。
+  - 由于首次打出的 `v1.5.0` 标签指向未修复的提交（其自带测试在 CI 上会失败、且二进制仍会向
+    管道写转义码），已删除该标签与对应 GitHub Release，在修复提交上重新打标签。

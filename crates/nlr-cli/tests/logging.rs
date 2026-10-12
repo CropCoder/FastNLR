@@ -54,12 +54,34 @@ fn is_local_timestamp(s: &str) -> bool {
         && d(18)
 }
 
+/// 去掉 ANSI 转义序列（日志在终端上着色；测试需要与终端/环境无关）。
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // 跳过 CSI 序列：ESC [ ... 终止于字母
+            if chars.next() == Some('[') {
+                for d in chars.by_ref() {
+                    if d.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 #[test]
 fn log_timestamp_is_local_time_without_fractional_seconds() {
     let (_tmp, fasta, out) = tiny_input();
     let (ok, log) = run(&["-i", &fasta, "-o", &out, "-t", "1", "--progress", "off"]);
     assert!(ok, "运行失败");
 
+    let log = strip_ansi(&log);
     let first = log
         .lines()
         .find(|l| !l.trim().is_empty())

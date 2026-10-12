@@ -443,11 +443,17 @@ impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
 
 /// Initialize logging (invalid level falls back to info).
 fn init_logging(level: &str) {
+    use std::io::IsTerminal;
     use tracing_subscriber::EnvFilter;
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
+    // 仅在真正的终端上着色：stdout 被重定向到文件或管道时不写入 ANSI 转义码，
+    // 并遵循 NO_COLOR 约定（https://no-color.org）。日志经常被重定向保存，
+    // 带着转义码会污染日志文件、破坏下游解析。
+    let ansi = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_timer(LocalTimer)
+        .with_ansi(ansi)
         .init();
 }
 
