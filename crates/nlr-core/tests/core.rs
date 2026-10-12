@@ -62,6 +62,41 @@ mod tests {
     }
 
     #[test]
+    fn domain_string_enforces_domain_order() {
+        let d = def();
+        // LRR(9) 跑到 CC(17,16) 之前：属噪声命中，丢弃。
+        // 对应金标准 CaMi / Gpa2 / Mi-1 / Rx 的真实形态，修复前会输出 "LRR-CC-NBARC-LRR"。
+        assert_eq!(
+            d.domain_string(&[9, 17, 16, 1, 6, 4, 5, 10, 3, 12, 2, 8, 7, 11]),
+            "CC-NBARC-LRR"
+        );
+        // NB-ARC 之后混入 CC：丢弃。对应 RPM1（修复前 "CC-NBARC-CC-NBARC-LRR"）。
+        assert_eq!(
+            d.domain_string(&[17, 1, 16, 1, 6, 4, 5, 10, 3, 12, 2, 8, 7, 9, 9, 9, 11]),
+            "CC-NBARC-LRR"
+        );
+        // 单个 CC motif 仍是有效 N 端域（**不设最小规模门槛**）：
+        // 金标准中 249 个 CC 域块有 85 个只命中 1 个 motif，加门槛会把一致率砍掉近 17 个百分点。
+        assert_eq!(d.domain_string(&[17, 1, 6, 4]), "CC-NBARC");
+        // LRR 之后仍有 NB-ARC：按串联结构保留。
+        assert_eq!(
+            d.domain_string(&[18, 15, 1, 6, 4, 11, 9, 12, 2]),
+            "TIR-NBARC-LRR-NBARC"
+        );
+        // 真实串联重复（RPP2A 形态）：TIR×3 NBARC×5 TIR×2 NBARC×5 LRR，
+        // 第二个 TIR 块既后有 NB-ARC、规模又 ≥2，必须保留（蛋白模式同形，门槛取 1）。
+        assert_eq!(
+            d.domain_string(&[
+                18, 15, 13, 1, 4, 5, 10, 3, 15, 13, 1, 4, 5, 10, 3, 11, 11, 11, 9, 11
+            ]),
+            "TIR-NBARC-TIR-NBARC-LRR"
+        );
+        // 无 NB-ARC：按原样折叠，N 端域取第一个 CC/TIR。
+        assert_eq!(d.domain_string(&[13, 15, 18]), "TIR");
+        assert_eq!(d.domain_string(&[13, 15, 9, 11]), "TIR-LRR");
+    }
+
+    #[test]
     fn is_complete_nlr() {
         let d = def();
         let complete = MotifList::new(

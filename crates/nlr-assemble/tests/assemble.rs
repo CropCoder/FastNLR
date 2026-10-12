@@ -2,7 +2,7 @@
 
 use nlr_assemble::{assemble, AssembleParams};
 use nlr_core::motif::Motif;
-use nlr_core::signature_def::AnnotatorSignatureDefinition;
+use nlr_core::signature_def::{AnnotatorSignatureDefinition, FlexibleSeedConfig};
 use nlr_core::strand::Strand;
 
 fn def() -> AnnotatorSignatureDefinition {
@@ -68,4 +68,124 @@ fn overlapping_seeds_do_not_duplicate_motifs() {
     keys.sort();
     keys.dedup();
     assert_eq!(keys.len(), total, "同一 (id, dna_start) 只能出现一次");
+}
+
+#[test]
+fn flexible_seed_is_additive_not_replacing() {
+    // 回归测试（2026-10-12）：开启 --flexible-seed 后必须**同时**保留精确种子组合的播种能力。
+    //
+    // 构造 RefPlantNLR 中 Pb1 的形状：命中精确组合 [12,2,8]，但其中 motif_8 属 linker、
+    // 真正的 NB-ARC 类 motif 只有 motif_12 与 motif_2 共 2 个，达不到柔性门槛 min_nbarc=3。
+    // 修复前播种是 if/else 链——开了柔性就整体顶替精确组合，这条命中串反而播不了种，
+    // 出现「默认能检出、开 --flexible-seed 反而漏检」的回退。
+    let motifs = vec![
+        dna_motif(12, 1000, Strand::Forward),
+        dna_motif(2, 1100, Strand::Forward),
+        dna_motif(8, 1200, Strand::Forward),
+    ];
+    let params = AssembleParams::default();
+
+    // 默认（精确组合）能播种，作为基准
+    let plain = assemble("chr1", motifs.clone(), &params, &def());
+    assert_eq!(plain.len(), 1, "精确组合 [12,2,8] 应能播种");
+
+    // 开启柔性播种后，同一命中串仍应播种（并集语义）
+    let flex_def = def().with_flexible_seed(FlexibleSeedConfig::default());
+    let flex = assemble("chr1", motifs, &params, &flex_def);
+    assert_eq!(
+        flex.len(),
+        1,
+        "开启 --flexible-seed 不应丢失精确组合能检出的位点"
+    );
+    let ids: Vec<u8> = flex[0].motifs.iter().map(|m| m.id).collect();
+    assert_eq!(ids, vec![12, 2, 8]);
+}
+
+#[test]
+fn flexible_seed_still_recovers_rank_order_loci() {
+    // 反向保护：并集不得削弱柔性播种本身的能力。
+    // [6,4,10,3,2] 的 rank 为 5,6,8,9,11 单调递增、NB-ARC 数 5 >= 3，但不匹配任何精确组合，
+    // 因此只有柔性条件能检出。
+    let motifs = vec![
+        dna_motif(6, 1000, Strand::Forward),
+        dna_motif(4, 1100, Strand::Forward),
+        dna_motif(10, 1200, Strand::Forward),
+        dna_motif(3, 1300, Strand::Forward),
+        dna_motif(2, 1400, Strand::Forward),
+    ];
+    let params = AssembleParams::default();
+
+    let plain = assemble("chr1", motifs.clone(), &params, &def());
+    assert!(plain.is_empty(), "该串不匹配精确组合，默认配置不应播种");
+
+    let flex_def = def().with_flexible_seed(FlexibleSeedConfig::default());
+    let flex = assemble("chr1", motifs, &params, &flex_def);
+    assert_eq!(flex.len(), 1, "柔性播种应能检出 rank 单调的 NB-ARC 串");
+}
+
+#[test]
+fn absorbs_nested_tandem_repeat_unit() {
+    // RPP2A 形态（金标准真值 TIR-NBARC-TIR-NBARC-LRR）：串联重复的第二单元因 rank 回退
+    // 无法被 merge_seeds 合并，会自成一个小位点并**嵌套在主位点跨度内**。
+    // 组装后处理应把嵌套位点吸收回主位点，最终只输出一个位点且域串完整。
+    let motifs = vec![
+        // 主位点：TIR + NB-ARC（前半段）……
+        dna_motif(18, 1000, Strand::Forward),
+        dna_motif(15, 1100, Strand::Forward),
+        dna_motif(13, 1200, Strand::Forward),
+        dna_motif(1, 1300, Strand::Forward),
+        dna_motif(4, 1400, Strand::Forward),
+        dna_motif(5, 1500, Strand::Forward),
+        dna_motif(10, 1600, Strand::Forward),
+        dna_motif(3, 1700, Strand::Forward),
+        // ……以及 LRR（后半段），中间留出的区间正好容纳被嵌套的第二单元。
+        dna_motif(11, 2900, Strand::Forward),
+        dna_motif(11, 3000, Strand::Forward),
+        dna_motif(9, 3100, Strand::Forward),
+        dna_motif(11, 3200, Strand::Forward),
+        // 第二单元：TIR + NB-ARC，完全落在主位点跨度 (1000, 3209) 之内。
+        dna_motif(15, 2000, Strand::Forward),
+        dna_motif(13, 2100, Strand::Forward),
+        dna_motif(1, 2200, Strand::Forward),
+        dna_motif(4, 2300, Strand::Forward),
+        dna_motif(5, 2400, Strand::Forward),
+        dna_motif(10, 2500, Strand::Forward),
+        dna_motif(3, 2600, Strand::Forward),
+    ];
+    let d = def();
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
+    assert_eq!(nlrs.len(), 1, "嵌套的重复单元应被吸收，只保留一个位点");
+    assert_eq!(nlrs[0].domain_string(&d), "TIR-NBARC-TIR-NBARC-LRR");
+}
+
+#[test]
+fn absorbs_trailing_nbarc_segment() {
+    // Prv 形态（金标准真值 TIR-NBARC-LRR-NBARC）：尾随 NB-ARC 的 rank(4) 低于 LRR(14)，
+    // elongate 与 merge_seeds 都不会把它并入，故形成下游孤立的 NB-ARC 段。
+    // 组装后处理应把它按串联结构补回。
+    let motifs = vec![
+        dna_motif(18, 1000, Strand::Forward),
+        dna_motif(15, 1100, Strand::Forward),
+        dna_motif(1, 1200, Strand::Forward),
+        dna_motif(4, 1300, Strand::Forward),
+        dna_motif(5, 1400, Strand::Forward),
+        dna_motif(10, 1500, Strand::Forward),
+        dna_motif(3, 1600, Strand::Forward),
+        dna_motif(12, 1700, Strand::Forward),
+        dna_motif(7, 1800, Strand::Forward),
+        dna_motif(11, 1900, Strand::Forward),
+        dna_motif(11, 2000, Strand::Forward),
+        dna_motif(9, 2100, Strand::Forward),
+        dna_motif(11, 2200, Strand::Forward),
+        // 下游 180 bp 处的孤立 NB-ARC 段（<= distance_for_elongating = 2500）
+        dna_motif(1, 2400, Strand::Forward),
+        dna_motif(4, 2500, Strand::Forward),
+        dna_motif(5, 2600, Strand::Forward),
+        dna_motif(10, 2700, Strand::Forward),
+        dna_motif(3, 2800, Strand::Forward),
+    ];
+    let d = def();
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
+    assert_eq!(nlrs.len(), 1, "尾随 NB-ARC 段应被并入主位点");
+    assert_eq!(nlrs[0].domain_string(&d), "TIR-NBARC-LRR-NBARC");
 }

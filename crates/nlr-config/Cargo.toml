@@ -9,5 +9,5 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-nlr-core = { path = "../nlr-core", version = "1.4.1" }
+nlr-core = { path = "../nlr-core", version = "1.5.0" }
 memmap2 = { workspace = true }

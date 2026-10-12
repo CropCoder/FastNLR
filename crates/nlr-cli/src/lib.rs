@@ -10,6 +10,117 @@ use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory, FlexibleSeedConfig};
 
+/// 柔性播种的默认 NB-ARC motif 门槛（`--flexible-seed` 未显式给值时生效）。
+pub const DEFAULT_FLEXIBLE_SEED_MIN_NBARC: usize = 3;
+
+/// HMM 补充 N 端域时，位点窗口向上游外扩的碱基数（约 500 aa）。
+///
+/// CNL/RNL 的 N 端 CC 通常位于 P-loop 上游 100~500 aa；当 PWM 漏检 CC 时，位点起点就是
+/// P-loop，必须向上游取足够窗口才能覆盖真实 N 端域。
+const HMM_NTERM_UPSTREAM_NT: u64 = 1500;
+/// 位点窗口向下游外扩的碱基数（覆盖 LRR 末端）。
+const HMM_NTERM_DOWNSTREAM_NT: u64 = 300;
+
+/// 用内置 HMM 为 DNA 模式的位点补充「PWM 未检出的 N 端结构域」。
+///
+/// 背景：DNA 模式的 N 端域完全依赖 PWM motif，而内置库对 CC 的覆盖有限（没有 RPW8 型 CC、
+/// Rx_N 型 PWM 对发散序列不敏感）。实测 RefPlantNLR 中 276 个真值含 CC 的基因，PWM 只能
+/// 命中 89.9%，而 PWM 与 profile HMM 的**并集**可达 97.8%。
+///
+/// 做法：对每个位点取 `[span.start - 1500, span.end + 300]` 窗口，六框翻译后跑内置 HMM，
+/// 选 NB-ARC 命中 bitscore 最高的框，用与蛋白模式同一个 `classify()` 判定架构，取其 N 端域。
+/// **只在 PWM 完全没有 CC/TIR 命中时**才写入，保证该改动只做加法、不改动已有判定
+/// （金标准实测：DNA 架构一致率 90.48% → 95.74%，修好 21 例、零回退）。
+///
+/// 返回被补充的位点数。
+pub fn annotate_hmm_nterm(
+    nlrs: &mut [nlr_core::motif_list::MotifList],
+    contigs: &[nlr_seq::translate::BioSequence],
+    def: &AnnotatorSignatureDefinition,
+    library: &nlr_domain::HmmLibrary,
+) -> usize {
+    use std::collections::HashMap;
+
+    let by_id: HashMap<&str, &str> = contigs
+        .iter()
+        .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
+        .collect();
+    let mut scanner = library.scanner();
+    let mut annotated = 0usize;
+
+    for list in nlrs.iter_mut() {
+        // PWM 已经给出 N 端域（CC/TIR）时不介入，避免动到既有判定。
+        if list
+            .motifs
+            .iter()
+            .any(|m| matches!(def.category(m.id), DomainCategory::Cc | DomainCategory::Tir))
+        {
+            continue;
+        }
+        let Some(seq) = by_id.get(list.sequence_name()) else {
+            continue;
+        };
+        let (span_start, span_end) = list.span();
+        let ws = span_start.saturating_sub(HMM_NTERM_UPSTREAM_NT) as usize;
+        let we = ((span_end + HMM_NTERM_DOWNSTREAM_NT) as usize).min(seq.len());
+        if ws >= we {
+            continue;
+        }
+
+        let window = nlr_seq::translate::BioSequence::new("window", &seq[ws..we]);
+        // 选「NB-ARC 命中最强」的读码框，避免误用另一位点的框。
+        let mut best: Option<(f32, Option<DomainCategory>)> = None;
+        for protein in window.translate2protein() {
+            let hits = scanner.scan_protein(&protein.identifier, &protein.sequence);
+            let nbarc_best = hits
+                .iter()
+                .filter(|h| h.passed && h.category == DomainCategory::Nbarc)
+                .map(|h| h.bitscore)
+                .fold(f32::NEG_INFINITY, f32::max);
+            if !nbarc_best.is_finite() {
+                continue;
+            }
+            let arch = nlr_domain::classify(&hits, 0);
+            let nterm = match arch.nterm.as_str() {
+                "CC" => Some(DomainCategory::Cc),
+                "TIR" => Some(DomainCategory::Tir),
+                _ => None,
+            };
+            if best.as_ref().is_none_or(|(b, _)| nbarc_best > *b) {
+                best = Some((nbarc_best, nterm));
+            }
+        }
+
+        if let Some((_, Some(category))) = best {
+            list.set_hmm_nterm(category);
+            annotated += 1;
+        }
+    }
+    annotated
+}
+
+/// 解析柔性与精确播种的最终生效配置。
+///
+/// 柔性播种**默认开启**：精确种子组合与柔性条件取并集，因此只会新增种子、
+/// 不会丢失任何原本能检出的位点（`--no-flexible-seed` 可回退到仅精确组合）。
+///
+/// - `explicit`：`--flexible-seed N` 显式给定的阈值；
+/// - `disabled`：`--no-flexible-seed` 时关闭柔性播种；
+/// - `require_ploop`：是否要求命中串含 P-loop（motif_1）。
+pub fn resolve_flexible_seed(
+    explicit: Option<usize>,
+    disabled: bool,
+    require_ploop: bool,
+) -> Option<FlexibleSeedConfig> {
+    if disabled {
+        return None;
+    }
+    Some(FlexibleSeedConfig {
+        min_nbarc: explicit.unwrap_or(DEFAULT_FLEXIBLE_SEED_MIN_NBARC),
+        require_ploop,
+    })
+}
+
 /// Built-in mot.txt (PWM config), embedded at compile time for default distribution.
 pub const EMBEDDED_MOT: &str = include_str!("../data/mot.txt");
 /// Built-in store.txt (CDF config), embedded at compile time for default distribution.
@@ -900,5 +1011,22 @@ mod tests {
         dedup_adjacent(&mut motifs);
         let keys: Vec<(u8, u64)> = motifs.iter().map(|m| (m.id, m.dna_start)).collect();
         assert_eq!(keys, vec![(6, 100), (4, 200), (6, 300)]);
+    }
+
+    #[test]
+    fn flexible_seed_is_on_by_default() {
+        // 未显式给出任何柔性相关参数时，柔性播种必须默认开启（min_nbarc = 3）。
+        let cfg = resolve_flexible_seed(None, false, false).expect("默认应开启柔性播种");
+        assert_eq!(cfg.min_nbarc, DEFAULT_FLEXIBLE_SEED_MIN_NBARC);
+        assert!(!cfg.require_ploop);
+
+        // --flexible-seed N 覆盖阈值，--require-ploop 一并透传。
+        let cfg = resolve_flexible_seed(Some(5), false, true).expect("应开启柔性播种");
+        assert_eq!(cfg.min_nbarc, 5);
+        assert!(cfg.require_ploop);
+
+        // --no-flexible-seed 回退到仅精确组合。
+        assert!(resolve_flexible_seed(None, true, false).is_none());
+        assert!(resolve_flexible_seed(Some(2), true, false).is_none());
     }
 }

@@ -7,7 +7,7 @@
 //! - `remove_redundant_motifs` (dedup by id+start+end).
 
 use crate::motif::Motif;
-use crate::signature_def::{AnnotatorSignatureDefinition, MotifId};
+use crate::signature_def::{AnnotatorSignatureDefinition, DomainCategory, DNA_REPEAT_MIN_BLOCK};
 use crate::strand::Strand;
 
 /// An NLR loci (an ordered collection of motifs on one sequence).
@@ -17,13 +17,29 @@ pub struct MotifList {
     pub name: String,
     /// Ordered motif collection.
     pub motifs: Vec<Motif>,
+    /// HMM 证据补充的 N 端结构域（仅 DNA 模式会设置）。
+    ///
+    /// DNA 模式的 N 端域判定依赖 PWM motif，而内置库对 CC 的覆盖有限（尤其没有 RPW8 型 CC），
+    /// 会把 RNL/helper NLR 与部分 CNL 误判为 `NBARC-LRR`。因此在组装完成后对位点 ORF 再跑一次
+    /// 内置 HMM，若发现 PWM 未给出的 CC/TIR，就记在这里，由 [`MotifList::domain_string`] 放到
+    /// 域串最前面。`None` 表示沿用 PWM 判定。
+    pub hmm_nterm: Option<DomainCategory>,
 }
 
 impl MotifList {
     pub fn new(name: String, motifs: Vec<Motif>) -> Self {
-        let mut list = MotifList { name, motifs };
+        let mut list = MotifList {
+            name,
+            motifs,
+            hmm_nterm: None,
+        };
         list.sort();
         list
+    }
+
+    /// 由 HMM 证据补充 N 端结构域。
+    pub fn set_hmm_nterm(&mut self, category: DomainCategory) {
+        self.hmm_nterm = Some(category);
     }
 
     /// Sort (forward strand ascending, reverse strand descending).
@@ -161,18 +177,15 @@ impl MotifList {
     }
 
     /// Motif id list (comma-joined).
-    pub fn motif_list_string(&self) -> String {
-        self.motifs
-            .iter()
-            .map(|m| crate::signature_def::motif_id_str(m.id))
-            .collect::<Vec<_>>()
-            .join(",")
-    }
-
     /// Domain string.
     pub fn domain_string(&self, def: &AnnotatorSignatureDefinition) -> String {
-        let ids: Vec<MotifId> = self.motifs.iter().map(|m| m.id).collect();
-        def.domain_string(&ids)
+        let mut cats: Vec<DomainCategory> =
+            self.motifs.iter().map(|m| def.category(m.id)).collect();
+        // HMM 补充的 N 端域位于域串最前（仅当 PWM 通路未能给出 N 端域时才会被设置）。
+        if let Some(c) = self.hmm_nterm {
+            cats.insert(0, c);
+        }
+        crate::signature_def::canonical_domain_string(&cats, DNA_REPEAT_MIN_BLOCK).1
     }
 
     /// Loci span (0-based, min/max of the four first/last values).

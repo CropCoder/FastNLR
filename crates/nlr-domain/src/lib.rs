@@ -317,7 +317,8 @@ fn parse_hmms(text: &str) -> Result<Vec<Hmm>, String> {
 ///
 /// - 只有 `passed` 的 HMM 命中参与判定；
 /// - `lrr_hits` 是调用方用 PWM motif 得到的 LRR 命中数（>=1 即视为含 LRR）；
-/// - 类别串按位置排序、折叠相邻重复，风格与 DNA 模式的 `domain_string` 一致。
+/// - 类别串与 DNA 模式共用 `nlr_core::signature_def::canonical_domain_string`（有序域模型），
+///   保证同一基因在两种模式下判定口径一致。
 pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
     let mut passed: Vec<&DomainHit> = hmm_hits.iter().filter(|h| h.passed).collect();
     passed.sort_by(|a, b| (a.start, a.end).cmp(&(b.start, b.end)));
@@ -325,46 +326,25 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
     let has_nbarc = passed.iter().any(|h| h.category == DomainCategory::Nbarc);
     let has_tir = passed.iter().any(|h| h.category == DomainCategory::Tir);
     let has_lrr = lrr_hits > 0;
-    let first_nbarc = passed
-        .iter()
-        .find(|h| h.category == DomainCategory::Nbarc)
-        .map(|h| h.start);
 
-    // N 端结构域：只认位于首个 NB-ARC 之前（或没有 NB-ARC 时）的 TIR/CC，取最靠前者。
-    let nterm = passed
-        .iter()
-        .filter(|h| matches!(h.category, DomainCategory::Tir | DomainCategory::Cc))
-        .filter(|h| match first_nbarc {
-            Some(nb) => h.start < nb,
-            None => true,
-        })
-        .min_by_key(|h| h.start)
-        .map(|h| h.category.as_str().to_string())
-        .unwrap_or_else(|| {
-            if has_nbarc {
-                "NB-only".to_string()
-            } else {
-                "None".to_string()
-            }
-        });
-
-    // 类别串：按位置顺序，LRR 作为 C 端证据追加。
-    let mut parts: Vec<&'static str> = Vec::new();
-    for h in &passed {
-        if h.category == DomainCategory::Na {
-            continue;
-        }
-        let s = h.category.as_str();
-        if parts.last() != Some(&s) {
-            parts.push(s);
-        }
+    // 按位置构造类别序列；LRR 来自 PWM（无位置信息），按 C 端证据追加。
+    let mut cats: Vec<DomainCategory> = passed.iter().map(|h| h.category).collect();
+    if has_lrr {
+        cats.push(DomainCategory::Lrr);
     }
-    if has_lrr && parts.last() != Some(&"LRR") {
-        parts.push("LRR");
-    }
+    let (nterm_cat, class) = nlr_core::signature_def::canonical_domain_string(
+        &cats,
+        nlr_core::signature_def::PROTEIN_REPEAT_MIN_BLOCK,
+    );
+    // N 端结构域对外仍是字符串：CC / TIR / NB-only / None。
+    let nterm = match nterm_cat {
+        Some(c) => c.as_str().to_string(),
+        None if has_nbarc => "NB-only".to_string(),
+        None => "None".to_string(),
+    };
 
     NlrArchitecture {
-        class: parts.join("-"),
+        class,
         nterm,
         has_nbarc,
         has_tir,

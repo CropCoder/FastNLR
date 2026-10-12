@@ -23,17 +23,17 @@ pub fn write_report_txt<W: Write>(
         let (start, end) = list.span();
         let strand = list.first_motif().strand.symbol();
         let domains = list.domain_string(def);
-        let motif_list = list.motif_list_string();
+        // 输出不含 motif 编号清单（2026-10-12 起）：命中明细见 .motifs.bed，
+        // 位点级别的域组成由 domain-class 字段表达。
         writeln!(
             w,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             list.sequence_name(),
             list.name,
             domains,
             start,
             end,
-            strand,
-            motif_list
+            strand
         )?;
     }
     Ok(())
@@ -307,14 +307,8 @@ fn write_one_locus<W: Write>(
         reverse_complement(sub)
     };
     let strand = list.strand();
-    let desc = format!(
-        "{} {}-{} strand:{} {}",
-        genome_id,
-        s,
-        e,
-        strand.symbol(),
-        list.motif_list_string()
-    );
+    // 头部不再附带 motif 编号清单，只保留定位信息。
+    let desc = format!("{} {}-{} strand:{}", genome_id, s, e, strand.symbol());
     writeln!(w, ">{} {}", list.name, desc)?;
     // wrap at 100 chars per line
     for chunk in seq_str.as_bytes().chunks(100) {

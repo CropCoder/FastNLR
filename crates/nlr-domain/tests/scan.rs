@@ -214,14 +214,17 @@ fn classification_rules() {
     let a = classify(&[mk(DomainCategory::Nbarc, 100, 300, false)], 0);
     assert!(!a.is_nlr && a.class.is_empty());
 
-    // CC 位于 NB-ARC 之后时不计为 N 端结构域
+    // CC 位于 NB-ARC 之后时既不算 N 端结构域，也不进入域串（有序域模型：NB-ARC 之后
+    // 不应再出现 N 端域，属噪声命中）。
+    // 行为变更（2026-10-12）：原实现会输出 "NBARC-CC"；金标准里不存在该形态，且
+    // 实测修正后架构一致率提升、无回退，故改为丢弃。
     let hits = vec![
         mk(DomainCategory::Nbarc, 100, 300, true),
         mk(DomainCategory::Cc, 320, 420, true),
     ];
     let a = classify(&hits, 0);
     assert_eq!(a.nterm, "NB-only");
-    assert_eq!(a.class, "NBARC-CC");
+    assert_eq!(a.class, "NBARC");
 }
 
 #[test]

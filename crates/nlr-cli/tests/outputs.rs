@@ -101,12 +101,13 @@ fn outputs_have_no_duplicate_bed_blocks() {
     }
     assert_eq!(blocks.len(), 8, "8 个 NB-ARC motif 应对应 8 个块");
 
-    // txt 的 motif 列表长度必须与 BED 块数一致（两者同源）。
+    // txt 为固定 6 列（seqname/name/class/start/end/strand），不再输出 motif 编号清单。
     let txt = std::fs::read_to_string(out_dir.join("fixture.nlr.txt")).unwrap();
     let cols: Vec<&str> = txt.trim_end().split('\t').collect();
     assert_eq!(
-        cols[6].split(',').count(),
-        blocks.len(),
-        "txt motif 列表长度 != BED 块数"
+        cols.len(),
+        6,
+        "nlr.txt 应为 6 列（不含 motif 编号清单），实际 {} 列: {cols:?}",
+        cols.len()
     );
 }

@@ -17,7 +17,6 @@ use std::time::Instant;
 
 use clap::Parser;
 use nlr_cli::{all_motifs, run_with_progress, RunConfig};
-use nlr_core::signature_def::FlexibleSeedConfig;
 
 /// Valid log-level values (for --log-level validation and hints).
 const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
@@ -195,10 +194,15 @@ struct Cli {
     #[arg(long, help_heading = "NLR recall enhancements")]
     relaxed_seed: Option<usize>,
 
-    /// Flexible seeding: seed when at least N NB-ARC motifs appear in rank order
-    /// (enables category/rank-based seeding instead of exact motif-id combinations).
-    #[arg(long, help_heading = "NLR recall enhancements")]
+    /// Flexible seeding threshold: seed when at least N NB-ARC motifs appear in rank
+    /// order. Enabled by default (N=3). Additive to the exact motif-id seed
+    /// combinations, so loci found without this flag are never lost.
+    #[arg(long, value_name = "N", help_heading = "NLR recall enhancements")]
     flexible_seed: Option<usize>,
+
+    /// Disable flexible seeding and fall back to the exact motif-id seed combinations only.
+    #[arg(long, help_heading = "NLR recall enhancements")]
+    no_flexible_seed: bool,
 
     /// Require the P-loop motif (motif_1) for flexible seeding (higher precision).
     #[arg(long, help_heading = "NLR recall enhancements")]
@@ -254,10 +258,9 @@ fn main() {
     config.motif_accept_p = cli.motif_accept_p;
     config.motif_prelim_p = cli.motif_prelim_p;
     config.assemble.relaxed_seed_min_nbarc = cli.relaxed_seed;
-    config.flexible_seed = cli.flexible_seed.map(|n| FlexibleSeedConfig {
-        min_nbarc: n,
-        require_ploop: cli.require_ploop,
-    });
+    // 柔性播种默认开启（min_nbarc = 3）；--no-flexible-seed 可关闭，--flexible-seed N 可调阈值。
+    config.flexible_seed =
+        nlr_cli::resolve_flexible_seed(cli.flexible_seed, cli.no_flexible_seed, cli.require_ploop);
     config.motif_categories = cli.motif_categories.clone();
     config.extra_seeds = cli.extra_seeds.clone();
     config.extra_signatures = cli.extra_signatures.clone();
@@ -274,7 +277,7 @@ fn main() {
     let pb = make_progress_bar(&cli.progress, estimated_fragments);
 
     match run_with_progress(&config, pb.as_ref()) {
-        Ok(result) => {
+        Ok(mut result) => {
             if let Some(pb) = &pb {
                 let total = pb.length().unwrap_or(0);
                 pb.set_position(total);
@@ -287,7 +290,7 @@ fn main() {
             );
 
             // 默认输出全部结果（序列 / 表格 / 图 / 摘要）。
-            let written = match write_outputs(&cli, &prefix, &result) {
+            let written = match write_outputs(&cli, &prefix, &mut result) {
                 Ok(w) => w,
                 Err(e) => {
                     print_cli_error(&format!("output write failed: {}", e));
@@ -426,42 +429,31 @@ fn estimate_protein_count(path: &PathBuf) -> u64 {
     count
 }
 
+/// 时间戳统一格式：年月日时分秒，不保留小数秒。
+const DATE_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
+
+/// 日志时间戳：取运行主机的本地时区（而非 UTC），格式 `YYYY-MM-DD HH:MM:SS`。
+struct LocalTimer;
+
+impl tracing_subscriber::fmt::time::FormatTime for LocalTimer {
+    fn format_time(&self, w: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        write!(w, "{}", chrono::Local::now().format(DATE_TIME_FORMAT))
+    }
+}
+
 /// Initialize logging (invalid level falls back to info).
 fn init_logging(level: &str) {
     use tracing_subscriber::EnvFilter;
     let filter = EnvFilter::try_new(level).unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_timer(LocalTimer)
+        .init();
 }
 
-/// Current UTC time as "YYYY-MM-DD HH:MM:SS" (for the GFF `##date` header).
+/// 当前本地时间 `YYYY-MM-DD HH:MM:SS`（用于 GFF 的 `##date` 头）。
 fn now_date_string() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let days = (secs / 86400) as i64;
-    let rem = secs % 86400;
-    let h = rem / 3600;
-    let m = (rem % 3600) / 60;
-    let s = rem % 60;
-    let (y, mo, d) = civil_from_days(days);
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, mo, d, h, m, s)
-}
-
-/// Convert days since the Unix epoch (1970-01-01) to a proleptic Gregorian (year, month, day).
-/// Howard Hinnant's algorithm (UTC).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = z - era * 146097; // [0, 146096]
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365; // [0, 399]
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    (if m <= 2 { y + 1 } else { y }, m as u32, d as u32)
+    chrono::Local::now().format(DATE_TIME_FORMAT).to_string()
 }
 
 /// Configure the temp dir and return its path (mainly in-memory here; reserved for checkpoint).
@@ -551,6 +543,30 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
                 ));
             }
         }
+    }
+
+    // 播种参数组合校验。柔性播种默认开启，因此与「精确组合之外的三态分支」互斥的参数
+    // 必须显式关闭柔性播种，否则会被静默忽略（播种判定是 if/else，柔性分支优先）。
+    // protein 模式只做结构域扫描，播种参数无意义，交给下面的 protein 分支统一报错。
+    if !cli.protein && cli.no_flexible_seed {
+        if cli.flexible_seed.is_some() {
+            return Err(
+                "--flexible-seed 与 --no-flexible-seed 互斥：前者设定阈值，后者关闭柔性播种"
+                    .to_string(),
+            );
+        }
+        if cli.require_ploop {
+            return Err(
+                "--require-ploop 只在柔性播种开启时有意义，不能与 --no-flexible-seed 同时使用"
+                    .to_string(),
+            );
+        }
+    } else if !cli.protein && cli.relaxed_seed.is_some() {
+        return Err(
+            "--relaxed-seed 与默认开启的柔性播种互斥（播种判定柔性优先，该参数会被忽略）；\
+             如需宽松播种请改加 --no-flexible-seed"
+                .to_string(),
+        );
     }
 
     // Protein mode: extra HMM files must exist, and genome-only flags must not be used.
@@ -664,6 +680,19 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
         config.threads,
         config.seqs_per_thread
     );
+
+    // 播种模式（柔性播种默认开启，便于从日志确认实际生效档位）。
+    let seeding = match config.flexible_seed {
+        Some(cfg) if cfg.require_ploop => {
+            format!("flexible (min_nbarc={}, require_ploop=true)", cfg.min_nbarc)
+        }
+        Some(cfg) => format!("flexible (min_nbarc={})", cfg.min_nbarc),
+        None => match config.assemble.relaxed_seed_min_nbarc {
+            Some(n) => format!("relaxed (min_nbarc={})", n),
+            None => "exact seed combinations only".to_string(),
+        },
+    };
+    tracing::info!("seeding: {}", seeding);
 
     // 预期输出文件列表（默认全部输出）。
     let prefix = genome_prefix(&cli.input);
@@ -793,8 +822,34 @@ fn build_summary(
 fn write_outputs(
     cli: &Cli,
     prefix: &str,
-    result: &nlr_cli::RunResult,
+    result: &mut nlr_cli::RunResult,
 ) -> std::io::Result<Vec<PathBuf>> {
+    // 先读一次基因组：既用于 HMM 补充 N 端结构域，也用于位点序列提取（避免重复读取）。
+    let contigs = match nlr_seq::fasta::read_all(&cli.input) {
+        Ok(c) => Some(c),
+        Err(e) => {
+            tracing::warn!(
+                "cannot read genome {}, skipping loci fasta and HMM N-terminal domain annotation: {}",
+                cli.input.display(),
+                e
+            );
+            None
+        }
+    };
+
+    // HMM 补充 N 端结构域：DNA 模式的 N 端域原本只能靠 PWM，内置库对 CC 覆盖有限。
+    // 必须在写任何输出之前完成，因为 .nlr.txt/.gff/.bed 都会用到域串。
+    if let Some(contigs) = &contigs {
+        let library = nlr_domain::HmmLibrary::from_embedded();
+        let annotated =
+            nlr_cli::annotate_hmm_nterm(&mut result.nlrs, contigs, &result.def, &library);
+        tracing::info!(
+            "HMM N-terminal domain annotation: {} / {} loci updated",
+            annotated,
+            result.nlrs.len()
+        );
+    }
+
     let def = &result.def;
     let nlrs = &result.nlrs;
     let motifs = all_motifs(result);
@@ -838,33 +893,18 @@ fn write_outputs(
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
     written.push(p);
 
-    // 位点序列 fasta（从 -i 基因组提取，flank 由 --flank 控制）
-    match nlr_seq::fasta::read_all(&cli.input) {
-        Ok(contigs) => {
-            let pairs: Vec<(&str, &str)> = contigs
-                .iter()
-                .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
-                .collect();
-            let p = output_path(&cli.output_dir, prefix, ".loci.fasta");
-            let mut f = std::fs::File::create(&p).map_err(|e| {
-                std::io::Error::other(format!("cannot create {}: {}", p.display(), e))
-            })?;
-            nlr_output::write_nlr_loci_all(
-                &mut f,
-                nlrs,
-                &pairs,
-                cli.flank.unwrap_or(DEFAULT_FLANK),
-            )
+    // 位点序列 fasta（复用前面读取的基因组，flank 由 --flank 控制）
+    if let Some(contigs) = &contigs {
+        let pairs: Vec<(&str, &str)> = contigs
+            .iter()
+            .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
+            .collect();
+        let p = output_path(&cli.output_dir, prefix, ".loci.fasta");
+        let mut f = std::fs::File::create(&p)
+            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+        nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank.unwrap_or(DEFAULT_FLANK))
             .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-            written.push(p);
-        }
-        Err(e) => {
-            tracing::warn!(
-                "cannot read genome {}, skipping loci fasta: {}",
-                cli.input.display(),
-                e
-            );
-        }
+        written.push(p);
     }
 
     // 统计 TSV

@@ -20,7 +20,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.4.1"
+version = "1.5.0"
 edition = "2021"
 authors = ["Jiwen Zhao (https://github.com/CropCoder)"]
 license = "GPL-3.0-only"
@@ -43,6 +43,9 @@ ctrlc = "3.4"
 # structured serialization (stats report JSON)
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# local-time formatting for log timestamps and the GFF `##date` header
+# (default-features off: 只需要 Local::now() 与 strftime 格式化，不引入 wasm 绑定)
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # gzip compression
 flate2 = "1.0"
 # statistics plots (default features disabled to avoid system fontconfig/freetype deps;

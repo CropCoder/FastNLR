@@ -40,9 +40,11 @@ fn report_txt_format() {
     write_report_txt(&mut buf, &nlrs, &def()).unwrap();
     let s = String::from_utf8(buf).unwrap();
     let cols: Vec<&str> = s.trim_end().split('\t').collect();
-    assert_eq!(cols.len(), 7);
+    // 自 2026-10-12 起不再输出 motif 编号清单：固定 6 列。
+    assert_eq!(cols.len(), 6, "nlr.txt 应不含 motif 编号清单: {cols:?}");
     assert_eq!(cols[0], "chr1");
     assert_eq!(cols[1], "chr1_nlr1");
+    assert_eq!(cols[5], "+");
 }
 
 #[test]
