@@ -605,3 +605,245 @@
 - 遗留（需用户决定，未执行）：① 向 `bioconda/bioconda-recipes` 提 PR 把配方由 1.4.0 升到 1.4.1
   （v1.4.0 走过 PR 流程，本次未动外部仓库）；② crates.io 是否同步发布 1.4.1 的 10 个 crate；
   ③ 是否把 `cargo fmt --check` 与 `cargo clippy -D warnings` 加入 CI（涉及 CI 配置，未擅自修改）。
+
+## 2026-10-12
+
+### 拟南芥 TAIR12 真实基因组评估数据准备与 FastNLR 首次分析
+
+- 数据获取：从 NCBI 下载 TAIR12（`GCA_978657495.1`，Complete Genome）到
+  `benchmark/arabidopsis_tair12/raw/`，7 个文件共 74 MB（基因组 37 MB、GFF 14 MB、蛋白 7.1 MB、
+  CDS 13 MB、feature_table 2.6 MB + assembly_report + md5checksums），
+  MD5 与 NCBI 官方校验和全部一致。未下载 gbff/gtf/gpff/rna（重复且体积大）。
+- 数据概况：5 条染色体 142.5 Mb，58,717 个基因（蛋白编码 26,867），39,150 个 mRNA，32,589 条蛋白。
+  染色体 accession 映射 OZ408683.1→Chr1 … OZ408687.1→Chr5。
+- **注释文件无法直接给出 NLR 清单**（重要结论）：
+  - GFF 的 `gene` 只有 `locus_tag/gene_biotype/Name/ID/gene`，`gene_biotype` 无 NLR 类；无 GO 注释；
+  - `mRNA` 的 `product=` 是自由文本，且命名体系不一致：RPS4(AT5G45250) 写作
+    "putative NAD+ nucleotidase, cyclic ADP-ribose generating"，RPS5(AT1G12290) 写作
+    "apoptotic protease-activating factor, helical domain-containing protein"，**不含任何 NLR 关键词**；
+  - 常规 NLR 关键词只能命中 54 个基因（漏掉 RPS4/RPS5），改用 TAIR12 自身的
+    "Apoptotic protease-activating factor / NAD+ nucleotidase / putative ATP hydrolase" 术语则命中 341 个
+    （过检，"putative ATP hydrolase" 一项 204 个，含大量非 NLR ATP 酶）；拟南芥实际约 150 个，
+    无阈值可切分。
+  - 可用于建金标准的只有：`locus_tag` 里的 AGI 基因号（35,223 个，可精确连接外部策展名单）
+    与少量基因符号（`gene=TN2`、`[RESISTANT TO P SYRINGAE 2]`）。
+- FastNLR 基因组模式运行（`outputs/fastnlr_dna_default/`）：8 线程 **39.7 s / 162 MB**，
+  检出 **207 个 NLR 位点**（完整 139）。类型：TIR-NBARC-LRR 90、TIR 36、CC-NBARC-LRR 30、
+  NBARC-LRR 21、TIR-NBARC 19、NBARC 11。染色体分布 Chr1 69 / Chr2 11 / Chr3 19 / Chr4 40 / Chr5 68。
+  核对 `is_complete_nlr`（P-loop + LRR）判据得 139，与工具自报一致。
+- 可视化：新增 `benchmark/Script7-Plot-TAIR12-NLR-V1.R`（Nature 风格、cairo_pdf、180 mm 宽、
+  Liberation Sans 代替未安装的 Arial、图中无中文），输出到 `benchmark/figures/`：
+  `Fig11-TAIR12-genome-map.pdf`（染色体分布，正负链分列，四类着色）、
+  `Fig12-TAIR12-nlr-composition.pdf`（类型完整度构成 + 染色体重分布）、
+  `Fig13-TAIR12-nlr-profile.pdf`（motif 使用谱对数轴 + 位点跨度分布）。
+  修复了两处：Fig12b 零值标签显示为 "0"、Fig13a 量纲被 motif_11 压扁（改对数轴）与分组顺序不统一。
+- 本机环境核查：Resistify 2.4.0 已装于 conda env `resistify`（蛋白级 NLR 分类器，可作对比工具）；
+  HMMER 3.3.2、Java 11、R 4.5.1 可用；bioconda 无 nlr-parser/rgaugury/nlrscape/nlrexpress/drnlr；
+  本机无 Pfam-A.hmm。
+- 遗留（待用户决定）：金标准路线（策展 AGI 名单 / 结构域推导 / 工具共识）、对比工具范围、
+  评估层面（基因组层区间求交 vs 蛋白层直接比对）。`benchmark/` 在 `.gitignore` 内，
+  本次脚本与图件均为本地资产，未入库。
+
+### 修复：--flexible-seed 的播种语义由「替换」改为「并集」
+
+- 问题定位（承接金标准漏检分析）：`find_seeds` 的播种判定是 if/else 链，
+  开启柔性播种后**只**看 `is_seed_flexible`，精确种子组合被整体顶替；而签名预过滤
+  `has_signature_flexible` 本就是 `has_signature || is_seed_flexible` 的**并集**。
+  二者不一致导致「motif 簇因命中精确签名被保留、播种阶段却不认精确组合、最终组装不出位点」，
+  典型病例就是 RefPlantNLR 的 Pb1（命中精确组合 `[12,2,8]`，但 NB-ARC 类 motif 仅 2 个、
+  达不到柔性门槛 3）——默认能检出，加 `--flexible-seed 3` 反而漏检。
+- 改动：`crates/nlr-assemble/src/lib.rs` 的 `find_seeds` 一行，改为
+  `def.is_seed_flexible(&s, &cfg) || def.is_seed(&s)`，并加注释说明并集语义与理由。
+  并集只新增种子、不移除任何原有种子，因此**不传该参数时行为完全不变**。
+- 回归测试（`crates/nlr-assemble/tests/assemble.rs` +2 项，共 62 项）：
+  ① `flexible_seed_is_additive_not_replacing`——用 Pb1 的形状（精确组合 `[12,2,8]` +
+  仅 2 个 NB-ARC motif）断言柔性模式下仍能播种；已实测该测试在未修复版本上**必然失败**
+  （`开启 --flexible-seed 不应丢失精确组合能检出的位点`）。
+  ② `flexible_seed_still_recovers_rank_order_loci`——反向保护柔性路径不被削弱。
+- 文档同步：README 的 `--flexible-seed` 说明与 CLI help 文本由「instead of」改为
+  「additionally / additive」；`docs/flexible-seeding-upgrade.md` 补修订说明。
+- 验证（修复后二进制，8 线程）：
+  - 金标准 RefPlantNLR flexible 档：召回 398/400 → **399/400（99.75%）**，漏检仅剩 Wed；
+    过度切分不变（仍是 Prv^1、Prv^2、RPP2A 共 3 个基因）；架构一致率 356/398 → 356/399
+    （89.22%，因新召回的 Pb1 架构判别为 CC-TIR-NBARC-LRR、与真值 CC-NBARC-LRR 不符，属预期）。
+  - 零副作用确认：RefPlantNLR 的 default 与 extended 档输出、TAIR12 的 default 档输出
+    均与修复前**逐字节一致**（extended 不用柔性播种，default 走 else 分支）。
+  - TAIR12 真实基因组 flexible 档：位点 176 → **216**；被 flexible 完全漏掉的 default 位点
+    **38 → 0**；default 检不到的新位点仍为 6（柔性独有能力未削弱）。
+  - 分裂代价：自身重叠/嵌套位点对 default=2、flexible 未修复=1、flexible 已修复=2
+    —— 修复后与默认档**持平**，未超出默认档既有的分裂水平；其中 1 对
+    （OZ408683.1:29638277-29643710 与 29639806-29640166）与 default 完全相同，属继承而非新增。
+  - 性能：flexible 档 39.26 s → 39.36 s（+0.3%，在噪声范围内），峰值内存 162 MB 不变。
+  - 质量门禁：`cargo fmt --check` 通过、`cargo clippy --all-targets -- -D warnings` 零告警、
+    `cargo test --workspace --locked` 62 项全通过。
+- 遗留：`benchmark/metrics/accuracy_summary.csv` 中 flexible 行的召回仍为修复前的 99.50%，
+  需要重跑 Script5 才会刷新（未擅自改动既有测评产物）。
+
+### 日志时间戳改为本地时区 + 柔性播种默认开启
+
+- 需求：① 日志前的时间戳改用运行主机时区，格式 `YYYY-MM-DD HH:MM:SS`（秒不保留小数）；
+  ② `--flexible-seed` 默认开启，提高召回，同时避免位点分裂与过度切分。
+- 时间戳改造：
+  - `crates/nlr-cli/src/main.rs` 新增 `LocalTimer`（实现 `tracing_subscriber::fmt::time::FormatTime`），
+    `init_logging` 用 `.with_timer(LocalTimer)` 挂载；格式常量 `DATE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"`。
+    此前用的是 tracing 默认 `SystemTime`（UTC、`2026-10-11T06:03:12.917547Z`，带 6 位小数）。
+  - `now_date_string()`（GFF `##date` 头）同步改为本地时间，并删除手写的
+    `civil_from_days()` UTC 日期换算（约 25 行），统一由 chrono 负责。
+  - 新增依赖 `chrono 0.4`（`default-features = false, features = ["clock", "std"]`），
+    写入 workspace 依赖表并注明用途；本地 registry 已有缓存，离线可构建。
+  - 实测：主机 `Asia/Shanghai`，日志与 GFF `##date` 均为 `2026-10-12 15:18:58`，
+    与 UTC（`07:18:58`）相差 8 小时，符合预期。
+- 柔性播种默认开启：
+  - `--flexible-seed <N>` 保留用于调阈值；新增 `--no-flexible-seed` 回退到仅精确组合。
+  - 解析逻辑抽到 `nlr_cli::resolve_flexible_seed()`（含 `DEFAULT_FLEXIBLE_SEED_MIN_NBARC = 3`），
+    main 与单测共用同一实现。
+  - 启动日志新增一行 `seeding:` 明确当前档位，例如
+    `seeding: flexible (min_nbarc=3)` / `seeding: exact seed combinations only`。
+  - 校验：`--flexible-seed` 与 `--no-flexible-seed` 互斥；`--require-ploop` 需柔性开启；
+    `--relaxed-seed` 与默认柔性互斥（提示改用 `--no-flexible-seed`），避免被静默忽略；
+    `--protein` 模式下仍按"基因组专属参数"统一报错（播种校验已用 `!cli.protein` 让位）。
+- 新增测试 3 项（`crates/nlr-cli/tests/logging.rs`）+ 单测 1 项（`resolve_flexible_seed`），
+  合计 66 项全通过；`cargo fmt --check` 与 `clippy -D warnings` 均干净。
+- 验证（金标准 RefPlantNLR 400 条 CDS）：
+  - 新默认档召回 **399/400（99.75%）**，旧默认档 393/400（98.25%）；
+  - **过度切分不变**（同为 3 个基因：Prv^1、Prv^2、RPP2A）；
+  - 架构一致率 91.60% → 89.22%（新召回的基因架构判别不完美，属预期）；
+  - `--no-flexible-seed` 的输出与旧默认档**逐字节一致**（可完整回退）；
+  - 新默认档与显式 `--flexible-seed 3` **逐字节一致**。
+- 验证（TAIR12 真实基因组 142 Mb）：
+  - 位点 207 → 216；旧默认档位点被新默认档**完全漏掉 0 个**；
+  - 自身重叠/嵌套位点对：旧默认 2、新默认 2 —— **与旧默认持平，未加剧分裂**；
+  - 运行 39.3 s / 162 MB，与旧默认档持平；protein 模式输出**逐字节不变**。
+
+### 结构域判别优化 Phase 1：有序域模型（2026-10-12）
+
+- 背景：架构一致率 89.22%（399 检出中 43 例判错）。误差分解——A 类「漏判 N 端域」
+  23 例（53%）、B 类「多判 N 端域」9 例（21%，其中 7 例金标准 Subclass 本身写 CNL、
+  属参考标注不一致）、C 类「域名串构造伪影」8 例（19%）。Phase 1 只针对 C 类。
+- 根因：原 `domain_string()` 仅做「相邻同类合并」，无位置/顺序约束，产出
+  `LRR-CC-NBARC-LRR`（单 motif LRR 跑到 CC 之前，4 例）、`CC-NBARC-CC-NBARC-LRR`
+  （NB-ARC 之间混入杂散 CC，1 例）等金标准中不存在的形态。
+- 改动：
+  - `crates/nlr-core/src/signature_def.rs` 新增 `canonical_domain_string(cats, repeat_min_block)`，
+    实现「有序域模型」：折叠域块 → 以首个 NB-ARC 为锚点 → N 端域取锚点前最靠近的 CC/TIR →
+    锚点起按位置输出，NB-ARC/LRR 全保留，CC/TIR 须同时满足「后随 NB-ARC 块」且
+    「块规模 ≥ repeat_min_block」才认定为真实串联重复 → 相邻同类折叠。
+  - `DNA_REPEAT_MIN_BLOCK = 2`、`PROTEIN_REPEAT_MIN_BLOCK = 1`：DNA 的一个域块是 PWM 命中
+    集合，NB-ARC 之后的**单点** PWM 命中极可能是噪声；蛋白模式的一个块是已过 GA 的 profile
+    HMM 命中，本身即域级证据，故不做门槛（否则 RPP2A 的串联 TIR 会被误丢）。
+  - `crates/nlr-domain/src/lib.rs` 的 `classify()` 改为调用同一函数，DNA 与蛋白两条通路
+    从此共用一套判定口径（此前各写一套，实测同一基因两模式判定不一致率 11.8%）。
+- **被数据否决的方案（记录以免重犯）**：原计划给域块设「最小规模门槛」（CC/TIR ≥2、LRR ≥2）。
+  实测 CC 域块 249 个中有 85 个只命中 1 个 motif、LRR 块有 34 个只命中 1 个，
+  加门槛后金标准一致率从 90.5% 暴跌到 73.7%（CC 门槛）/ 83.7%（LRR 门槛），故明确不加。
+- 锚点选择亦有实测依据：RPM1 的域块 `CC(1) NBARC(1) CC(1) NBARC(8) LRR` 中，两个 NB-ARC 块
+  被杂散 CC 隔开、实为同一 NB-ARC 域；而 RPP2A 的 `TIR(3) NBARC(5) TIR(2) NBARC(5) LRR`
+  是真串联。仅靠位置无法区分，改用「块规模 + 后随 NB-ARC」双条件后两者都能正确折叠。
+- 验证（RefPlantNLR 400 条）：
+  - DNA 默认档架构一致率 **356/399 → 361/399（90.48%）**，修好 5 例（CaMi、Gpa2、Mi-1、
+    RPM1、Rx）、**零回退**；
+  - 蛋白模式 **378/398（94.97%）保持不变**（RPP2A 的串联结构未被误伤）；
+  - 新增测试：`domain_string_enforces_domain_order`（含 RPM1 形态、RPP2A 形态、单 motif CC
+    仍有效、串联 NB-ARC、无 NB-ARC 五种情形）；`nlr-domain` 中「CC 位于 NB-ARC 之后」的断言
+    由 `NBARC-CC` 更新为 `NBARC`（行为变更，已在测试内注明理由）；
+  - 全量测试 67 项通过。
+
+### 结构域判别优化 Phase 2：DNA 模式融合 HMM 证据（2026-10-12）
+
+- 目标：A 类误差（漏判 N 端域，23 例）的根因是 DNA 模式**只能靠 PWM** 判 N 端域——内置
+  20-motif 库没有 RPW8 型 CC，且 Rx_N 型 motif_16/17 对发散序列不敏感。实测这 23 个基因
+  在 DNA 模式下 CC motif 命中数为 0/23，而蛋白 HMM 在 20/23 上检出了 N 端域。
+- 关键设计数据（276 个真值含 CC 的基因）：PWM 灵敏度 89.9%、HMM 94.6%、
+  **并集 97.8%**、交集 86.6%；非 CC 基因上 PWM 误报 9 例、HMM 误报 0 例。
+  结论：N 端域必须取**并集**，单靠任一检测器都不够——这也解释了为何 DNA 与蛋白两种模式
+  对同一基因的判定有 11.8% 不一致。
+- 改动：
+  - `nlr-core`：`MotifList` 新增 `hmm_nterm: Option<DomainCategory>` 字段（`new()` 默认
+    `None`，不破坏既有构造点），`domain_string()` 在有值时将其置于域串最前。
+  - `nlr-cli`：新增 `annotate_hmm_nterm()`——对每个位点取 `[span.start-1500, span.end+300]`
+    窗口，六框翻译后跑内置 HMM，取 NB-ARC bitscore 最高的读码框，用与蛋白模式**同一个**
+    `nlr_domain::classify()` 判定，取其 N 端域。**只在 PWM 完全没有 CC/TIR 命中时**写入，
+    保证只做加法。
+  - `nlr-cli/src/main.rs`：`write_outputs` 改为 `&mut RunResult`，基因组只读一次
+    （同时供 HMM 补域与位点序列提取，避免重复读取），并在写任何输出前完成补域。
+- 验证（RefPlantNLR 400 条）：
+  - DNA 默认档架构一致率 **361/399 → 382/399（95.74%）**，修好 21 例、零回退；
+  - 蛋白模式输出**逐字节不变**（该路径不经过 `write_outputs`）；
+  - 耗时：小数据集 0.1 s → 0.89 s；TAIR12 真实基因组 **39.32 s，与 Phase 2 前持平**
+    （仅 216 个位点需要补域，开销可忽略），内存 162 → 167 MB；
+  - TAIR12 位点数不变（216），类型分布向完整型偏移：CNL 30→33、NBARC-LRR 21→23、
+    TIR 36→38、新增 CC-NBARC 1。
+- 残余误差 17 例的构成（重要，说明瓶颈已转移）：
+  - 9 例属**金标准自身标注不一致**（Structure 无 C 但 Subclass 写 CNL），见 Phase 3；
+  - RPP2A 是 DNA 模式把串联结构切成 2 个位点（过度切分问题，非域判定问题）；
+  - 其余为真实检测缺口：Bs2/Rpa1/Ptr1（HMM 与 PWM 均未检出 CC）、Prv^1/Prv^2
+    （尾随 NB-ARC 未检出）、Pb1（PWM 误出 TIR 致 N 端判成 TIR）、YrSP（漏 LRR）。
+
+### 结构域判别优化 Phase 3：评估口径对齐（2026-10-12）
+
+- 问题：原评估只看「整串完全匹配」，把「少一个域」与「多一个域」同等计错，且被金标准
+  自身的矛盾严重干扰。`Structure`（域字母，来自 Pfam/Gene3D/SSF 命中）与 `Subclass`
+  在部分条目上互相矛盾——例如 CD3.1 的 Subclass 写 `NLR;CNL`、Structure 却是 `NL`。
+- 改动（`benchmark/Script5-Run-GoldNLR-Accuracy-Eval-V1.R` 新增第 5 节）：
+  - 逐域指标 `accuracy_by_domain.csv`：CC / TIR / NB-ARC / LRR 各自算 TP/FP/FN/TN 与
+    灵敏度、精确率、特异度、F1（CC/TIR 只认 N 端位置，NB-ARC/LRR 只要出现）；
+  - 歧义标记：`Subclass` 含 CNL 但 `Structure` 无 C/B 的条目标为 `ambiguous`，
+    主指标同时给出「含歧义」与「仅无歧义」两套数字。
+- 结果（Phase 1+2 之后，RefPlantNLR 400 条）：
+  - 召回：dna_default / dna_flexible / dna_extended 均 399/400（99.75%，仅漏 Wed），
+    protein 398/400（99.50%，漏 CW9、Pb1）；
+  - 架构一致率：dna_default **95.74%**（改造前 89.22%）、dna_extended 88.22%
+    （改造前 82.66%）、protein 94.97%；
+  - **剔除 12 条歧义条目后 dna_default 达 97.42%**；
+  - 逐域 F1（dna_default）：CC 0.989、TIR 0.995、NB-ARC 1.000、LRR 0.999；
+  - 12 条歧义条目：CD3.1、RPG5、NtTPN1、Pi54、Rpi-amr3i、Lr1、Lr21、Tsn1、Pm60、
+    Pm60a、Pm60b、PmR1（17 例残余误差中有 7 例落在此桶）。
+- 未采纳项：原计划在 `.nlr.txt` 增加 `type`（TNL/CNL/RNL/NL/TN）列——会破坏既有 7 列
+  格式并影响 Script5/Script7 等下游解析，收益有限，暂缓（层级类型改在评估脚本侧派生）。
+- 归档同步：`benchmark/arabidopsis_tair12/outputs/fastnlr_dna_default/` 用当前软件重跑
+  （216 位点 / 145 完整 / 39.4 s / 167 MB），`Fig11–Fig13` 与模块 README 同步更新。
+
+### 组装层攻坚：吸收过度切分的冗余位点（2026-10-12）
+
+- 问题：金标准 402 个位点里有 3 个基因被切分（Prv^1、Prv^2、RPP2A），TAIR12 上有 2 对
+  自身重叠/嵌套位点。根因是 `merge_seeds` 的 **rank 单调约束**与 `elongate` 的**只允许 rank
+  递增**都无法处理**串联重复结构**：RPP2A 的 `TIR-NBARC-TIR-NBARC-LRR` 第二单元 TIR 的
+  rank(1~3) 低于前一段 NB-ARC(4~12)；Prv 的 `TIR-NBARC-LRR-NBARC` 尾随 NB-ARC rank(4)
+  低于 LRR(14)。残留 motif 各自组装，形成嵌套位点或下游孤立小位点。
+- 改动（`crates/nlr-assemble/src/lib.rs` 新增 `absorb_redundant_loci()`，在 `elongate` 之后、
+  命名之前调用，与结构域判定完全解耦）：
+  1. **完全嵌套**：位点 B 跨度完全落在同链位点 A 内 → 并入 A。同链嵌套的两个独立 NLR 在
+     自然界不成立，只可能是同一基因的重复单元未合并；
+  2. **下游孤立 NB-ARC 段**：B 只含 NB-ARC/linker/NA 类 motif，且落在某个「以 LRR 结尾」的
+     位点 A 下游 `distance_for_elongating`(2500 bp) 之内 → 并入 A（串联的尾随 NB-ARC）。
+  两类都只并入 motif 并丢弃 B，不改变 A 的边界。
+- 实现前后的数据验证（先 Python 原型再写 Rust）：金标准 402 → 399 位点，
+  **过度切分 3 → 0**，架构一致率 +3 例且零回退；TAIR12 216 → 214 位点，
+  **自身重叠/嵌套 2 → 0**；运行时间与内存均无变化（39.4 s / 167 MB）。
+- 回归测试 2 项（`absorb_nested_tandem_repeat_unit`、`absorb_trailing_nbarc_segment`），
+  已实测在停用吸收时**必然失败**，证明测试有效。
+
+### 输出精简：移除 motif 编号清单（2026-10-12）
+
+- 需求：输出结果文件中不再显示 motif 编号清单。
+- 改动：
+  - `crates/nlr-output/src/lib.rs`：`.nlr.txt` 由 7 列改为 **6 列**
+    （seqname / name / domain-class / start / end / strand）；`.loci.fasta` 的头部描述去掉
+    motif 清单，保留 `>名称 基因组 起-止 strand:±`。
+  - `crates/nlr-core/src/motif_list.rs`：删除已无调用方的 `motif_list_string()`。
+  - 未受影响：`.nlr.gff`（属性只有 `name=…;nlrClass=…`）、`.nlr.bed`、`.motifs.bed`
+    （命中明细与坐标完整保留，因此信息并未丢失，只是不再冗余到 txt）。
+  - 依赖方同步：`Script5` / `Script7` 的列名改为 6 列；`Script7` 的完整度判定改用
+    `.nbarc.fasta`（含 P-loop 的位点）+ 类别串含 "LRR"，精确复现 `is_complete_nlr`；
+    两处测试断言同步更新。
+- 顺带查实一个**既有口径不一致**：`.nlr.bed` 的 itemRgb 不能用来判完整度——"含终止子"红色
+  优先级高于完整绿色，TAIR12 上绿色 143 而摘要 complete 为 145（差的 2 个是完整但含终止子）。
+  已在 Script7 注释中记录该陷阱。
+- 最终评估（RefPlantNLR 400 条，逐域指标见 Phase 3 一节）：
+  - 召回：dna_default / flexible / extended 均 399/400（99.75%），protein 398/400（99.50%）；
+  - 架构一致率：dna_default **96.49%**（最初 89.22%）、dna_extended 95.24%、protein 94.97%；
+  - **剔除 12 条金标准歧义条目后 dna_default 达 98.19%**；
+  - 逐域 F1（dna_default）：CC 0.989、TIR 0.995、NB-ARC 1.000、LRR 0.999；
+  - 过度切分 0 个基因。
+- 归档同步：TAIR12 模块输出重跑（214 位点 / 145 完整 / 39.4 s / 167 MB），
+  `Fig11–Fig13`、模块 README 同步更新。

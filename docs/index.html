@@ -15,12 +15,13 @@
     2. 导航栏 Navbar
     3. Hero 首屏（含终端演示窗口）
     4. Install 安装（Conda / 预编译二进制 / 源码构建 tab 切换）
-    5. Usage 用法示例
+    5. Usage 用法示例 + CLI 完整参数表 + 输出格式
     6. Features 特性卡片
-    7. Architecture 架构（流水线 + crate 分层）
-    8. Performance 性能
-    9. Correctness 正确性 / 修复清单
-    10. Citation 引用 + 页脚
+    7. Extended motif library 扩展 motif 库
+    8. Architecture 架构（流水线 + crate 分层）
+    9. Performance 性能
+    10. Correctness 正确性 / 修复清单
+    11. Citation 引用 + 页脚
   依赖：零外部库，纯内联 CSS/JS；字体用系统无衬线栈，可选加载 Inter。
 -->
 
@@ -106,6 +107,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   font-weight: 800; letter-spacing: -.02em; line-height: 1.15;
   margin: 16px 0 14px; color: var(--ink);
 }
+/* 二级小节标题（CLI 参考、输出格式等） */
+.h3 {
+  font-size: clamp(20px, 2.6vw, 26px);
+  font-weight: 780; letter-spacing: -.015em; line-height: 1.2;
+  margin: 0 0 12px; color: var(--ink);
+}
+.table thead th code, .table td code { font-family: var(--mono); font-size: 12.5px; }
+.table td .mono, .table td code { word-break: break-word; }
 .lead { font-size: 17px; color: var(--ink-2); max-width: 680px; }
 .center { text-align: center; }
 .center .lead { margin: 0 auto; }
@@ -413,12 +422,13 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.4.1</span>
+      <span class="ver">v1.5.0</span>
     </a>
     <div class="nav-links">
       <a href="#install">Install</a>
       <a href="#usage">Usage</a>
       <a href="#features">Features</a>
+      <a href="#library">Motif library</a>
       <a href="#architecture">Architecture</a>
       <a href="#performance">Performance</a>
       <a href="#correctness">Correctness</a>
@@ -435,6 +445,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     <a href="#install">Install</a>
     <a href="#usage">Usage</a>
     <a href="#features">Features</a>
+    <a href="#library">Motif library</a>
     <a href="#architecture">Architecture</a>
     <a href="#performance">Performance</a>
     <a href="#correctness">Correctness</a>
@@ -539,7 +550,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.4.1/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.5.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 cd fastnlr-linux-x86_64
 ./fastnlr --version
@@ -593,8 +604,8 @@ cargo build --release
         <code>fastnlr -i genome.fasta -o results -t 8</code>
       </div>
       <div class="usage-item reveal">
-        <div class="u-label">Flexible seeding</div>
-        <code>fastnlr -i genome.fasta -o results --flexible-seed 3</code>
+        <div class="u-label">Flexible seeding (on by default)</div>
+        <code>fastnlr -i genome.fasta -o results --no-flexible-seed  # opt out</code>
       </div>
       <div class="usage-item reveal">
         <div class="u-label">Custom motif config</div>
@@ -608,6 +619,118 @@ cargo build --release
         <div class="u-label">Protein mode (HMM domains)</div>
         <code>fastnlr --protein -i proteins.fa -o protein_results</code>
       </div>
+    </div>
+
+    <!-- CLI 参考：完整参数表（README 精简后迁移至此） -->
+    <div class="center reveal" style="margin-top: 54px;">
+      <h3 class="h3">CLI reference</h3>
+      <p class="lead">Short options are <code>-i/-x/-y/-o/-t/-n</code>; everything else is long-form.
+        Run <code>fastnlr --help</code> for the same reference on the command line.</p>
+    </div>
+
+    <div class="table reveal" style="margin-top: 30px;">
+      <table>
+        <thead><tr><th>Input</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">-i &lt;genome.fasta&gt;</td><td>Input genome FASTA, may be gzip-compressed. <strong>Required.</strong></td></tr>
+          <tr><td class="mono">-x &lt;mot.txt&gt;</td><td>PWM config (optional; default: built-in).</td></tr>
+          <tr><td class="mono">-y &lt;store.txt&gt;</td><td>CDF config (optional; default: built-in).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table reveal" style="margin-top: 22px;">
+      <table>
+        <thead><tr><th>Motif library metadata — only for custom libraries</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">--motif-category ID=CAT</td><td>Declare the domain category for a motif id outside the built-in tables, e.g. <code>21=CC,25=TIR</code>. Repeatable or comma-separated.</td></tr>
+          <tr><td class="mono">--seed-combination IDS</td><td>Add a seed motif-id combination, e.g. <code>21,4</code>; separate combinations with semicolons.</td></tr>
+          <tr><td class="mono">--signature IDS</td><td>Add a fragment signature, e.g. <code>25,26</code>; multiple signatures separated with semicolons.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table reveal" style="margin-top: 22px;">
+      <table>
+        <thead><tr><th>Sensitivity / recall</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">--flexible-seed &lt;n&gt;</td><td>Flexible seeding threshold: seed when at least <code>n</code> NB-ARC motifs appear in rank order. <strong>On by default (<code>n = 3</code>)</strong>. Additive — exact motif-id seed combinations stay active, so loci found without this flag are never lost.</td></tr>
+          <tr><td class="mono">--no-flexible-seed</td><td>Disable flexible seeding and fall back to the exact motif-id seed combinations only.</td></tr>
+          <tr><td class="mono">--require-ploop</td><td>Require the P-loop motif (<code>motif_1</code>) for flexible seeding (higher precision).</td></tr>
+          <tr><td class="mono">--relaxed-seed &lt;n&gt;</td><td>Relaxed seeding: accept a consecutive hit run with at least <code>n</code> NB-ARC motifs. Off by default and mutually exclusive with flexible seeding — pass <code>--no-flexible-seed</code> to use it.</td></tr>
+          <tr><td class="mono">--motif-accept-p &lt;p&gt;</td><td>Final motif-accept p-value threshold (default <code>1e-5</code>).</td></tr>
+          <tr><td class="mono">--motif-prelim-p &lt;p&gt;</td><td>Fragment prefilter p-value threshold (default <code>1e-4</code>).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table reveal" style="margin-top: 22px;">
+      <table>
+        <thead><tr><th>Output &amp; run control</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">-o &lt;OUTPUT.DIR&gt;</td><td>Output directory (created if missing). <strong>Required.</strong> All results are written here with the input genome filename as prefix.</td></tr>
+          <tr><td class="mono">--flank &lt;bp&gt;</td><td>Flanking bases for loci sequence extraction (default <code>2000</code>).</td></tr>
+          <tr><td class="mono">-t &lt;n&gt;</td><td>Threads (default: auto-detect).</td></tr>
+          <tr><td class="mono">-n &lt;n&gt;</td><td>Fragments per batch (default <code>1000</code>).</td></tr>
+          <tr><td class="mono">--checkpoint &lt;dir&gt;</td><td>Save/load motif results to skip rescan.</td></tr>
+          <tr><td class="mono">--tmpdir &lt;dir&gt;</td><td>Temp directory.</td></tr>
+          <tr><td class="mono">--progress &lt;auto|bar|simple|off&gt;</td><td>Progress bar (default <code>auto</code>).</td></tr>
+          <tr><td class="mono">--log-level &lt;lvl&gt;</td><td>trace / debug / info / warn / error (default <code>info</code>).</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table reveal" style="margin-top: 22px;">
+      <table>
+        <thead><tr><th>Protein mode</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">--protein</td><td>Treat <code>-i</code> as a protein FASTA and scan domains with HMMER instead of translating a genome. Mutually exclusive with the genome-only flags (<code>--flank</code>, <code>--relaxed-seed</code>, <code>--flexible-seed</code>, <code>--require-ploop</code>, <code>--signature</code>, <code>--seed-combination</code>, <code>--checkpoint</code>).</td></tr>
+          <tr><td class="mono">--hmm &lt;FILE&gt;</td><td>Extra HMM domain models (repeatable, may hold several models per file). A model with the same accession replaces the built-in one; new accessions are appended.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 输出格式 -->
+    <div class="center reveal" style="margin-top: 54px;">
+      <h3 class="h3">Output formats</h3>
+      <p class="lead">Everything below is written by default into <code>-o</code>, prefixed by the
+        input genome filename (without the <code>.fa</code>/<code>.fasta</code>/<code>.fna</code>/<code>.gz</code> extension).</p>
+    </div>
+
+    <div class="table reveal" style="margin-top: 30px;">
+      <table>
+        <thead><tr><th>Genome (DNA) mode</th><th>Contents</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">&lt;prefix&gt;.nlr.txt</td><td>One row per NLR: <code>seqname, name, domain-class, start, end, strand</code>.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.nlr.gff</td><td>GFF3 with a live timestamp; <code>source</code> column = <code>FastNLR</code>.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.nlr.bed</td><td>BED12, colour-coded blocks (green = complete, orange = partial, red = contains stop codon).</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.motifs.bed</td><td>Motif intervals with p-values (the full per-motif hit detail).</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.nbarc.fasta</td><td>P-loop-anchored NB-ARC multiple alignment with gap padding.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.loci.fasta</td><td>Extracted &plusmn;flanking sequence, reverse-complemented on the reverse strand.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.stats.tsv</td><td>Global / per-chromosome / per-motif statistics.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.summary.txt</td><td>Human-readable run summary (counts, class breakdown, output list).</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.plots/</td><td>PNG statistics plots: motif counts, per-chromosome NLRs, NLR types.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code reveal" style="margin-top: 22px;">
+      <div class="code-head"><span class="fn">&lt;prefix&gt;.nlr.gff — header</span></div>
+      <pre><span class="c">##gff-version 2</span>
+<span class="c">##source-version FastNLR V1.5.0</span>
+<span class="c">##date 2026-10-12 15:23:36</span>
+<span class="c">##Type DNA</span></pre>
+    </div>
+
+    <div class="table reveal" style="margin-top: 22px;">
+      <table>
+        <thead><tr><th>Protein mode (<code>--protein</code>)</th><th>Contents</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">&lt;prefix&gt;.domains.tsv</td><td>One row per domain hit: protein id, source (<code>hmm</code>/<code>pwm</code>), model, model name, category, coordinates, bitscore, p-value, whether it passed the Pfam gathering threshold.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.nlr.tsv</td><td>One row per NLR candidate: class, N-terminal domain, <code>has_nbarc</code>/<code>has_tir</code>/<code>has_lrr</code>, completeness and a compact domain map.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.summary.txt · .plots/</td><td>Model set, thresholds, counts by class, and PNG plots.</td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -630,14 +753,6 @@ cargo build --release
         </div>
         <h3>High performance</h3>
         <p>Rust with rayon multithreading, memory-mapped FASTA parsing, and SIMD (<code>wide</code>) cross-window scoring. Plant genomes finish in seconds to minutes.</p>
-      </div>
-
-      <div class="card reveal">
-        <div class="card-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-        <h3>One-line install</h3>
-        <p><code>conda install bioconda::fastnlr</code> — packaged on bioconda for linux-64, linux-aarch64, osx-64 and osx-arm64, so the binary lands straight in your working environment.</p>
       </div>
 
       <div class="card reveal">
@@ -684,17 +799,78 @@ cargo build --release
         <div class="card-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 8h16M4 12h10M4 16h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
-        <h3>Compatible flag interface</h3>
-        <p>Supports the familiar <code>-i/-x/-y/-o/-t/-n</code> workflow, plus long-form recall and observability options.</p>
+        <h3>Flexible seeding, on by default</h3>
+        <p>Category/rank-based seeding runs out of the box and recovers divergent NLR/RNL loci. It is <strong>additive</strong> — it never drops a locus that the exact motif-id seed combinations would have found (<code>--no-flexible-seed</code> restores the strict behaviour).</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v6m0 0 4 4m-4-4-4 4M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>HMM-confirmed architecture</h3>
+        <p>Every assembled locus is re-scanned with the same bundled HMMER profiles used in protein mode, so N-terminal CC/TIR domains the PWM library misses are still reported instead of collapsing to a bare <code>NBARC-LRR</code>.</p>
+      </div>
+
+      <div class="card reveal">
+        <div class="card-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 7h9M4 12h9M4 17h9M16 7v10m0 0-3-3m3 3 3-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h3>Tandem-repeat aware assembly</h3>
+        <p>Repeated or duplicated domain units and trailing NB-ARC segments are merged back into their parent locus, so a single gene is not reported as several split loci.</p>
       </div>
     </div>
   </div>
 </section>
 
 <!-- ============================================================
+     Extended motif library 扩展 motif 库
+     ============================================================ -->
+<section class="section" id="library">
+  <div class="wrap">
+    <div class="center reveal">
+      <span class="eyebrow">Motif library</span>
+      <h2 class="h2">Extended RNL / TIR library</h2>
+      <p class="lead">The default build ships the built-in 20-motif profile. The repository also
+        contains an optional library that adds eight motifs.</p>
+    </div>
+
+    <div class="table reveal" style="margin-top: 44px;">
+      <table>
+        <thead><tr><th>Motifs</th><th>What they add</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">21–24</td><td>RNL / helper-NLR N-terminal CC motifs (<code>ADR1</code>, <code>NRG1</code> and Solanaceous <code>NRC</code>).</td></tr>
+          <tr><td class="mono">25–28</td><td>TIR-family motifs, covering short and TIR-only loci that the standard <code>[18,15,13]</code> seed could miss.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="code reveal" style="margin-top: 22px;">
+      <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="extlib">Copy</button></div>
+      <pre id="code-extlib"><span class="c"># enable the extended library (declares categories, seeds and signatures)</span>
+source <span class="opt">data/motif_library_rnl_tir/flags.sh</span>
+fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out \
+  <span class="cmd">-x</span> <span class="opt">data/motif_library_rnl_tir/mot.txt</span> \
+  <span class="cmd">-y</span> <span class="opt">data/motif_library_rnl_tir/store.txt</span> \
+  --motif-category <span class="opt">"$TIS_MOTIF_CATEGORY"</span> \
+  --seed-combination <span class="opt">"$TIS_SEED_COMBINATION"</span> \
+  --signature <span class="opt">"$TIS_SIGNATURE"</span></pre>
+    </div>
+
+    <p class="lead reveal" style="margin-top: 22px; font-size: 15px;">
+      Because these motifs live outside the built-in rule tables they must be enabled together with
+      their declared categories, seeds and signatures; <code>flags.sh</code> holds the complete
+      parameter lists. Measured effect: RNL / helper-NLR recall rises from 3/8 to <b>8/8</b>, at the
+      cost of more TIR loci being split — see the
+      <a href="https://github.com/CropCoder/FastNLR/blob/main/data/motif_library_rnl_tir/README.md" target="_blank" rel="noopener">library README</a>
+      for the design rationale and regeneration workflow.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================
      Architecture 架构
      ============================================================ -->
-<section class="section" id="architecture">
+<section class="section section--tint" id="architecture">
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Architecture</span>
@@ -723,7 +899,8 @@ cargo build --release
       <div class="crate"><span class="cname">nlr-config</span><span class="cdesc">Parse <code>mot.txt</code> (PWM) and <code>store.txt</code> (CDF); embedded default config support.</span></div>
       <div class="crate"><span class="cname">nlr-seq</span><span class="cdesc">Six-frame translation, reverse complement, codon table, FASTA reader, chopper.</span></div>
       <div class="crate"><span class="cname">nlr-scan</span><span class="cdesc">Sliding-window scoring + non-overlap arbitration + signature pre-filter (SIMD).</span></div>
-      <div class="crate"><span class="cname">nlr-assemble</span><span class="cdesc">findSeeds → mergeSeeds → elongate three-step assembly.</span></div>
+      <div class="crate"><span class="cname">nlr-assemble</span><span class="cdesc">findSeeds → mergeSeeds → elongate three-step assembly, plus tandem-repeat absorption.</span></div>
+      <div class="crate"><span class="cname">nlr-domain</span><span class="cdesc">Protein-mode HMMER domain scanning (NB-ARC / TIR / CC) + architecture classification.</span></div>
       <div class="crate"><span class="cname">nlr-output</span><span class="cdesc">txt / GFF / BED / motifBED / alignment-fasta / loci-fasta / TSV output.</span></div>
       <div class="crate"><span class="cname">nlr-report</span><span class="cdesc">Run statistics aggregation.</span></div>
       <div class="crate"><span class="cname">nlr-plot</span><span class="cdesc">plotters statistics plots (bundled font backend, no system font deps).</span></div>
@@ -735,7 +912,7 @@ cargo build --release
 <!-- ============================================================
      Performance 性能
      ============================================================ -->
-<section class="section section--tint" id="performance">
+<section class="section" id="performance">
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Performance</span>
@@ -745,7 +922,7 @@ cargo build --release
 
     <div class="stats-band reveal" style="margin-top: 44px;">
       <div class="stat"><div class="val" data-count="18">18</div><div class="lbl">Genomes benchmarked</div></div>
-      <div class="stat"><div class="val" data-count="60">60</div><div class="lbl">Tests passing</div></div>
+      <div class="stat"><div class="val" data-count="69">69</div><div class="lbl">Tests passing</div></div>
       <div class="stat"><div class="val" data-count="6">6</div><div class="lbl">Reading frames</div></div>
       <div class="stat"><div class="val" data-count="4">4</div><div class="lbl">Conda platforms</div></div>
     </div>
@@ -782,8 +959,11 @@ cargo build --release
     </div>
 
     <p class="lead reveal" style="margin-top: 22px; font-size: 15px;">
-      Protein mode gives the highest domain-architecture concordance with the curated annotation
-      (<b>95%</b>), and its LRR calls reach 99.7% sensitivity at 100% specificity.
+      DNA mode reaches <b>96.49%</b> domain-architecture agreement with the curated annotation —
+      <b>98.19%</b> once the 12 reference entries whose <code>Structure</code> and
+      <code>Subclass</code> columns contradict each other are excluded — with per-domain F1 of
+      1.000 (NB-ARC), 0.999 (LRR), 0.995 (TIR) and 0.989 (CC). LRR calls reach 99.7% sensitivity
+      at 100% specificity, and no gene is reported as split loci.
     </p>
   </div>
 </section>
@@ -791,12 +971,12 @@ cargo build --release
 <!-- ============================================================
      Correctness 正确性 / 修复清单
      ============================================================ -->
-<section class="section" id="correctness">
+<section class="section section--tint" id="correctness">
   <div class="wrap">
     <div class="center reveal">
       <span class="eyebrow">Correctness</span>
       <h2 class="h2">Implementation notes</h2>
-      <p class="lead">60 unit and integration tests cover coordinate mapping, six-frame translation, motif scanning, three-step assembly, protein-mode domain classification, and every output format.</p>
+      <p class="lead">69 unit and integration tests cover coordinate mapping, six-frame translation, motif scanning, three-step assembly with tandem-repeat absorption, protein-mode domain classification, seeding rules, log formatting, and every output format.</p>
     </div>
 
     <div class="fixes">

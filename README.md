@@ -6,41 +6,40 @@
 
 A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![bioconda](https://anaconda.org/bioconda/fastnlr/badges/version.svg)](https://anaconda.org/bioconda/fastnlr)
 [![Downloads](https://anaconda.org/bioconda/fastnlr/badges/downloads.svg)](https://anaconda.org/bioconda/fastnlr)
 [![Platforms](https://anaconda.org/bioconda/fastnlr/badges/platforms.svg)](https://anaconda.org/bioconda/fastnlr)
+[![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.4.1-green.svg)](https://github.com/CropCoder/FastNLR/releases)
-[![Platform](https://img.shields.io/badge/platform-linux%20x86__64-lightgrey.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
-[Install](#install) · [Usage](#usage) · [Features](#features) · [Extended motif library](#extended-motif-library) · [Output Formats](#output-formats) · [Architecture](#architecture) · [Performance](#performance) · [Citation](#citation)
+[Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Documentation](#documentation) · [Citation](#citation)
 
 </div>
 
 ---
 
-FastNLR scans the six reading frames of a genome assembly for amino-acid **motifs** and assembles them into **NLR** (Nucleotide-binding, Leucine-rich Repeat) immune-receptor loci. It combines multithreading, memory-mapped FASTA input, embedded default motif profiles, checkpoint resume, and coordinate-consistent multi-format outputs.
+FastNLR scans the six reading frames of a genome assembly for amino-acid **motifs** and
+assembles them into **NLR** (Nucleotide-binding, Leucine-rich Repeat) immune-receptor loci.
+It combines multithreading, memory-mapped FASTA input, embedded default motif profiles,
+checkpoint resume, and coordinate-consistent multi-format outputs.
 
-NLR genes encode a major class of plant intracellular immune receptors and are a key target of disease-resistance breeding. FastNLR provides a self-contained pipeline for identifying complete and partial NLR loci directly from an assembled genome. The project is under active development, with future releases targeting publication-grade documentation, validation, and packaging.
-
-FastNLR is distributed through [bioconda](https://anaconda.org/bioconda/fastnlr) —
-`conda install bioconda::fastnlr` — as well as prebuilt release binaries and source.
+NLR genes encode a major class of plant intracellular immune receptors and are a key target of
+disease-resistance breeding. FastNLR identifies complete and partial NLR loci directly from an
+assembled genome, or classifies NLR domains from a protein FASTA. It is distributed through
+[bioconda](https://anaconda.org/bioconda/fastnlr) as well as prebuilt release binaries and source.
 
 ## Install
 
 ### Recommended — bioconda
 
-FastNLR is on [bioconda](https://anaconda.org/bioconda/fastnlr):
-
 ```bash
 conda install bioconda::fastnlr
 ```
 
-The `bioconda::` prefix pins the package to the bioconda channel. If the channels
-are not already in your conda configuration, give them explicitly — `conda-forge`
-must come before `bioconda`:
+The `bioconda::` prefix pins the package to the bioconda channel. If the channels are not already
+in your conda configuration, give them explicitly (`conda-forge` must come first):
 
 ```bash
 conda install -c conda-forge -c bioconda bioconda::fastnlr
@@ -48,34 +47,19 @@ conda install -c conda-forge -c bioconda bioconda::fastnlr
 mamba install -c conda-forge -c bioconda bioconda::fastnlr
 ```
 
-After installation the binary is on `PATH`:
+### Prebuilt binary
 
 ```bash
-fastnlr --version
-fastnlr -i genome.fasta -o result
-```
-
-Package page: <https://anaconda.org/bioconda/fastnlr>. The packaging recipe lives
-in [`conda/`](conda/).
-
-### Option B — download the prebuilt binary
-
-```bash
-# Download the Linux x86_64 asset from Releases, then:
-tar -xzf fastnlr-x86_64-unknown-linux-gnu.tar.gz
+curl -L -o fastnlr.tar.gz \
+  https://github.com/CropCoder/FastNLR/releases/download/v1.5.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf fastnlr.tar.gz
 ./fastnlr --version
-./fastnlr -i genome.fasta -o result
 ```
 
-Verify integrity:
+Release assets follow the `fastnlr-<target>.tar.gz` naming scheme (Windows builds use `.zip`,
+macOS assets are also `.tar.gz`) and ship with a SHA-256 checksum file.
 
-```bash
-sha256sum -c fastnlr-x86_64-unknown-linux-gnu.tar.gz.sha256
-```
-
-Release assets use the `fastnlr-<target>.tar.gz` naming scheme; Windows builds use `.zip`, and macOS assets are also `.tar.gz`.
-
-### Option C — build from source
+### From source
 
 ```bash
 # Requires Rust 1.70+ (developed on 1.94.1)
@@ -85,287 +69,99 @@ cargo build --release
 # binary: target/release/fastnlr
 ```
 
-See [Usage](#usage) for run examples and the full flag reference.
+Package page: <https://anaconda.org/bioconda/fastnlr> · Packaging recipe: [`conda/`](conda/)
 
-## Usage
-
-```bash
-fastnlr [OPTIONS] -i <INPUT.genomic.fasta> -o <OUTPUT.DIR>
-```
-
-Running `fastnlr` without arguments prints a compact summary and points users
-to `-h` for brief help and `--help` for the full reference.
-
-### Examples
+## Quick start
 
 ```bash
-# 1. Basic full run (uses built-in mot.txt / store.txt)
-#    -> results/<genome>.nlr.txt, .nlr.gff, .nlr.bed, .motifs.bed,
-#       .nbarc.fasta, .loci.fasta, .stats.tsv, .summary.txt, .plots/
-fastnlr -i genome.fasta -o results
-
-# 2. Multithreading
+# 1. Genome (DNA) mode — built-in motif library, 8 threads
+#    -> results/<genome>.nlr.txt, .nlr.gff, .nlr.bed, .motifs.bed, .nbarc.fasta,
+#       .loci.fasta, .stats.tsv, .summary.txt, .plots/
 fastnlr -i genome.fasta -o results -t 8
 
-# 3. Checkpoint resume (skip scan on rerun)
-fastnlr -i genome.fasta -o results --checkpoint ckpt/
-
-# 4. Flexible seeding for divergent NLR/RNL
-fastnlr -i genome.fasta -o results --flexible-seed 3
-
-# 5. Loci sequence flanking length (default 2000)
-fastnlr -i genome.fasta -o results --flank 5000
-
-# 6. Custom motif config override
-fastnlr -i genome.fasta -x custom_mot.txt -y custom_store.txt -o results
-
-# 7. Optional RNL/helper-CC + TIR extended library (28 motifs)
-source data/motif_library_rnl_tir/flags.sh
-fastnlr -i genome.fasta -o results \
-  -x data/motif_library_rnl_tir/mot.txt \
-  -y data/motif_library_rnl_tir/store.txt \
-  --motif-category "$TIS_MOTIF_CATEGORY" \
-  --seed-combination "$TIS_SEED_COMBINATION" \
-  --signature "$TIS_SIGNATURE"
-
-# 8. Protein mode: HMMER domain scan on a protein FASTA (no genome coordinates)
-#    -> <prefix>.domains.tsv, <prefix>.nlr.tsv, <prefix>.summary.txt, <prefix>.plots/
+# 2. Protein mode — HMMER domain scan on a protein FASTA (no genome coordinates)
+#    -> protein_results/<prefix>.domains.tsv, .nlr.tsv, .summary.txt, .plots/
 fastnlr --protein -i proteins.fa -o protein_results
 
-# 9. Protein mode with custom domain models (replaces/adds by accession)
-fastnlr --protein -i proteins.fa -o protein_results --hmm my_domains.hmm
+# 3. Resume a run (skips the expensive scan)
+fastnlr -i genome.fasta -o results --checkpoint ckpt/
 ```
 
-### Flags
-
-**Input**
-
-| Flag | Description |
-|------|-------------|
-| `-i <INPUT.genomic.fasta>` | Input genome FASTA (may be gzip-compressed). **Required.** |
-| `-x <mot.txt>` | PWM config (optional; default: built-in). |
-| `-y <store.txt>` | CDF config (optional; default: built-in). |
-
-**Motif library metadata** — only needed for custom libraries with more than 20 motifs.
-
-| Flag | Description |
-|------|-------------|
-| `--motif-category ID=CAT` | Declare the domain category for a motif id outside the built-in tables, e.g. `21=CC,25=TIR`. Repeatable or comma-separated. |
-| `--seed-combination IDS` | Add a seed motif-id combination, e.g. `21,4`; multiple combinations are separated by `;`. |
-| `--signature IDS` | Add a fragment signature, e.g. `25,26`; multiple signatures are separated by `;`. |
-
-**Sensitivity / recall** — optional tuning for divergent NLRs.
-
-| Flag | Description |
-|------|-------------|
-| `--motif-accept-p <p>` | Final motif-accept p-value threshold (default `1e-5`). |
-| `--motif-prelim-p <p>` | Fragment prefilter p-value threshold (default `1e-4`). |
-| `--relaxed-seed <n>` | Relaxed seeding: accept a consecutive hit run with at least `n` NB-ARC motifs (off by default). |
-| `--flexible-seed <n>` | Flexible seeding: seed when at least `n` NB-ARC motifs appear in rank order (category/rank-based instead of exact motif-id combinations). |
-| `--require-ploop` | Require the P-loop motif (`motif_1`) for `--flexible-seed` (higher precision). |
-
-**Output** — `-o <dir>` is required; the full output set is written by default.
-
-| Flag | Description |
-|------|-------------|
-| `-o <OUTPUT.DIR>` | Output directory (created if missing). All results are written here with the input genome filename as prefix. **Required.** |
-| `--flank <bp>` | Flanking bases for loci sequence extraction (default `2000`). |
-
-**Run control**
-
-| Flag | Description |
-|------|-------------|
-| `-t <n>` | Threads (default: auto-detect). |
-| `-n <n>` | Fragments per batch (default 1000). |
-| `--checkpoint <dir>` | Save/load motif results to skip rescan. |
-| `--tmpdir <dir>` | Temp directory. |
-| `--progress <auto\|bar\|simple\|off>` | Progress bar (default auto). |
-| `--log-level <lvl>` | trace/debug/info/warn/error (default info). |
-
-**Protein mode**
-
-| Flag | Description |
-|------|-------------|
-| `--protein` | Treat `-i` as a protein FASTA and scan domains with HMMER instead of translating a genome. Mutually exclusive with the genome-only flags (`--flank`, `--relaxed-seed`, `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`). |
-| `--hmm <FILE>` | Extra HMM domain models (repeatable, may hold several models per file). A model with the same accession replaces the built-in one; new accessions are appended. |
-
-Run `fastnlr --help` for the full, grouped reference.
+Run `fastnlr --help` for the full flag reference, or see the
+[project page](https://cropcoder.github.io/FastNLR/) for annotated examples, output-format
+details and benchmark results.
 
 ## Features
 
-- **Zero-config, self-contained binary** — the standard `mot.txt` (PWM) and `store.txt` (CDF) configs are embedded at compile time. Run on any FASTA with no extra files; override with `-x`/`-y` when you need custom motifs.
-- **Extensible motif libraries** — supports more than the built-in 20 motifs, plus CLI-declared domain categories, seed combinations, and signatures. An optional RNL/helper-CC + TIR library is included for recovering RNL and TIR-only loci.
-- **Protein input mode** — `fastnlr --protein -i proteins.fa -o out` scans a protein FASTA with a bundled HMMER 3.4 port (Pfam NB-ARC / TIR / Rx_N / RPW8 / R1-type with gathering thresholds) plus the PWM LRR motifs, and reports the domain architecture and NLR class per protein. No genome coordinates are involved; `--hmm` adds custom domain models.
-- **High performance** — Rust + [rayon](https://github.com/rayon-rs/rayon) multithreading, memory-mapped large-file FASTA parsing, and SIMD (`wide`) cross-window scoring. Typical plant genomes finish in seconds to minutes.
-- **Coordinate-consistent output** — loci FASTA extraction matches the GFF/BED coordinates exactly; see [Implementation notes](#implementation-notes).
-- **Resumable runs** — `--checkpoint` saves motif results after the scan; reruns skip the expensive scan and go straight to assembly.
-- **Rich reporting** — human-readable summary, TSV statistics (global / per-chromosome / per-motif), and PNG plots out of the box.
-- **Complete default output** — `-o <dir>` writes the full result set by default with
-  the input genome filename as prefix: NLR text report, GFF3, BED12, motif BED,
-  NB-ARC alignment FASTA, loci FASTA, TSV statistics, summary, and PNG plots.
-- **Clear CLI help** — running `fastnlr`, `fastnlr -h`, or `fastnlr --help` shows
-  a layered help interface with the ASCII banner, key parameters, and full documentation.
-- **Live progress and summary** — optional progress bar with percentage, elapsed time,
-  and remaining-time estimate; the run summary reports input, threads, peak memory,
-  elapsed time, and NLR class counts.
-- **Graceful interruption** — Ctrl-C outputs whatever batches have completed instead of dropping everything.
-- **Flexible seeding** — optional category/rank-based seeding (`--flexible-seed`)
-  recovers divergent NLR/RNL loci that exact motif-id seed combinations miss.
-- **Familiar flag interface** — supports `-i/-x/-y/-o/-t/-n` workflows plus
-  long-form recall and observability options.
-
-## Extended motif library
-
-The default build ships the built-in 20-motif profile. The repository also contains an optional library at [`data/motif_library_rnl_tir/`](data/motif_library_rnl_tir/) that adds eight motifs:
-
-- `21`–`24`: RNL / helper-NLR N-terminal CC motifs (`ADR1`, `NRG1`, and Solanaceous `NRC`).
-- `25`–`28`: TIR-family motifs, including short and TIR-only loci that the standard `[18,15,13]` seed could miss.
-
-Because these motifs live outside the built-in rule tables, enable them together with their declared categories, seeds, and signatures:
-
-```bash
-source data/motif_library_rnl_tir/flags.sh
-fastnlr -i genome.fasta -o out \
-  -x data/motif_library_rnl_tir/mot.txt \
-  -y data/motif_library_rnl_tir/store.txt \
-  --motif-category "$TIS_MOTIF_CATEGORY" \
-  --seed-combination "$TIS_SEED_COMBINATION" \
-  --signature "$TIS_SIGNATURE"
-```
-
-`flags.sh` contains the complete parameter lists; adjust `-x`/`-y` paths if you copy the files elsewhere. The companion [`data/motif_library_rnl_tir/README.md`](data/motif_library_rnl_tir/README.md) records the motif-design rationale, benchmark results, and regeneration workflow.
-
-For sensitivity tuning on divergent NLRs, additional flags are available: `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed`, and `--flexible-seed` (see the flag tables below).
-
-## Output Formats
-
-`-o <dir>` is the output directory and `<prefix>` is the input genome filename
-(without the `.fa`/`.fasta`/`.fna`/`.gz` extension). FastNLR writes the complete
-result set by default:
-
-- **`<prefix>.nlr.txt`** — one row per NLR: `seqname, name, domain-class, start, end, strand, motif-list`.
-- **`<prefix>.nlr.gff`** — GFF3 with a live system timestamp; `source` column = `FastNLR`.
-  ```
-  ##gff-version 2
-  ##source-version FastNLR V1.4.1
-  ##date 2026-09-24 10:00:00
-  ##Type DNA
-  ```
-- **`<prefix>.nlr.bed`** — BED12, color-coded blocks (green = complete, orange = partial, red = contains stop codon); reverse-strand blocks reversed.
-- **`<prefix>.motifs.bed`** — motif intervals with p-values.
-- **`<prefix>.nbarc.fasta`** — P-loop-anchored NB-ARC multiple alignment with gap-padding.
-- **`<prefix>.loci.fasta`** — extracted ±flanking sequence, reverse-complemented on the reverse strand, 100 bp per line.
-- **`<prefix>.stats.tsv`** — global / per-chromosome / per-motif statistics.
-- **`<prefix>.summary.txt`** — human-readable run summary (NLR counts, class counts, output files).
-- **`<prefix>.plots/`** — PNG statistics plots: motif counts, per-chromosome NLR counts, and NLR-type counts.
-
-### Protein mode (`--protein`)
-
-Protein sequences have no genome coordinates, so protein mode writes its own, smaller result set
-instead of the genome-coordinate files above:
-
-- **`<prefix>.domains.tsv`** — one row per domain hit: protein id, source (`hmm`/`pwm`), model,
-  model name, category, protein coordinates, bitscore, p-value and whether it passed the Pfam GA
-  threshold.
-- **`<prefix>.nlr.tsv`** — one row per NLR candidate: class (`CC-NBARC-LRR`, `TIR-NBARC`, ...),
-  N-terminal domain, `has_nbarc` / `has_tir` / `has_lrr`, completeness and a compact domain map.
-- **`<prefix>.summary.txt`** — model set, thresholds, counts by class, output file list.
-- **`<prefix>.plots/`** — `01-nlr-types.png` and `02-domain-counts.png`.
-
-## Architecture
-
-FastNLR is a layered Cargo workspace — each crate has a single responsibility and the dependency graph flows bottom-up:
-
-```
-nlr-core     domain model + rule tables (rank/class/color/seed/signature/consensus; built-in + CLI-declared extras)
-nlr-config   parse mot.txt (PWM) / store.txt (CDF); built-in embed and >20-motif library support
-nlr-seq      six-frame translation, reverse complement, codon table, FASTA reader, chopper
-nlr-scan     sliding-window scoring + non-overlap arbitration + signature pre-filter (SIMD)
-nlr-assemble findSeeds -> mergeSeeds -> elongate three-step assembly
-nlr-domain   protein mode: HMMER domain scanning (NB-ARC/TIR/CC) + NLR architecture classification
-nlr-output   txt/GFF/BED/motifBED/alignment-fasta/loci-fasta/TSV output
-nlr-report   run statistics aggregation
-nlr-plot     plotters statistics plots (bundled font backend, no system font deps)
-nlr-cli      clap CLI entry + pipeline orchestration (rayon + checkpoint + SIGINT); binary: fastnlr
-```
-
-**Pipeline:** `FASTA → chop (overlap) → six-frame translate → scan (PWM+CDF) → signature filter → coordinate map → three-step assembly → multi-format output`.
-
-## Implementation notes
-
-FastNLR enforces coordinate-consistent behavior across its output formats:
-
-1. The NB-ARC alignment FASTA uses corrected P-loop location logic.
-2. The NB-ARC alignment FASTA replaces stop codons and unknown amino acids with `_`.
-3. The loci FASTA applies a unified coordinate clamp on the last contig.
-4. The loci FASTA extracts loci from every contig, not only the first.
-5. The loci FASTA keeps extracted sequence coordinates consistent with the reported GFF/BED coordinates.
-6. `##date` reflects the current system time.
-7. GFF `##source-version` and the `source` column are labeled `FastNLR`.
-8. p-values in motif BED and export TSV use scientific notation for very small values.
-
-## Correctness
-
-The pipeline is validated by unit and integration tests covering coordinate mapping (both strands), six-frame translation tail offsets, the codon table, seed/signature tables, motif scanning, three-step assembly, and every output format.
-
-```bash
-cargo test --workspace      # 60 tests, all passing
-```
+- **Zero-config, self-contained binary** — the standard `mot.txt` (PWM) and `store.txt` (CDF)
+  configs are embedded at compile time; override with `-x`/`-y` for custom motifs.
+- **High performance** — Rust + rayon multithreading, memory-mapped FASTA parsing and SIMD
+  scoring; throughput holds at roughly 3.7 Mb/s across two orders of magnitude of genome size.
+- **Flexible seeding, on by default** — category/rank-based seeding runs out of the box and
+  recovers divergent NLR/RNL loci. It is **additive**: it never drops a locus that the exact
+  motif-id combinations would have found (`--no-flexible-seed` restores the strict behaviour).
+- **HMM-confirmed domain architecture** — each assembled locus is re-scanned with the same
+  bundled HMMER profiles used in protein mode, so N-terminal CC/TIR domains that the PWM library
+  misses are still reported instead of collapsing to a bare `NBARC-LRR`.
+- **Tandem-repeat aware assembly** — repeated or duplicated domain units and trailing NB-ARC
+  segments are merged back into their parent locus, so one gene is not reported as several loci.
+- **Extensible motif libraries** — an optional RNL/helper-CC + TIR library (28 motifs) recovers
+  RNL/helper NLR and TIR-only loci that the built-in 20-motif profile misses.
+- **Protein input mode** — `--protein` classifies domain architecture with a bundled HMMER 3.4
+  port (Pfam NB-ARC / TIR / Rx_N / RPW8 / R1-type at gathering thresholds) plus the PWM LRR motifs.
+- **Resumable runs, rich reporting, graceful interruption** — `--checkpoint` skips the scan on
+  reruns; every run writes a human-readable summary, per-chromosome and per-motif TSV statistics
+  and PNG plots; Ctrl-C still emits the batches already completed.
 
 ## Performance
 
-Benchmarked on 18 plant genomes from 197 Mb to 4.7 Gb with 8 threads, warm cache,
-median of 3 runs (measured on a Linux x86_64 workstation; `/usr/bin/time -v`):
+Benchmarked on 18 plant genomes from 197 Mb to 4.7 Gb, 8 threads, warm cache, median of 3 runs:
 
-| Genome | Size | Threads | Wall time | Peak RSS |
-|--------|------|---------|-----------|----------|
-| *Cucumis sativus* (cucumber) | 197 Mb | 8 | 53.5 s | 210 MB |
-| *Glycine max* (soybean) | 991 Mb | 8 | 269.5 s | 968 MB |
-| *Hordeum vulgare* (barley) | 4.3 Gb | 8 | 1174 s | 4159 MB |
-| *Zanthoxylum bungeanum* (pepper) | 4.7 Gb | 8 | 1230 s | 4625 MB |
+| Genome | Size | Wall time | Peak RSS |
+|--------|------|-----------|----------|
+| *Cucumis sativus* (cucumber) | 197 Mb | 53.5 s | 210 MB |
+| *Glycine max* (soybean) | 991 Mb | 269.5 s | 968 MB |
+| *Hordeum vulgare* (barley) | 4.3 Gb | 1174 s | 4159 MB |
+| *Zanthoxylum bungeanum* (pepper) | 4.7 Gb | 1230 s | 4625 MB |
 
-Throughput is stable at roughly 3.7 Mb/s across the range. Peak memory stays
-close to 1:1 with genome size (ratios of 0.97–1.15 in the benchmark), so budget
-RAM of the same order as the assembly.
+Peak memory stays close to 1:1 with genome size (ratios 0.97–1.15), so budget RAM of the same
+order as the assembly. Multithreading scales 13–19× from 4 to 128 threads on the largest genomes;
+keep `-t` at or below the physical core count. The `sensitive` recall preset
+(`--motif-accept-p`/`--motif-prelim-p` relaxed) is diagnostic only: it inflates runtime by
+roughly 40× and is not intended for production runs.
 
-Multithreading scales well up to the core count of the host — 13–19× from 4 to
-128 threads on the largest genomes. Thread counts far beyond the physical core
-count (for example 256 threads on a 4.7 Gb genome) lose performance to
-contention, so keep `-t` at or below the core count.
+**Accuracy** (RefPlantNLR, 400 curated NLR CDS): **99.75%** gene recall and **96.49%**
+domain-architecture agreement — rising to **98.19%** when the 12 reference entries whose
+`Structure` and `Subclass` columns contradict each other are excluded. Per-domain F1 is
+1.000 (NB-ARC), 0.999 (LRR), 0.995 (TIR) and 0.989 (CC).
 
-The `sensitive` recall preset (`--motif-accept-p`/`--motif-prelim-p` relaxed) is
-diagnostic only: it inflates runtime by roughly 40× and the locus count several
-fold, and is not intended for production runs.
+## Documentation
 
-### Validation
-
-Recall is measured against the RefPlantNLR gold-standard set (400 curated NLR
-CDS): 98.25% with the built-in 20-motif profile and 99.50% with the extended
-28-motif [RNL/TIR library](#extended-motif-library), with all 8 RNL/helper NLRs
-recovered by the extended profile. In protein mode, domain-architecture
-concordance with the curated annotation reaches 95%.
+| Topic | Where |
+|---|---|
+| Full flag reference, output formats, worked examples | <https://cropcoder.github.io/FastNLR/> |
+| Extended RNL/TIR motif library and design notes | [`data/motif_library_rnl_tir/`](data/motif_library_rnl_tir/) |
+| Flexible-seeding upgrade design | [`docs/flexible-seeding-upgrade.md`](docs/flexible-seeding-upgrade.md) |
+| Packaging recipe | [`conda/`](conda/) |
+| Development log, benchmarks and design records | [`Runlog.md`](Runlog.md) |
 
 ## Development
 
 ```bash
-cargo build                          # debug build
-cargo build --release                # optimized build
-cargo test --workspace               # run all tests
-cargo bench                          # benchmarks (if enabled)
+cargo build --release                              # optimized build
+cargo test --workspace                             # 69 tests
+cargo fmt --all -- --check                         # formatting
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-The release profile uses `opt-level=3`, `lto="fat"`, `codegen-units=1`, and `panic="abort"` for maximum performance and a small binary.
-
-Continuous integration and release automation are defined in `.github/workflows/`:
-
-- `rust.yml` runs workspace build and tests on pushes and pull requests to `main`.
-- `release.yml` builds `fastnlr` for Linux, Windows, and macOS x86_64 when a `vX.Y.Z` tag is pushed, then uploads archives and SHA-256 checksums to GitHub Releases.
-
-The static project page is generated from [`docs/index.html`](docs/index.html) and published through GitHub Pages.
+The release profile uses `opt-level=3`, `lto="fat"`, `codegen-units=1` and `panic="abort"`.
+CI (`.github/workflows/rust.yml`) builds and tests on every push; pushing a `vX.Y.Z` tag builds
+Linux/Windows/macOS binaries and uploads them to GitHub Releases.
 
 ## Citation
 
-FastNLR is developed and maintained by Jiwen Zhao. A dedicated manuscript is in preparation; until then, please cite this repository:
+FastNLR is developed and maintained by Jiwen Zhao. A dedicated manuscript is in preparation;
+until then, please cite this repository:
 
 > Jiwen Zhao. FastNLR: a high-speed, accurate NLR annotation tool. https://github.com/CropCoder/FastNLR
 
@@ -375,6 +171,4 @@ GPL-3.0-only. See [LICENSE](LICENSE).
 
 ## Author
 
-**Jiwen Zhao** — https://github.com/CropCoder
-
-Contributions and issue reports are welcome.
+**Jiwen Zhao** — <https://github.com/CropCoder> · Contributions and issue reports are welcome.

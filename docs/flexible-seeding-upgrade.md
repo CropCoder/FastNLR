@@ -89,7 +89,7 @@ pub fn has_signature_flexible(&self, ids: &[MotifId], cfg: &FlexibleSeedConfig) 
 | 文件 | 改动 |
 |------|------|
 | `crates/nlr-core/src/signature_def.rs` | 新增 `FlexibleSeedConfig`；`AnnotatorSignatureDefinition` 加字段 `flexible_seed: Option<FlexibleSeedConfig>`、`with_flexible_seed()`、`flexible_seed()`、`is_seed_flexible()`、`has_signature_flexible()` |
-| `crates/nlr-assemble/src/lib.rs` | `find_seeds` 播种判定改为三态：`flexible_seed()` 优先 → `relaxed_seed_min_nbarc` → `is_seed` |
+| `crates/nlr-assemble/src/lib.rs` | `find_seeds` 播种判定改为三态：`flexible_seed()` 时取 `is_seed_flexible() || is_seed()`（并集）→ 否则 `relaxed_seed_min_nbarc` → 否则 `is_seed` |
 | `crates/nlr-cli/src/lib.rs` | `RunConfig` 加 `flexible_seed: Option<FlexibleSeedConfig>`；`scan_one_fragment` 预过滤按需改用 `has_signature_flexible`；构造 `signature_def` 时注入 |
 | `crates/nlr-cli/src/main.rs` | 新增 `--flexible-seed <n>` 与 `--require-ploop`，写入 `config.flexible_seed` |
 
@@ -97,13 +97,22 @@ pub fn has_signature_flexible(&self, ids: &[MotifId], cfg: &FlexibleSeedConfig) 
 
 ```rust
 let seeded = if let Some(cfg) = def.flexible_seed() {
-    def.is_seed_flexible(&s, &cfg)
+    // 并集：柔性条件与精确组合同时生效（见下方修订说明）
+    def.is_seed_flexible(&s, &cfg) || def.is_seed(&s)
 } else if let Some(n) = relaxed_seed_min_nbarc {
     def.is_seed_relaxed(&s, n)
 } else {
     def.is_seed(&s)
 };
 ```
+
+> **修订（2026-10-12）**：最初实现为 `flexible_seed()` 时**只**看柔性条件（替换语义），
+> 与 3.3 节的预过滤（`has_signature || is_seed_flexible`，并集）不一致：命中精确签名而被
+> 保留的 motif 簇，在播种阶段却不认精确组合，于是「保留下来却组装不出位点」。实测在
+> 142 Mb 的真实基因组上，替换语义会丢掉默认配置能检出的 38/207 个位点（-18%），
+> 且 RefPlantNLR 的 Pb1（精确组合 `[12,2,8]`，NB-ARC motif 仅 2 个）在
+> `--flexible-seed 3` 下反而漏检。改为并集后：38 个位点全部找回，金标准召回
+> 99.50% → 99.75%，过度切分不变（3 个基因）。并集只会新增种子，默认路径行为逐字节不变。
 
 ## 5. CLI 接口
 
