@@ -1002,3 +1002,31 @@
   `metrics/tair12_diagnosis_{miss,locus,stage,summary}.csv`、`metrics/tair12_gold_standard_relaxed.csv`、
   `figures/Fig16-TAIR12-error-attribution.pdf`、`outputs/tair12/diagnosis/`；
   `benchmark/README.md` 新增「八、误差诊断」并把有效指标并入「六、结果摘要」。
+
+## 2026-10-15
+
+### 项目体检、两处文档/CLI 瑕疵修复与 v1.5.2 发版
+
+- **全量体检结论（健康）**：`cargo test --workspace --locked` 69/69 通过、`cargo fmt --check` 与
+  `cargo clippy -D warnings` 无告警、`--locked` 通过（依赖锁一致）、二进制与源码同步；代码中无
+  `TODO`/`FIXME`/`unimplemented!` 残留。文档侧：版本号在 Cargo.toml / conda 配方 / README 徽章与
+  下载链接 / 官网四处一致；`fastnlr --help` 的参数集与官网 CLI reference 逐条对应；现行文档中
+  已无旧脚本名与旧路径残留。数据侧：`genome/` 18 物种 14 GB，TAIR12 的 MD5 每轮由 S5 自动校验。
+  结果侧：README 引用的性能四组数字、RefPlantNLR 指标、TAIR12 指标与误差诊断数字均与
+  `benchmark/metrics/*.csv` 逐条核对一致。
+- **修复两处小瑕疵**：
+  1. `--relaxed-seed` 与默认开启的柔性播种互斥这件事此前只写在官网表格里，`fastnlr --help`
+     未提示，用户会直接撞运行时报错——已在参数帮助文本中补上
+     "Mutually exclusive with the default flexible seeding — pass --no-flexible-seed together with it"。
+  2. 文档中 TAIR12 的耗时/内存是首跑的 39.4 s/164 MB 与 54.6 s/162 MB，与复跑后的
+     `summary.txt`（39.9 s/164 MB、54.7 s/158 MB）有毫秒级漂移——已按当前产物对齐
+     （`benchmark/README.md`、`benchmark/data/TAIR12/README.md`、诊断报告）。
+- **v1.5.2 发版**：版本号在 Cargo.toml / Cargo.lock（10 个工作区包）、各 crate 依赖约束、
+  README 徽章与下载链接、官网（徽标、二进制下载地址、GFF 示例的 `##source-version`）处统一升到
+  1.5.2；推送 `main` 后打 annotated tag `v1.5.2`，Release 工作流三平台构建全部成功
+  （Linux / Windows / macOS 二进制 + sha256），CI 与 GitHub Pages 部署同时通过。
+- **发布校验**：从 Releases 下载 Linux 资产，sha256 与官方 `.sha256` 完全一致（`422230c1…`）；
+  解包后二进制自报 `fastnlr 1.5.2`，且包含本次新增的 `--relaxed-seed` 互斥提示。
+- **conda 配方同步**：source sha256 更新为 v1.5.2 标签归档的校验和
+  `b438f737e5d6d840710160647bb3cc944cd63476044b5a6877a9843ce0b2964b`（连续两次下载校验一致），
+  与 v1.5.0 / v1.5.1 的发版流程保持一致。
