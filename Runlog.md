@@ -871,3 +871,134 @@
     （历史只追加、无需网页端操作）：版本号在 Cargo.toml/Cargo.lock、各 crate 依赖约束、
     conda 配方、README 徽章与下载链接、官网徽标与 GFF 示例处统一升到 1.5.1。
     `v1.5.0` 的 Release 仍保留（二进制可用，仅缺日志着色修复），如不需要可在网页端删除。
+
+## 2026-10-14
+
+### benchmark 目录重整：功能分层 + 流水线编号（零删除）
+
+- 动机：`benchmark/` 经过性能测评（v1.4.0 → v1.5.x 两代）与两条准确性流水线后，出现多代产物
+  混杂——`outputs/`（v1.4.0）与 `outputs_v2/`（120 次运行 / 2.0 GB）并存、`metrics/` 里
+  `goldnlr_*` 与 `accuracy_*` 重复、`figures/` 里 Fig1–10 是 FigA*/FigB* 的旧代副本、
+  `Script3/4` 已标 SUPERSEDED 仍与现行脚本平铺，另有一处误建的嵌套空目录 `benchmark/benchmark/`。
+- 新结构（`benchmark/README.md` 为唯一协议文档）：
+  `scripts/`（S1–S8 按流水线编号）、`data/{RefPlantNLR,TAIR12}`、`outputs/{performance,
+  refplantnlr_accuracy,tair12}`、`metrics/`、`figures/`、`logs/`、`archive/`。
+- 脚本重命名（AGENTS.md 的「序号-功能-版本.编程语言」风格）：
+  `Script1→S1-Run-Performance-Benchmark-V1.R`、`Script2→S2-Plot-Performance-Benchmark-V1.R`、
+  `Script5→S3-Run-RefPlantNLR-Accuracy-V1.R`、`Script6→S4-Plot-RefPlantNLR-Accuracy-V1.R`、
+  `Script7→S8-Plot-TAIR12-Locus-Profile-V1.R`；新增 `S5`（建金标准）、`S6`（运行+评测）、
+  `S7`（对比图）。`Script3/4` 移入 `archive/scripts/`。
+- 指标去重命名：`accuracy_*` → `refplantnlr_{gene_table,summary,by_class,by_type,by_structure,
+  by_domain}.csv`；性能三个文件名保持不变（S1 的断点续跑依赖 `run_manifest.csv` /
+  `genome_benchmark_raw.csv`）。S1/S2/S3/S4/S8 只改路径常量与产出文件名，运行语义不变。
+- 归档（只移动不删除，清单与「可否删除」标注见 `benchmark/archive/README.md`）：
+  v1.4.0 的 `outputs/`（196 文件）、旧代 Fig1–10、`metrics` 里 47 个 legacy 文件、
+  `test/`（玉米冒烟）、`protein_dna_mode_misrun/`（脚本 bug 误跑残留）、
+  `GoldNLR-RefPlantNLR/outputs/`（旧 CLI 接口产物）。空目录另列出（不含文件）。
+- **核对**：整理前后均为 1937 个文件，逐目录计数一致，无丢失。
+- 重命名后回归验证：S3 重跑（复用已有输出）指标与整理前一致（架构一致率 96.49%/98.19%、
+  逐域 F1 CC 0.989 / TIR 0.995 / NBARC 1.000 / LRR 0.999）；S4 与 S2 重出图正常。
+  注意 `run_manifest.csv` 中历史行仍记录旧的绝对路径（作为执行记录保留），`--rerun` /
+  `--collect-only` 重新解析时需按新路径自行核对。
+
+### 新增流水线：TAIR12 真实基因组准确性评测（S5 → S6 → S7）
+
+- 目标：在拟南芥 TAIR12（`GCA_978657495.1`，142.5 Mb 完成图）+ NCBI 官方注释上，评估 FastNLR
+  DNA 模式直接注释出的 NLR 位点是否准确——即与注释翻译蛋白经 HMM 检索得到的真实 NLR 基因位点比对。
+- **金标准（S5）**：`md5 校验 → 解压 → gffread 翻译 → 断言一致性 → hmmscan --cut_ga → 蛋白汇总到基因`。
+  - gffread 从「基因组 + GFF」翻译出 32,589 条蛋白，与 NCBI 官方 `protein.faa` **逐条完全一致
+    （32,589/32,589）**，脚本内为硬断言，不一致即终止。
+  - 用仓库内置 5 个 Pfam 模型 + 系统 hmmscan 3.3.2 独立判定（不使用 FastNLR 自身实现，
+    避免循环论证）：467 条域命中 / 277 条蛋白；NB-ARC 231 蛋白 → 166 基因；TIR 180 蛋白；
+    CC（Rx_N/RPW8）40 蛋白 → 27 基因；PF12061 在拟南芥无命中。
+  - 金标准 = NB-ARC 基因 ∪ TIR-only 基因 = **198 个**（TNL 98 / CNL 27 / NB-only 41 / TIR-only 32；
+    Chr1 66 / Chr2 8 / Chr3 18 / Chr4 38 / Chr5 68）。
+  - 口径要点：基因级（任一 isoform 命中即命中）；不含 LRR 类 Pfam（Pfam LRR 在 NLR 上灵敏度差）；
+    CC 灵敏度有限（27 基因）故 CNL 召回会被系统性低估，已在 README 与图注标注。
+- **被评估两档（S6）**：`fastnlr_dna_default`（内置 20 motif）与 `fastnlr_dna_extended`
+  （28 motif 扩展库），`-t 8 --progress off` 跑全基因组。
+- **匹配判据**：主判据 = gene 跨度（GFF `gene` start–end）任意重叠 ≥1 bp；稳健性对照 =
+  CDS 跨度重叠与覆盖率 ≥50%。
+
+| 指标 | default | extended |
+|---|---|---|
+| NLR 位点 / 完整位点 | 214 / 145 | 252 / 145 |
+| 金标准基因召回 | **194/198 = 98.0%** | 196/198 = 99.0% |
+| 位点精确率 | **92.5%**（198/214）| 80.6%（203/252）|
+| 未匹配位点（基因间区 / 非编码基因 / 非 NLR 蛋白编码基因）| 16（4 / 9 / 3）| 49（11 / 10 / 28）|
+| 拆分基因 / 合并位点 | 12 / 10 | 21 / 18 |
+| gene 跨度覆盖率中位数 | 0.68 | 0.69 |
+| 类型一致性 | 86.6% | 83.7% |
+| 耗时 / 峰值内存 | 39.4 s / 164 MB | 54.6 s / 162 MB |
+
+- 分类型召回（default）：TNL 98/98、CNL 25/27、TIR-only 31/32、NB-only 40/41；
+  未检出的 4 个基因为 AT4G23440(NB-only)、AT4G33300(CNL)、AT5G45090(TIR-only)、AT5G66630(CNL)。
+- **结论**：默认档在 1 bp 重叠口径下召回 98.0% 的 HMM 金标准 NLR 基因、位点精确率 92.5%，
+  拆分/合并各 ≤12 例，覆盖率中位数 0.68；扩展库把召回提到 99.0%，但精确率降到 80.6%，
+  新增位点主要压在非 NLR 蛋白编码基因上（3 → 28），且类型一致性略降、拆分/合并翻倍，
+  因此**默认档是更合适的生产配置**，扩展库更适合"宁可多报不可漏报"的候选位点枚举场景。
+- 与设计预期的偏差：侦察阶段预判「16 个未匹配位点里约 13 个在基因间区」，实际做细粒度归因后
+  分为 4 个基因间区 + 9 个压在非编码基因上（合计 13，与预判一致，只是归因更细）。
+  另外侦察阶段按蛋白级口径算出的 TIR-only 为 35，改为基因级（任一 isoform 含 NB-ARC 即归 TNL）
+  后为 32——3 个基因同时拥有 NB-ARC 型与 TIR-only 型 isoform，基因级口径更严谨，金标准总数
+  仍为 198（与设计一致）。
+- **图件（S7）**：`Fig14-TAIR12-accuracy-genome-map.pdf`（a 双轨染色体图：上轨金标准基因
+  命中/漏检、下轨 FastNLR 位点 命中/未匹配；b 各染色体 命中基因/漏检基因/未匹配位点 堆叠柱，
+  两档分面）、`Fig15-TAIR12-accuracy-summary.pdf`（a 分类型召回、b 未匹配位点归因、
+  c 已检出基因的覆盖率分布）。描述性 Fig11–13 由 S8 用新路径重出，内容不变
+  （214 位点 / 145 完整）。
+- 实现中踩到的两个坑，已在脚本注释中固化：
+  1. **gffread 0.12.7 不能读 `.gz`**：基因组与 GFF 必须先解压成 `raw/*.fna` / `raw/*.gff`
+     （该约定原本就写在数据集 README 里），否则报 "sequence lines in a FASTA record must have
+     the same length"（FASTA）或 "invalid start coordinate"（GFF，随后栈溢出）。
+  2. **`--seed-combination` / `--signature` 的值含分号**：`system2` 经 shell 传递，不 `shQuote`
+     会被拆成多条命令，实测得到一份"参数被截断"的假结果（186 位点），因此 S6 对三个长串参数
+     统一 `shQuote`，并在 README 的运行手册中保留该写法。
+  3. **data.table 分组汇总里不能用分组列做下标**：`by = .(config, gold_class)` 内 `gold_class`
+     退化为单值，`gold_class[detected]` 会静默产出全 NA，导致 `tair12_by_type.csv` 的
+     `type_agreement` 整列为 NA。改为先在 `gene_tab` 上算出独立的 `type_match` 列再求均值。
+     修复后分类型类型一致性（default）：TNL 0.98、CNL 0.92、TIR-only 0.81、NB-only 0.60
+     （NB-only 偏低是因为部分位点把邻近域的 TIR/CC 一并纳入，导致位点类别首域不是 NBARC）。
+- 文档：新增 `benchmark/README.md`（目录地图 / 数据集 / 三条流水线 / 口径定义 / 运行手册 /
+  指标文件 / 结果摘要 / 图件索引 / 已知事项）、`benchmark/archive/README.md`（归档清单与
+  文件计数核对）、`benchmark/data/RefPlantNLR/README.md`；重写 `benchmark/data/TAIR12/README.md`
+  （新路径、金标准口径与结果、两档基线与结论、环境核查）。
+- 说明：`benchmark/` 仍在 `.gitignore` 内，本次整理与产出一律只留本地；`.gitignore` 未改动。
+
+### TAIR12 误差诊断：漏检基因与未匹配位点的逐条归因（2026-10-14）
+
+- 动机：S6 的评测显示 default 档漏检 4 个金标准基因、有 16 个位点不与任何金标准基因重叠。
+  这两类误差需要用独立证据说清楚"到底是什么原因"，否则召回率/假阳性数字会被误读。
+- 新增脚本 `benchmark/scripts/S9-Diagnose-TAIR12-Errors-V1.R`（只读 S5/S6 产出，不改现有表）：
+  - **Miss 三层证据**：全蛋白组 `hmmscan -E 10`（无 GA）复核打分 → 基因内/±5 kb 的 accepted
+    motif 命中 → 基因 ±20 kb 局部重跑四档（default / relaxed / sensitive / extended）。
+  - **Unmatched 三路复核**：重叠基因 CDS 蛋白 / 位点六框 ORF / P-loop 锚定片段，合并成一个
+    FASTA 后一次跑 `--cut_ga` 与 `-E 1e-3`，判定 `gold_standard_miss` / `divergent_partial` /
+    `fragment_call` / `unresolved_spurious`。
+  - **口径敏感性**：S5 `--relaxed` 新增输出 `tair12_gold_standard_relaxed.csv`（宽口径
+    E≤1e-3，317 个基因，含坐标），S9 用它重算召回区间。
+- 结论：
+  - **漏检 4 个基因全是真实漏检**：AT4G23440(TN17)、AT4G33300(ADR1-L1)、AT5G66630(DAR5)
+    基因内 accepted motif 命中为 0（卡 `p<1e-5` 扫描阈值，放宽到 1e-3 即可召回）；
+    AT5G45090 基因内有 1 条 motif_18（p=2.5e-9）但单 TIR 不构成播种组合（卡播种）。
+    局部重跑：sensitive 4/4 召回、extended 2/4、relaxed(--no-flexible-seed --relaxed-seed 3) 0/4。
+  - **16 个未匹配位点里只有 11 个是工具自身产物**：5 个含 P-loop 的大位点（1.9–4.0 kb）经六框
+    ORF 复核在 GA 阈值下命中 NB-ARC（最高 200 bits）或 TIR（最高 179 bits），重叠的注释基因
+    在 TAIR12 里是 other/lncRNA 或被标成 "putative ATP hydrolase"，属**金标准漏判**；
+    11 个是 151–619 bp、无 P-loop 的片段型命中（5 个含终止子）。extended 档 49 个未匹配里
+    45 个是片段型。
+  - **有效指标**：default 精确率 92.5% → 有效 94.7%（下界）/94.9%（上界），有效假阳性 11 个
+    （5.1%）；extended 80.6% → 81.9%/82.1%。召回 98.0% 无需修正。宽口径金标准（317 基因）下
+    召回降到 61.2%/63.1%，下降源于金标准分母膨胀（两档检出的绝对基因数仅 194/200）。
+- 实现中修掉的三个坑：
+  1. `--relaxed-seed` 在 v1.5.x 与默认开启的柔性播种**互斥**（直接报错），relaxed 档必须写成
+     `--no-flexible-seed --relaxed-seed 3`；
+  2. `.nbarc.fasta` 是 **gap 填充的比对片段**（含 `-`），HMMER 拒绝解析，需先剔除 gap；
+  3. hmmscan 失败时会**留下残缺的 domtbl**，导致后续运行误用缓存——改为写 `.tmp` 成功后改名。
+  另外 `fread` 读 BED 必须显式 `sep="\t"`，否则自动分隔符会把 12 列解析成 65 列。
+- 脚本内置自校验（漏检归因必须复现 3×scan_threshold + 1×assembly_seed、nlr49/nlr14 必须判为
+  gold_standard_miss、sensitive 必须召回全部 4 个漏检基因），不满足即报错退出。
+- 产物：`benchmark/reports/TAIR12-error-diagnosis-V1.md`（完整诊断报告）、
+  `metrics/tair12_diagnosis_{miss,locus,stage,summary}.csv`、`metrics/tair12_gold_standard_relaxed.csv`、
+  `figures/Fig16-TAIR12-error-attribution.pdf`、`outputs/tair12/diagnosis/`；
+  `benchmark/README.md` 新增「八、误差诊断」并把有效指标并入「六、结果摘要」。
