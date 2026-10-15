@@ -190,7 +190,8 @@ struct Cli {
 
     /// Relaxed seeding: treat a consecutive motif run with at least N NB-ARC motifs
     /// as a seed (disabled by default). Recovers NLR/RNL loci whose motif combinations
-    /// are not among the 11 built-in seed combinations.
+    /// are not among the 11 built-in seed combinations. Mutually exclusive with the
+    /// default flexible seeding — pass --no-flexible-seed together with it.
     #[arg(long, help_heading = "NLR recall enhancements")]
     relaxed_seed: Option<usize>,
 
