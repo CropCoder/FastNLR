@@ -1030,3 +1030,89 @@
 - **conda 配方同步**：source sha256 更新为 v1.5.2 标签归档的校验和
   `b438f737e5d6d840710160647bb3cc944cd63476044b5a6877a9843ce0b2964b`（连续两次下载校验一致），
   与 v1.5.0 / v1.5.1 的发版流程保持一致。
+
+### FastNLR vs NLR-Annotator v2.1b 横向评测（TAIR12，128 线程）
+
+- 新增 `benchmark/scripts/S10-Run-Tool-Comparison-V1.R`（运行 + 评测）与
+  `S11-Plot-Tool-Comparison-V1.R`（Fig17 / Fig18），报告
+  `benchmark/reports/TAIR12-tool-comparison-V1.md`。
+- **对照设计已证实为最干净形态**：`/home/zjw/software/mot.txt` 与 `store.txt` 和 FastNLR
+  **内置库 md5 完全一致**（`c307517d…` / `0d1ede50…`，20 motif），`-t/-n` 语义与输出格式同源，
+  因此差异只来自实现与流水线阶段。两工具统一读**未压缩** fasta（NLR-Annotator 不支持 gz）、
+  同为 `-t 128`、`-n` 默认 1000，各 3 次重复、串行执行、每次前预热页缓存。
+- **速度与内存**（TAIR12 142.5 Mb，128 线程，3 次中位数）：FastNLR 默认档 **6.01 s / 164 MB**
+  （5.27/6.09/6.01 s），扩展库档 7.96 s / 165 MB；NLR-Annotator **465.2 s / 2 266 MB**
+  （465.2/458.8/526.6 s，第 3 次峰值 4 316 MB）。→ **速度 77×、内存 14×**。
+  CPU 利用率 FastNLR 约 86×，NLR-Annotator 仅 **9.4×**——同参数下其 JVM 线程池未有效扩展。
+- **准确性**（198 个 HMM 金标准基因）：FastNLR 召回 **97.98%**（194/198）、假阴性率 2.02%、
+  精确率 92.52%、假阳性率 7.48%；NLR-Annotator 召回 **92.93%**（184/198）、假阴性率 7.07%、
+  精确率 94.42%、假阳性率 5.58%。按 S9 的证据修正后有效精确率 94.74% vs 96.88%、
+  有效假阳性率 5.14% vs 3.05%。
+- **召回集是严格超集**：NLR-Annotator 检出的 184 个基因 FastNLR 全部检出，且多检出 10 个
+  （ADR1、ADR1-L2、ADR1-L3、NRG1.1 四个 RNL/helper + 5 个 TIR-only 与 1 个 NB-only），
+  正是 S9 归因的
+  "柔性播种 + HMM 补 N 端域"生效的场景；两者共同漏掉的仍是那 4 个（TN17、ADR1-L1、DAR5、
+  AT5G45090），瓶颈在 20-motif PWM 库的检测下限。
+- **结果一致性**：NLR-Annotator 的 197 个位点 **100%** 与 FastNLR 位点重叠，其中 **186 个
+  （94.4%）坐标完全相同**，Jaccard 0.921；FastNLR 独有 17 个位点（TIR 11、CC-NBARC-LRR 3、
+  NBARC-LRR 2、NBARC 1，其中 12 个命中金标准基因、5 个为片段），NLR-Annotator 独有 0 个。
+- 实现中修掉的两个坑：`data.table(key = ...)` 会把 `key` 当保留参数（列名改 `metric`）；
+  `chr2acc[match(seqname, ...)]` 方向写反导致染色体映射错（应为 `chr_tab$chr[match(...)]`）。
+  另发现 nohup 后台任务会随 exec 会话结束被杀，改用 `setsid` 才能跑完 23 分钟的 Java 任务。
+- 图件：`Fig17-TAIR12-tool-comparison.pdf`（速度 / 内存 / 准确性指标 / 位点集合四面板）、
+  `Fig18-TAIR12-tool-three-track.pdf`（金标准 / FastNLR / NLR-Annotator 三轨染色体图）。
+  `benchmark/README.md` 新增「九、工具横向对比」并把结论并入「六、结果摘要」。
+
+### 修复：柔性播种接受"同一 motif 重复"造成的退化种子
+
+- **问题定位**：与 NLR-Annotator 的横向对比显示 FastNLR 召回率明显更高（97.98% vs 92.93%），
+  但位点级假阳性率略高（7.48% vs 5.58%）。逐条归因后，16 个未匹配位点里 5 个是**金标准漏判**
+  （两工具都有），10 个是片段型命中，其中 3 个来自刻意加入的 `[18,15]`/`[15,13]` 双 TIR 种子
+  （这套种子同时贡献了 5 个 TIR-only 基因的召回，是净收益为正的既有取舍，不动），
+  **只有 1 个是真正的缺陷**：`OZ408684.1_nlr2`（Chr2:11,581,849–11,582,467，基因间区，
+  619 bp、无 P-loop、无 LRR）。
+- **根因**：柔性播种判据原为"NB-ARC motif 数 ≥ 3 且 rank **单调不减**"。8 个 NB-ARC motif 的
+  rank 两两不同（4/5/6/7/8/9/10/11），因此"不减"与"严格递增"只在**同一 motif 被重复命中**
+  时才有差别——该位点上连续命中三次 `motif_2`（rank 11,11,11），被当成"按 rank 排列"而播种。
+  这类重复不构成结构域的先后顺序。
+- **修复**（`crates/nlr-core/src/signature_def.rs`）：
+  - `is_seed_flexible` 判据由 `rank(a) <= rank(b)` 收紧为 `rank(a) < rank(b)`（严格递增）；
+  - **片段预过滤保持宽松判据**（新增 `is_seed_flexible_loose`，`has_signature_flexible` 用它）。
+    这一步是关键：预过滤面对的是**整个片段的命中串**，若一并收紧，片段尾部的一个重复 motif
+    会让该片段里合法的种子前缀被整段丢弃——首次尝试时正是这样误删了
+    `OZ408687.1 1,365,557–1,367,650` 的 CC-NBARC-LRR 位点（motif 1,4,10,1，丢掉 1 个基因召回）。
+  - 回归测试：3 次同 motif、以及"合法前缀 + 尾部重复"都必须**不能**播种，
+    但 `is_seed_flexible_loose`/`has_signature_flexible` 必须继续放行。
+- **验证**（全部用修复后的 release 二进制重跑）：
+  - 单元/集成测试 69/69 通过，`cargo fmt --check` 与 `cargo clippy -D warnings` 干净；
+  - TAIR12：位点 **214 → 213**（只少了那一个基因间区位点），召回 **不变 194/198 = 97.98%**，
+    精确率 **92.52% → 92.96%**，位点级假阳性率 **7.48% → 7.04%**，有效假阳性率 5.14% → 4.69%；
+  - RefPlantNLR 四档金标准：召回 399/400（protein 398/400）、架构一致率 96.49%/95.24%/94.97%
+    **逐项不变**；
+  - 多个物种位点数：拟南芥 halleri 332、lyrata 275 不变；黄瓜 77（其 `--no-flexible-seed`
+    为 74，与 v1.4.0 基线一致，说明多出的 3 个是 v1.5 柔性播种的既有行为，非本次修复引入）。
+- **文档同步**：`crates/nlr-cli/src/main.rs` 的 `--flexible-seed` 帮助文本、`crates/nlr-core/README.md`、
+  `crates/nlr-assemble/README.md`、`docs/index.html` 的 CLI 表统一改为"strictly increasing rank"；
+  `docs/flexible-seeding-upgrade.md` 增加 2026-10-15 修订说明（含预过滤为何保持宽松）。
+- **benchmark 侧刷新**：S6/S7/S8/S9/S10/S11 全部用修复后的二进制重跑，
+  `metrics/*`、`Fig11–Fig18` 与两份报告的数字同步更新；
+  另修掉 S10 自身的一个键名 bug（`stops_by_cfg` 用 `names(CFG)` 命名但取值用 `cfg$name`，
+  导致 `has_stop` 恒为 FALSE）。
+
+## 2026-10-16
+
+### v1.5.3 发版：柔性播种退化种子的修复
+
+- 版本号在 Cargo.toml / Cargo.lock（10 个工作区包）、各 crate 依赖约束、README 徽章与下载链接、
+  官网（徽标、二进制下载地址、GFF 示例的 `##source-version`）统一升到 **1.5.3**，
+  conda 配方的 `version` 同步（source sha256 在打 tag 后单独提交更新）。
+- 本次发布的唯一行为变更：柔性播种判据由 rank **单调不减** 收紧为 **严格递增**，
+  关掉"同一个 NB-ARC motif 连续重复"形成的退化种子（TAIR12 上基因间区的
+  `OZ408684.1_nlr2`）；片段预过滤保持宽松判据不变（原因见 2026-10-15 那条记录）。
+  实测影响：TAIR12 位点 214 → 213、召回不变（194/198）、位点级假阳性率 7.48% → 7.04%；
+  RefPlantNLR 四档金标准指标逐项不变。
+- 发布前质量门：`cargo test --workspace --locked` 69/69 通过、`cargo fmt --check` 干净、
+  `cargo clippy --workspace --all-targets -D warnings` 无告警、`--locked` 构建一致。
+- 发布流程与 v1.5.2 一致：推送 `main` → 打 annotated tag `v1.5.3` → Release 工作流三平台构建
+  （Linux/Windows/macOS 二进制 + sha256）→ 下载 Linux 资产核对 sha256 与 `--version` →
+  用标签归档的 sha256 更新 conda 配方。CI 与 GitHub Pages 同步部署。
