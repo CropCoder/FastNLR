@@ -12,7 +12,7 @@ A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.5.2-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.5.3-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Documentation](#documentation) · [Citation](#citation)
 
@@ -51,7 +51,7 @@ mamba install -c conda-forge -c bioconda bioconda::fastnlr
 
 ```bash
 curl -L -o fastnlr.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.5.2/fastnlr-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/CropCoder/FastNLR/releases/download/v1.5.3/fastnlr-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 ```
