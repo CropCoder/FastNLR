@@ -422,7 +422,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.5.2</span>
+      <span class="ver">v1.5.3</span>
     </a>
     <div class="nav-links">
       <a href="#install">Install</a>
@@ -550,7 +550,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.5.2/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.5.3/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 cd fastnlr-linux-x86_64
 ./fastnlr --version
@@ -654,7 +654,7 @@ cargo build --release
       <table>
         <thead><tr><th>Sensitivity / recall</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td class="mono">--flexible-seed &lt;n&gt;</td><td>Flexible seeding threshold: seed when at least <code>n</code> NB-ARC motifs appear in rank order. <strong>On by default (<code>n = 3</code>)</strong>. Additive — exact motif-id seed combinations stay active, so loci found without this flag are never lost.</td></tr>
+          <tr><td class="mono">--flexible-seed &lt;n&gt;</td><td>Flexible seeding threshold: seed when at least <code>n</code> NB-ARC motifs appear in <strong>strictly increasing</strong> rank order (a repeated motif does not qualify). <strong>On by default (<code>n = 3</code>)</strong>. Additive — exact motif-id seed combinations stay active, so loci found without this flag are never lost.</td></tr>
           <tr><td class="mono">--no-flexible-seed</td><td>Disable flexible seeding and fall back to the exact motif-id seed combinations only.</td></tr>
           <tr><td class="mono">--require-ploop</td><td>Require the P-loop motif (<code>motif_1</code>) for flexible seeding (higher precision).</td></tr>
           <tr><td class="mono">--relaxed-seed &lt;n&gt;</td><td>Relaxed seeding: accept a consecutive hit run with at least <code>n</code> NB-ARC motifs. Off by default and mutually exclusive with flexible seeding — pass <code>--no-flexible-seed</code> to use it.</td></tr>
@@ -717,7 +717,7 @@ cargo build --release
     <div class="code reveal" style="margin-top: 22px;">
       <div class="code-head"><span class="fn">&lt;prefix&gt;.nlr.gff — header</span></div>
       <pre><span class="c">##gff-version 2</span>
-<span class="c">##source-version FastNLR V1.5.2</span>
+<span class="c">##source-version FastNLR V1.5.3</span>
 <span class="c">##date 2026-10-12 15:23:36</span>
 <span class="c">##Type DNA</span></pre>
     </div>

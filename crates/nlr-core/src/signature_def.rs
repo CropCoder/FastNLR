@@ -379,26 +379,54 @@ impl AnnotatorSignatureDefinition {
         n_nbarc >= min_nbarc
     }
 
-    /// 柔性播种：取 seq 中按出现顺序排列的 NB-ARC motif，要求数量 >= min_nbarc、
-    /// rank 单调不减，且（可选）包含 P-loop。
-    pub fn is_seed_flexible(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
+    /// 取出用于柔性判定的 NB-ARC motif 序列；数量不足或缺 P-loop（可选要求）时返回 None。
+    fn flexible_nbarc(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> Option<Vec<MotifId>> {
         let nbarc: Vec<MotifId> = seq
             .iter()
             .copied()
             .filter(|&id| self.is_nbarc(id))
             .collect();
         if nbarc.len() < cfg.min_nbarc {
-            return false;
+            return None;
         }
         if cfg.require_ploop && !nbarc.contains(&PLOOP_MOTIF) {
-            return false;
+            return None;
         }
-        nbarc.windows(2).all(|w| self.rank(w[0]) <= self.rank(w[1]))
+        Some(nbarc)
+    }
+
+    /// 柔性播种：取 seq 中按出现顺序排列的 NB-ARC motif，要求数量 >= min_nbarc、
+    /// rank **严格递增**，且（可选）包含 P-loop。
+    ///
+    /// 为什么是严格递增而不是"非递减"：8 个 NB-ARC motif 的 rank 两两不同（见 [`RANKS`]），
+    /// 所以两种判据只在"同一个 motif 被重复命中"时才产生分歧——典型是低复杂度区域里连续
+    /// 出现三次同一个 motif（如 motif_2, motif_2, motif_2，rank 11,11,11）。这类重复不构成
+    /// 规范的结构域先后顺序，且实测会在基因间区造出假位点（TAIR12 的 OZ408684.1_nlr2，
+    /// 619 bp、无 P-loop、无 LRR）。严格递增关掉这一支，对"≥3 个不同 NB-ARC motif 按 rank
+    /// 排列"的种子没有影响。
+    pub fn is_seed_flexible(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
+        match self.flexible_nbarc(seq, cfg) {
+            Some(nbarc) => nbarc.windows(2).all(|w| self.rank(w[0]) < self.rank(w[1])),
+            None => false,
+        }
+    }
+
+    /// 柔性预过滤专用的宽松判据：rank 单调**不**减（允许同一 motif 重复）。
+    ///
+    /// 预过滤作用于**整个片段的命中串**，而播种作用于逐个前缀；片段里出现一次重复 motif
+    /// 并不代表该片段没有合法种子——实测 TAIR12 的 CC-NBARC-LRR 位点（motif 1,4,10 合法，
+    /// 但同片段后面又有一个 motif_1）就会因为预过滤收紧而整段命中被丢掉。因此这里刻意保留
+    /// 宽松判据：多保留只是多一点后续计算，不会凭空造出位点（播种与组装仍会再判一次）。
+    pub fn is_seed_flexible_loose(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
+        match self.flexible_nbarc(seq, cfg) {
+            Some(nbarc) => nbarc.windows(2).all(|w| self.rank(w[0]) <= self.rank(w[1])),
+            None => false,
+        }
     }
 
     /// 柔性预过滤：片段命中任意既有 signature，或满足柔性播种条件，即保留。
     pub fn has_signature_flexible(&self, ids: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
-        self.has_signature(ids) || self.is_seed_flexible(ids, cfg)
+        self.has_signature(ids) || self.is_seed_flexible_loose(ids, cfg)
     }
 
     /// Whether the motif id sequence contains an NLR signature (a contiguous subsequence matches any signature).

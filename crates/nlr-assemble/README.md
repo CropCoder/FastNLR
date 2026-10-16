@@ -32,7 +32,7 @@ the seeding strategy:
 |---|---|
 | exact (default) | the id sequence matches one of `SEED_COMBINATIONS` |
 | relaxed (`--relaxed-seed n`) | a consecutive run containing at least `n` NB-ARC motifs |
-| flexible (`--flexible-seed n`) | at least `n` NB-ARC motifs appear in rank order (optionally requiring the P-loop) |
+| flexible (`--flexible-seed n`) | at least `n` NB-ARC motifs appear in strictly increasing rank order (optionally requiring the P-loop) |
 
 The first match closes the seed and the walk resumes from the next hit.
 

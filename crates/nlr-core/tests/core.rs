@@ -149,6 +149,21 @@ mod tests {
         assert!(!d.is_seed_flexible(&[2, 3, 12, 10], &cfg));
         // 数量不足
         assert!(!d.is_seed_flexible(&[1, 6], &cfg));
+        // 回归：同一个 NB-ARC motif 重复出现（rank 相等）不算"按 rank 排列"，
+        // 否则低复杂度区里连续三次 motif_2 会在基因间区造出假位点
+        // （TAIR12 的 OZ408684.1_nlr2）。
+        assert!(!d.is_seed_flexible(&[2, 2, 2], &cfg));
+        assert!(!d.is_seed_flexible(&[2, 2, 2, 2], &cfg));
+        // 出现等 rank 的重复（rank 4,6,6,8）即视为退化种子
+        assert!(!d.is_seed_flexible(&[1, 4, 4, 10], &cfg));
+        // 但片段级预过滤必须继续放行含重复的命中串：预过滤面对的是整个片段的命中列表，
+        // 若一并收紧，片段里一次重复就会让该片段合法的种子前缀被整段丢掉
+        // （实测会误删 TAIR12 的 CC-NBARC-LRR 位点）。
+        assert!(d.is_seed_flexible_loose(&[1, 4, 4, 10], &cfg));
+        assert!(d.has_signature_flexible(&[1, 4, 4, 10], &cfg));
+        assert!(d.is_seed_flexible_loose(&[2, 2, 2], &cfg));
+        // 严格递增的合法种子不受影响
+        assert!(d.is_seed_flexible(&[1, 4, 10], &cfg));
     }
 
     #[test]

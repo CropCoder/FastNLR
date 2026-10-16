@@ -132,7 +132,11 @@ Three seeding strategies are supported, in increasing order of recall for diverg
    subsequence** instead, because extended-library hits are additionally prefixed by their own
    library-specific motifs;
 2. `is_seed_relaxed(seq, min_nbarc)` — a consecutive run containing at least `min_nbarc` NB-ARC motifs;
-3. `is_seed_flexible(seq, cfg)` — category/rank-based: `min_nbarc` NB-ARC motifs appearing in rank order, optionally requiring the P-loop.
+3. `is_seed_flexible(seq, cfg)` — category/rank-based: `min_nbarc` NB-ARC motifs appearing in
+   **strictly increasing** rank order (a repeated motif does not qualify), optionally requiring the
+   P-loop. `is_seed_flexible_loose` keeps the older non-decreasing criterion and is used only by the
+   fragment prefilter, which sees whole-fragment hit lists where a trailing repeat must not discard
+   an otherwise valid seed.
 
 Two further queries drive filtering and reporting:
 

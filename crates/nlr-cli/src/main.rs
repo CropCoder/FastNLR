@@ -195,9 +195,10 @@ struct Cli {
     #[arg(long, help_heading = "NLR recall enhancements")]
     relaxed_seed: Option<usize>,
 
-    /// Flexible seeding threshold: seed when at least N NB-ARC motifs appear in rank
-    /// order. Enabled by default (N=3). Additive to the exact motif-id seed
-    /// combinations, so loci found without this flag are never lost.
+    /// Flexible seeding threshold: seed when at least N NB-ARC motifs appear in
+    /// strictly increasing rank order (a repeated motif does not qualify). Enabled
+    /// by default (N=3). Additive to the exact motif-id seed combinations, so loci
+    /// found without this flag are never lost.
     #[arg(long, value_name = "N", help_heading = "NLR recall enhancements")]
     flexible_seed: Option<usize>,
 
