@@ -1116,3 +1116,9 @@
 - 发布流程与 v1.5.2 一致：推送 `main` → 打 annotated tag `v1.5.3` → Release 工作流三平台构建
   （Linux/Windows/macOS 二进制 + sha256）→ 下载 Linux 资产核对 sha256 与 `--version` →
   用标签归档的 sha256 更新 conda 配方。CI 与 GitHub Pages 同步部署。
+- **发布校验**：Release（3 分 11 秒）、CI、GitHub Pages 三个工作流全部 success；
+  从 Releases 下载 Linux 资产，sha256 与官方 `.sha256` 完全一致（`7da8049c…`），
+  解包后二进制自报 `fastnlr 1.5.3`，且 `--flexible-seed` 的帮助文本已是
+  "strictly increasing rank order (a repeated motif does not qualify)"。
+- **conda 配方同步**：source sha256 更新为 v1.5.3 标签归档的校验和
+  `11d6b6537abedf69afa548076c7d97cd48097ac356d6623f4ebad1c8b1d40aef`（连续两次下载校验一致）。
