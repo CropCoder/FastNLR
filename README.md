@@ -1,6 +1,6 @@
 <div align="center">
 
-# FastNLR
+<img src="data/motif_library_rnl_tir/logo.png" alt="FastNLR logo" width="640">
 
 **Fast, self-contained NLR immune-receptor locus annotation for plant genomes**
 
