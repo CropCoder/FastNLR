@@ -1,12 +1,13 @@
 # nlr-assemble
 
-> Three-step assembly of motif hits into NLR loci.
+> Three-step assembly plus redundancy absorption for motif hits.
 
 `nlr-assemble` turns a flat, coordinate-sorted list of motif hits on one contig into named NLR
 loci. It implements the `findSeeds → mergeSeeds → elongate` algorithm: find the motif
 combinations that are diagnostic for an NLR, merge compatible seeds that describe the same
 gene, then extend both ends along the translation direction while the domain order stays
-consistent.
+consistent. A final post-processing stage absorbs fully nested loci and short trailing NB-ARC
+segments that arise from tandem-repeat structures.
 
 The crate depends only on `nlr-core`; it performs no I/O and is fully deterministic.
 
@@ -30,9 +31,9 @@ the seeding strategy:
 
 | Mode | Trigger |
 |---|---|
-| exact (default) | the id sequence matches one of `SEED_COMBINATIONS` |
+| exact | the id sequence matches one of `SEED_COMBINATIONS`; this is the fallback when flexible seeding is disabled |
 | relaxed (`--relaxed-seed n`) | a consecutive run containing at least `n` NB-ARC motifs |
-| flexible (`--flexible-seed n`) | at least `n` NB-ARC motifs appear in strictly increasing rank order (optionally requiring the P-loop) |
+| flexible (CLI default, `n = 3`) | at least `n` NB-ARC motifs appear in strictly increasing rank order (optionally requiring the P-loop); combined with exact matches |
 
 The first match closes the seed and the walk resumes from the next hit.
 
@@ -56,6 +57,12 @@ A motif containing a stop codon is only admitted when it is an NB-ARC motif. Eve
 consumed by a locus is recorded in a `used` set keyed by `(id, dna_start)`, and a seed whose
 motifs have already been used is skipped, so a hit belongs to at most one locus.
 
+### Step 4 — `absorb_redundant_loci`
+
+After elongation, a same-strand locus fully nested inside another is merged into the outer locus.
+A downstream locus containing only NB-ARC/linker/unknown motifs is merged into an upstream locus
+ending in LRR when it lies within the elongation distance. The outer locus boundaries are retained.
+
 ### Naming
 
 Candidate loci are sorted in the crate-wide translation-direction order before naming, and each
@@ -67,15 +74,15 @@ independent of thread scheduling.
 | Item | Description |
 |---|---|
 | `AssembleParams` | tuning parameters, see below |
-| `assemble(seq_id, motifs, params, def) -> Vec<MotifList>` | runs all three steps and returns the named loci |
+| `assemble(seq_id, motifs, params, def) -> Vec<MotifList>` | runs assembly, redundancy absorption and naming, then returns the loci |
 
 ### `AssembleParams`
 
 | Field | Default | Meaning |
 |---|---|---|
-| `distance_within_motif_combination` | 500 | maximum gap between adjacent motifs inside one seed |
-| `distance_for_elongating` | 2 500 | maximum gap while extending a seed |
-| `distance_between_motif_combinations` | 10 000 | maximum gap for merging two seeds |
+| `distance_within_motif_combination` | 500 | maximum difference between adjacent motif `dna_start` values inside one seed |
+| `distance_for_elongating` | 2 500 | maximum `dna_start` difference while extending a seed |
+| `distance_between_motif_combinations` | 10 000 | maximum `dna_start` difference for merging two seeds |
 | `relaxed_seed_min_nbarc` | `None` | enables relaxed seeding with the given NB-ARC count |
 
 ## Example

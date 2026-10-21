@@ -8,13 +8,12 @@ A high-speed, accurate NLR annotation tool written in Rust for plant genomes
 
 [![bioconda](https://anaconda.org/bioconda/fastnlr/badges/version.svg)](https://anaconda.org/bioconda/fastnlr)
 [![Downloads](https://anaconda.org/bioconda/fastnlr/badges/downloads.svg)](https://anaconda.org/bioconda/fastnlr)
-[![Platforms](https://anaconda.org/bioconda/fastnlr/badges/platforms.svg)](https://anaconda.org/bioconda/fastnlr)
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 [![Version](https://img.shields.io/badge/version-1.5.3-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
-[Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Documentation](#documentation) · [Citation](#citation)
+[Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Citation](#citation)
 
 </div>
 
@@ -38,15 +37,6 @@ assembled genome, or classifies NLR domains from a protein FASTA. It is distribu
 conda install bioconda::fastnlr
 ```
 
-The `bioconda::` prefix pins the package to the bioconda channel. If the channels are not already
-in your conda configuration, give them explicitly (`conda-forge` must come first):
-
-```bash
-conda install -c conda-forge -c bioconda bioconda::fastnlr
-# mamba / micromamba are drop-in and much faster
-mamba install -c conda-forge -c bioconda bioconda::fastnlr
-```
-
 ### Prebuilt binary
 
 ```bash
@@ -62,7 +52,7 @@ macOS assets are also `.tar.gz`) and ship with a SHA-256 checksum file.
 ### From source
 
 ```bash
-# Requires Rust 1.70+ (developed on 1.94.1)
+# Requires Rust 1.85+
 git clone https://github.com/CropCoder/FastNLR.git
 cd FastNLR
 cargo build --release
@@ -96,13 +86,13 @@ details and benchmark results.
 - **Zero-config, self-contained binary** — the standard `mot.txt` (PWM) and `store.txt` (CDF)
   configs are embedded at compile time; override with `-x`/`-y` for custom motifs.
 - **High performance** — Rust + rayon multithreading, memory-mapped FASTA parsing and SIMD
-  scoring; throughput holds at roughly 3.7 Mb/s across two orders of magnitude of genome size.
+  scoring; throughput holds at roughly 3.7 Mb/s across the benchmarked 197 Mb–4.7 Gb range.
 - **Flexible seeding, on by default** — category/rank-based seeding runs out of the box and
   recovers divergent NLR/RNL loci. It is **additive**: it never drops a locus that the exact
   motif-id combinations would have found (`--no-flexible-seed` restores the strict behaviour).
-- **HMM-confirmed domain architecture** — each assembled locus is re-scanned with the same
-  bundled HMMER profiles used in protein mode, so N-terminal CC/TIR domains that the PWM library
-  misses are still reported instead of collapsing to a bare `NBARC-LRR`.
+- **HMM-assisted N-terminal domains** — when the PWM library does not identify a CC/TIR domain,
+  the locus is checked with the same bundled HMMER profiles used in protein mode. HMM hits fill
+  that missing N-terminal domain instead of leaving a bare `NBARC-LRR`.
 - **Tandem-repeat aware assembly** — repeated or duplicated domain units and trailing NB-ARC
   segments are merged back into their parent locus, so one gene is not reported as several loci.
 - **Extensible motif libraries** — an optional RNL/helper-CC + TIR library (28 motifs) recovers
@@ -135,16 +125,6 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
 `Structure` and `Subclass` columns contradict each other are excluded. Per-domain F1 is
 1.000 (NB-ARC), 0.999 (LRR), 0.995 (TIR) and 0.989 (CC).
 
-## Documentation
-
-| Topic | Where |
-|---|---|
-| Full flag reference, output formats, worked examples | <https://cropcoder.github.io/FastNLR/> |
-| Extended RNL/TIR motif library and design notes | [`data/motif_library_rnl_tir/`](data/motif_library_rnl_tir/) |
-| Flexible-seeding upgrade design | [`docs/flexible-seeding-upgrade.md`](docs/flexible-seeding-upgrade.md) |
-| Packaging recipe | [`conda/`](conda/) |
-| Development log, benchmarks and design records | [`Runlog.md`](Runlog.md) |
-
 ## Development
 
 ```bash
@@ -155,20 +135,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 The release profile uses `opt-level=3`, `lto="fat"`, `codegen-units=1` and `panic="abort"`.
-CI (`.github/workflows/rust.yml`) builds and tests on every push; pushing a `vX.Y.Z` tag builds
-Linux/Windows/macOS binaries and uploads them to GitHub Releases.
+CI (`.github/workflows/rust.yml`) builds and tests pushes to `main` and pull requests; pushing a
+`vX.Y.Z` tag builds Linux/Windows/macOS binaries and uploads them to GitHub Releases.
 
 ## Citation
 
-FastNLR is developed and maintained by Jiwen Zhao. A dedicated manuscript is in preparation;
-until then, please cite this repository:
+A dedicated manuscript is in preparation. Until then, please cite this repository:
 
-> Jiwen Zhao. FastNLR: a high-speed, accurate NLR annotation tool. https://github.com/CropCoder/FastNLR
+> FastNLR: a high-speed, accurate NLR annotation tool. https://github.com/CropCoder/FastNLR
 
 ## License
 
 GPL-3.0-only. See [LICENSE](LICENSE).
-
-## Author
-
-**Jiwen Zhao** — <https://github.com/CropCoder> · Contributions and issue reports are welcome.

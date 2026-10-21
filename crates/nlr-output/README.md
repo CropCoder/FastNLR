@@ -7,8 +7,9 @@ text report, GFF, BED12, motif-level BED, an NB-ARC multiple alignment, extracte
 sequences and a TSV motif exchange format. Every writer is generic over `std::io::Write`, so the
 same code produces files, in-memory buffers or test fixtures.
 
-The crate's central concern is **coordinate consistency**: the intervals written to GFF, BED and
-the extracted locus FASTA must describe exactly the same bases.
+The crate's central concern is **coordinate consistency**: GFF and BED describe the same core
+locus interval, while locus FASTA headers describe the possibly wider extraction interval after
+applying the requested flank.
 
 ## Position in the workspace
 
@@ -23,8 +24,8 @@ the extracted locus FASTA must describe exactly the same bases.
 
 | Function | Output | Notes |
 |---|---|---|
-| `write_report_txt` | `.nlr.txt` | headerless, 7 columns: `seqname`, `name`, domain class, `start`, `end`, strand, motif list |
-| `write_nlr_gff` | `.nlr.gff` | 5 comment lines, feature `NBSLRR`, source `FastNLR`, `start + 1` (GFF is 1-based), `name=` and `nlrClass=` attributes; optional `complete_only` filter |
+| `write_report_txt` | `.nlr.txt` | headerless, 6 columns: `seqname`, `name`, domain class, `start`, `end`, strand |
+| `write_nlr_gff` | `.nlr.gff` | GFF2 with 5 comment lines, feature `NBSLRR`, source `FastNLR`, `start + 1` (GFF is 1-based), `name=` and `nlrClass=` attributes; optional `complete_only` filter |
 | `write_nlr_bed` | `.nlr.bed` | BED12 with `itemRgb`; one block per motif; blocks are emitted in reverse order on the reverse strand |
 | `write_motif_bed` | `.motifs.bed` | 9 columns per motif, p-value in the score column, per-motif colour; optional `STOP` annotation rows |
 | `write_nbarc_alignment_fasta` | `.nbarc.fasta` | P-loop-anchored alignment, gap-padded per missing consensus block, `*`/`X` replaced by `_`; optional CED-4 reference row |
@@ -43,11 +44,12 @@ the extracted locus FASTA must describe exactly the same bases.
 ### Locus FASTA header
 
 ```
->{locus_name} {contig} {start}-{end} strand:{+|-} {motif_list}
+>{locus_name} {contig} {start}-{end} strand:{+|-}
 ```
 
-The coordinates in the header are the same clamped interval used to slice the sequence, so the
-extracted bases can be reproduced directly from the GFF/BED interval.
+The coordinates in the header are the same clamped interval used to slice the sequence. This
+interval normally extends the GFF/BED locus by `flanking` bases on each side, followed by clamping
+to the contig boundaries.
 
 ## Coordinate guarantees
 
@@ -56,7 +58,8 @@ extracted bases can be reproduced directly from the GFF/BED interval.
 3. Locus extraction applies a unified clamp at the end of every contig (`saturating_sub` on the
    left, `min(contig_length)` on the right) instead of assuming enough flanking sequence.
 4. Locus extraction iterates **all** contigs, not only the first.
-5. Extracted sequence coordinates always match the reported GFF/BED coordinates.
+5. The FASTA header coordinates always match the sliced sequence; they equal the GFF/BED locus
+   only when `flanking = 0`.
 6. Small p-values are written in scientific notation rather than being flushed to zero.
 
 ## Example

@@ -76,7 +76,7 @@ RNL/TIR extension library shipped in `data/motif_library_rnl_tir/`.
 | Constant | Size | Purpose |
 |---|---|---|
 | `PLOOP_MOTIF` | 1 | id of the P-loop motif (`motif_1`), the NB-ARC anchor used by the alignment output |
-| `BUILTIN_MOTIF_COUNT` | 20 | ids above this value are library-specific and default to `DomainCategory::Na` |
+| `BUILTIN_MOTIF_COUNT` | 20 | default-profile motif count; extension ids 21–28 have explicit built-in CC/TIR categories |
 | `RANKS` | 29 | translation-direction ordering used for seeding and elongation |
 | `CATEGORIES` | 29 | `NBARC` / `LRR` / `TIR` / `CC` / `LINKER` / `NA` |
 | `RGB_COLORS` | 29 | per-motif colour emitted into BED `itemRgb` |
@@ -107,7 +107,7 @@ RNL/TIR extension library shipped in `data/motif_library_rnl_tir/`.
 | `is_complete_nlr(def)` / `has_stop_codon()` | locus classification |
 | `can_be_merged_with(other, distance, def)` | merge predicate used by `nlr-assemble` |
 | `remove_redundant_motifs()` | deduplicate by `(id, dna_start, dna_end)` |
-| `motif_list_string()` / `domain_string(def)` / `span()` | reporting helpers |
+| `domain_string(def)` / `span()` | reporting helpers |
 
 ### `AnnotatorSignatureDefinition`
 

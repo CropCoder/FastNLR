@@ -483,7 +483,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
       </div>
       <div class="hero-meta">
         <div class="m"><b>GPL-3.0</b> License</div>
-        <div class="m"><b>Rust 1.70+</b> toolchain</div>
+        <div class="m"><b>Rust 1.85+</b> toolchain</div>
         <div class="m"><b>bioconda</b> Linux &amp; macOS</div>
       </div>
     </div>
@@ -552,7 +552,6 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
 curl -L -o fastnlr.tar.gz \
   <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.5.3/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
-cd fastnlr-linux-x86_64
 ./fastnlr --version
 
 <span class="c"># Annotate a genome (prefix-derived subfiles)</span>
@@ -562,7 +561,7 @@ cd fastnlr-linux-x86_64
       <!-- 源码构建 -->
       <div class="code reveal" id="panel-source" style="display: none;">
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="source">Copy</button></div>
-        <pre id="code-source"><span class="c"># Requires Rust 1.70+</span>
+        <pre id="code-source"><span class="c"># Requires Rust 1.85+</span>
 git clone <span class="opt">https://github.com/CropCoder/FastNLR.git</span>
 cd FastNLR
 cargo build --release
@@ -673,7 +672,7 @@ cargo build --release
           <tr><td class="mono">-t &lt;n&gt;</td><td>Threads (default: auto-detect).</td></tr>
           <tr><td class="mono">-n &lt;n&gt;</td><td>Fragments per batch (default <code>1000</code>).</td></tr>
           <tr><td class="mono">--checkpoint &lt;dir&gt;</td><td>Save/load motif results to skip rescan.</td></tr>
-          <tr><td class="mono">--tmpdir &lt;dir&gt;</td><td>Temp directory.</td></tr>
+          <tr><td class="mono">--tmpdir &lt;dir&gt;</td><td>Accepted and created, but not yet wired into the scanning, checkpoint or output stages.</td></tr>
           <tr><td class="mono">--progress &lt;auto|bar|simple|off&gt;</td><td>Progress bar (default <code>auto</code>).</td></tr>
           <tr><td class="mono">--log-level &lt;lvl&gt;</td><td>trace / debug / info / warn / error (default <code>info</code>).</td></tr>
         </tbody>
@@ -702,7 +701,7 @@ cargo build --release
         <thead><tr><th>Genome (DNA) mode</th><th>Contents</th></tr></thead>
         <tbody>
           <tr><td class="mono">&lt;prefix&gt;.nlr.txt</td><td>One row per NLR: <code>seqname, name, domain-class, start, end, strand</code>.</td></tr>
-          <tr><td class="mono">&lt;prefix&gt;.nlr.gff</td><td>GFF3 with a live timestamp; <code>source</code> column = <code>FastNLR</code>.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.nlr.gff</td><td>GFF2 with a live timestamp; <code>source</code> column = <code>FastNLR</code>.</td></tr>
           <tr><td class="mono">&lt;prefix&gt;.nlr.bed</td><td>BED12, colour-coded blocks (green = complete, orange = partial, red = contains stop codon).</td></tr>
           <tr><td class="mono">&lt;prefix&gt;.motifs.bed</td><td>Motif intervals with p-values (the full per-motif hit detail).</td></tr>
           <tr><td class="mono">&lt;prefix&gt;.nbarc.fasta</td><td>P-loop-anchored NB-ARC multiple alignment with gap padding.</td></tr>
@@ -768,7 +767,7 @@ cargo build --release
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <h3>Coordinate-consistent</h3>
-        <p>Loci FASTA extraction matches the reported GFF/BED coordinates exactly across every contig.</p>
+        <p>Loci FASTA headers match the sliced sequence after applying <code>--flank</code> and contig-boundary clamping. GFF/BED report the unflanked core locus, so the intervals are equal only when <code>--flank 0</code>.</p>
       </div>
 
       <div class="card reveal">
@@ -807,8 +806,8 @@ cargo build --release
         <div class="card-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v6m0 0 4 4m-4-4-4 4M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
-        <h3>HMM-confirmed architecture</h3>
-        <p>Every assembled locus is re-scanned with the same bundled HMMER profiles used in protein mode, so N-terminal CC/TIR domains the PWM library misses are still reported instead of collapsing to a bare <code>NBARC-LRR</code>.</p>
+        <h3>HMM-assisted N-terminal domains</h3>
+        <p>When the PWM library does not identify a CC/TIR domain, the locus is checked with the same bundled HMMER profiles used in protein mode. HMM hits fill the missing N-terminal domain instead of leaving a bare <code>NBARC-LRR</code>.</p>
       </div>
 
       <div class="card reveal">
@@ -859,8 +858,8 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
     <p class="lead reveal" style="margin-top: 22px; font-size: 15px;">
       Because these motifs live outside the built-in rule tables they must be enabled together with
       their declared categories, seeds and signatures; <code>flags.sh</code> holds the complete
-      parameter lists. Measured effect: RNL / helper-NLR recall rises from 3/8 to <b>8/8</b>, at the
-      cost of more TIR loci being split — see the
+      parameter lists. Historical Wm82 testing showed improved RNL/helper-NLR coverage; current
+      RefPlantNLR measurements are reported in the performance table below. See the
       <a href="https://github.com/CropCoder/FastNLR/blob/main/data/motif_library_rnl_tir/README.md" target="_blank" rel="noopener">library README</a>
       for the design rationale and regeneration workflow.
     </p>
@@ -888,7 +887,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <span class="pipe-arrow">→</span>
       <div class="pipe-step"><div class="n">04</div><div class="t">Filter</div><div class="d">signature</div></div>
       <span class="pipe-arrow">→</span>
-      <div class="pipe-step"><div class="n">05</div><div class="t">Assemble</div><div class="d">3-step</div></div>
+      <div class="pipe-step"><div class="n">05</div><div class="t">Assemble</div><div class="d">3-step + absorb</div></div>
       <span class="pipe-arrow">→</span>
       <div class="pipe-step"><div class="n">06</div><div class="t">Output</div><div class="d">multi-format</div></div>
     </div>
@@ -950,10 +949,10 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <table>
         <thead><tr><th>Recall on RefPlantNLR (400 curated NLR CDS)</th><th>Gene recall</th><th>RNL / helper NLR</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Default (20 motifs)</td><td>98.25%</td><td>3 / 8</td></tr>
-          <tr><td class="mono">Flexible seed</td><td>99.50%</td><td>8 / 8</td></tr>
-          <tr><td class="mono">Extended (28 motifs)</td><td>99.50%</td><td>8 / 8</td></tr>
-          <tr><td class="mono">Protein mode (HMM)</td><td>99.50%</td><td>8 / 8</td></tr>
+          <tr><td class="mono">Default (20 motifs; flexible on)</td><td>99.75%</td><td>6 / 8</td></tr>
+          <tr><td class="mono">Flexible seed (explicit; same semantics)</td><td>99.75%</td><td>6 / 8</td></tr>
+          <tr><td class="mono">Extended (28 motifs)</td><td>99.75%</td><td>6 / 8</td></tr>
+          <tr><td class="mono">Protein mode (HMM)</td><td>99.50%</td><td>6 / 8</td></tr>
         </tbody>
       </table>
     </div>

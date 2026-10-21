@@ -51,7 +51,7 @@ Measured on RefPlantNLR (400 proteins, shuffled-sequence negative control):
 
 | Item | Description |
 |---|---|
-| `HmmLibrary::from_embedded()` | the four built-in models |
+| `HmmLibrary::from_embedded()` | the five built-in models |
 | `HmmLibrary::add_file(path)` / `add_text(text, label)` | add user models; same accession replaces, new accessions are appended; returns how many models were loaded |
 | `HmmLibrary::scanner()` | builds a **thread-local** scanner (must be called on the worker thread) |
 | `Scanner::scan_protein(id, seq)` | returns every reported `DomainHit` (passing and failing GA) |
@@ -90,9 +90,9 @@ assert_eq!(arch.class, "CC-NBARC-LRR");
 cargo test -p nlr-domain
 ```
 
-`tests/scan.rs` scans three real NLR proteins (CNL/TNL/RNL, UniProt) with golden bitscores
-locked to ±0.5 bit, checks the classification rule table, and asserts that shuffled versions of
-the same sequences are not called as NLRs.
+`tests/scan.rs` scans four real NLR proteins (CNL/TNL/RNL plus an NRC-clade CNL, all from
+UniProt) with golden bitscores locked to ±0.5 bit, checks the classification rule table, and
+asserts that shuffled versions of the same sequences are not called as NLRs.
 
 ## License
 

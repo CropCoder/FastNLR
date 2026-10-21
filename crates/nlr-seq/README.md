@@ -63,7 +63,7 @@ identically on both strands.
 
 | Item | Description |
 |---|---|
-| `from_file(path, fragment_length, overlap)` | sniffs gzip; plain FASTA takes the zero-copy `mmap` path, gzip takes the streaming path |
+| `from_file(path, fragment_length, overlap)` | sniffs gzip; plain FASTA uses the `mmap` path, gzip takes the streaming path |
 | `from_mmap_file` / `new` | explicit constructors for the two paths |
 | `next_sequence()` | yields fragments named `{contig}_{offset}`, uppercased, `None` at EOF |
 
@@ -86,8 +86,9 @@ assert!(frames[0].sequence.starts_with("MK"));
 
 ## Design notes
 
-- **Two ingestion paths, one behaviour.** The `mmap` path avoids a copy per fragment, while the
-  gzip path decompresses on the fly; both produce identical fragment identifiers and sequences.
+- **Two ingestion paths, one behaviour.** The `mmap` path avoids repeated file-system reads, while
+  the gzip path decompresses on the fly. Both construct owned fragment strings and uppercase them,
+  and both produce identical fragment identifiers and sequences.
 - **Fragment identifiers are the coordinate contract.** `{contig}_{offset}` is parsed by
   `nlr-cli` to recover the contig name and the fragment offset when mapping motif hits back to
   genome coordinates.

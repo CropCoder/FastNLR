@@ -2,20 +2,25 @@
 
 > 作者：Jiwen Zhao (https://github.com/CropCoder)
 > 日期：2026-09-23
-> 状态：设计定稿，待实现
-> 关联：RefPlantNLR 阳性集评测（`benchmark/metrics/goldnlr_*.csv`）
+> 状态：已实现；v1.5.x 中默认开启
+> 关联：RefPlantNLR 阳性集评测（`benchmark/metrics/refplantnlr_*.csv`）
+
+> **现行行为（2026-10-15 后）**：默认启用 category/rank 柔性播种，
+> `min_nbarc = 3`、`require_ploop = false`，并要求 NB-ARC rank **严格递增**。
+> 柔性条件与精确组合取并集；`--no-flexible-seed` 可回退到仅精确组合。
+> 下文保留设计演进和修订记录，旧的“单调不减”代码仅用于解释历史问题。
 
 ## 1. 背景与问题
 
-当前播种判定 `AnnotatorSignatureDefinition::is_seed` 对内置 motif（1..=20）采用
-**整串精确相等**（`s == seq`）。`find_seeds` 从某个 motif 起，只要相邻 motif 距离
-≤500 bp 就持续 append 进 `s`，每 append 一次查一次 `is_seed(s)`，命中即播种。
+柔性播种加入前，`AnnotatorSignatureDefinition::is_seed` 对内置 motif（1..=20）采用
+**整串精确相等**（`s == seq`）。`find_seeds` 从某个 motif 起，只要相邻 motif 的
+`dna_start` 差值 ≤500 bp 就持续 append 进 `s`，每 append 一次查一次 `is_seed(s)`，命中即播种。
 
 结果是：真实 NLR 的 motif 命中串只要与 11 条内置组合不完全一致——少一个、多一个、
 换顺序——就永远无法播种。典型反例是 RNL（helper NLR），其命中串形如
 `[6,4,10,3,2,11,11,9]`、`[4,10,7,11,...]`，不等于任何内置组合。
 
-实测后果（RefPlantNLR 400 条阳性 CDS）：
+当时的实测后果（RefPlantNLR 400 条阳性 CDS，历史数据）：
 
 | 配置 | 基因级召回 | RNL 召回（共 8 个） |
 |------|-----------|---------------------|
@@ -32,7 +37,7 @@
 内置 11 条种子组合本质上是 NB-ARC 域内 motif 按 rank 序（`[1,6,4,5,10,3,12,2]`）的
 连续片段。与其穷举这些片段，不如直接表达这条规律：
 
-> 一个片段里，若出现的 NB-ARC 类 motif 数量 ≥ min_nbarc，且它们的 rank 单调不减
+> 一个片段里，若出现的 NB-ARC 类 motif 数量 ≥ min_nbarc，且它们的 rank 严格递增
 > （按 P-loop → 末端的正确顺序），即视为种子。
 
 RNL 的 `[6,4,10,3,2]` 的 rank 是 `5,6,8,9,11`，严格递增，因此能播种。
@@ -68,8 +73,8 @@ pub fn is_seed_flexible(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> boo
         .collect();
     if nbarc.len() < cfg.min_nbarc { return false; }
     if cfg.require_ploop && !nbarc.contains(&PLOOP_MOTIF) { return false; }
-    // rank 单调不减
-    nbarc.windows(2).all(|w| self.rank(w[0]) <= self.rank(w[1]))
+    // rank 严格递增
+    nbarc.windows(2).all(|w| self.rank(w[0]) < self.rank(w[1]))
 }
 ```
 
@@ -77,7 +82,8 @@ pub fn is_seed_flexible(&self, seq: &[MotifId], cfg: &FlexibleSeedConfig) -> boo
 
 ```rust
 pub fn has_signature_flexible(&self, ids: &[MotifId], cfg: &FlexibleSeedConfig) -> bool {
-    self.has_signature(ids) || self.is_seed_flexible(ids, cfg)
+    // 预过滤面对整个片段，保留宽松判据，避免尾部重复 motif 丢弃合法种子前缀
+    self.has_signature(ids) || self.is_seed_flexible_loose(ids, cfg)
 }
 ```
 
@@ -90,7 +96,7 @@ pub fn has_signature_flexible(&self, ids: &[MotifId], cfg: &FlexibleSeedConfig) 
 |------|------|
 | `crates/nlr-core/src/signature_def.rs` | 新增 `FlexibleSeedConfig`；`AnnotatorSignatureDefinition` 加字段 `flexible_seed: Option<FlexibleSeedConfig>`、`with_flexible_seed()`、`flexible_seed()`、`is_seed_flexible()`、`has_signature_flexible()` |
 | `crates/nlr-assemble/src/lib.rs` | `find_seeds` 播种判定改为三态：`flexible_seed()` 时取 `is_seed_flexible() || is_seed()`（并集）→ 否则 `relaxed_seed_min_nbarc` → 否则 `is_seed` |
-| `crates/nlr-cli/src/lib.rs` | `RunConfig` 加 `flexible_seed: Option<FlexibleSeedConfig>`；`scan_one_fragment` 预过滤按需改用 `has_signature_flexible`；构造 `signature_def` 时注入 |
+| `crates/nlr-cli/src/lib.rs` | `RunConfig` 加 `flexible_seed: Option<FlexibleSeedConfig>`；`filter_motifs_by_signature` 按需改用 `has_signature_flexible`；构造 `signature_def` 时注入 |
 | `crates/nlr-cli/src/main.rs` | 新增 `--flexible-seed <n>` 与 `--require-ploop`，写入 `config.flexible_seed` |
 
 `find_seeds` 播种判定伪代码：
@@ -129,14 +135,14 @@ let seeded = if let Some(cfg) = def.flexible_seed() {
 ## 5. CLI 接口
 
 ```bash
-# 柔性播种：连续 3 个 NB-ARC motif 按 rank 顺序即播种
-fastnlr -i genome.fa -o out.txt --flexible-seed 3
+# 默认配置：至少 3 个 NB-ARC motif 按 rank 严格递增即播种
+fastnlr -i genome.fa -o out
 
 # 提高精度：额外要求含 P-loop
-fastnlr -i genome.fa -o out.txt --flexible-seed 3 --require-ploop
+fastnlr -i genome.fa -o out --require-ploop
 
 # 提高召回：降到 2 个 NB-ARC motif
-fastnlr -i genome.fa -o out.txt --flexible-seed 2
+fastnlr -i genome.fa -o out --flexible-seed 2
 ```
 
 ## 6. 可靠性设计
@@ -145,17 +151,17 @@ fastnlr -i genome.fa -o out.txt --flexible-seed 2
 
 | 档位 | 规则 | 召回 | 精度 |
 |------|------|------|------|
-| 精确 ID 匹配（现状默认） | `s == combo` | 低 | 高 |
-| 类别 + rank 单调（本方案） | NB-ARC≥min 且 rank 递增，可选 P-loop | 高 | 可控 |
+| 精确 ID 匹配（关闭柔性播种时） | `s == combo` | 低 | 高 |
+| 类别 + 严格递增 rank（当前默认） | NB-ARC≥min 且 rank 严格递增，可选 P-loop | 高 | 可控 |
 | 只数类别（现有 `--relaxed-seed`） | NB-ARC≥n，不看顺序 | 最高 | 最低 |
 
 可靠性保障：
 
-1. **rank 单调是强约束**：随机打中的 motif 恰好按 NB-ARC 正确顺序排列概率低；且
-   `merge_seeds` 已在用 rank 单调作为合并条件，该信号在项目内是被验证过的。
+1. **rank 严格递增是强约束**：随机打中的不同 NB-ARC motif 恰好按正确顺序排列概率低；
+   `merge_seeds` 仍使用非递减顺序合并，并允许 LRR 重排。
 2. **P-loop 可选锚点**：需要更高精度时用 `--require-ploop`。
 3. **min_nbarc 可调**：3 为默认，2 提召回，4+ 提精度。
-4. **保留既有机制**：默认仍走精确匹配，柔性播种先 opt-in，验证通过再考虑设为默认。
+4. **保留既有机制**：柔性播种与精确组合取并集，并使用 `--no-flexible-seed` 提供回退路径。
 
 ## 7. 测试计划
 
@@ -167,22 +173,24 @@ fastnlr -i genome.fa -o out.txt --flexible-seed 2
 - `is_seed_flexible(&[1,6,4], cfg)` 为 true（兼容原精确组合）
 - `has_signature_flexible` 对 RNL 串返回 true
 
-回归/验证（R 脚本，复用 `benchmark/Script5-*` 模式）：
+回归/验证（`benchmark/scripts/S3-Run-RefPlantNLR-Accuracy-V1.R`）：
 
-- 阳性集：400 条 RefPlantNLR CDS，对比 default / extended / flexible 三档的
-  基因级召回、RNL 召回、结构域一致性、过度切分。
+- 阳性集：400 条 RefPlantNLR CDS，比较严格精确基线（`--no-flexible-seed`）、当前柔性默认和
+  extended 三档的基因级召回、RNL 召回、结构域一致性、过度切分。当前 S3 中的 `dna_default`
+  与 `dna_flexible` 均启用柔性播种，结果相同，解释时不能把它们当作严格基线与柔性档的重叠。
 - 负对照：对 400 条 CDS 做打乱（保持碱基组成、破坏 NLR 信号），统计柔性播种引入的
   假阳性位点数，作为精度指标。
-- 目标：flexible 档 RNL 召回接近 8/8，且负对照假阳性不显著高于 default 档。
+- 验收重点：柔性播种不降低精确组合检出能力，并比较 RNL 召回、整体召回、架构一致性与
+  负对照假阳性。
 
 ## 8. 回滚与兼容性
 
-- 柔性播种默认关闭，所有字段用 builder 注入，旧路径（`is_seed` / `relaxed_seed`）
-  行为零改动，可随时回滚。
+- 柔性播种在 CLI 中默认开启；所有字段仍通过 builder 注入，`--no-flexible-seed` 可回退到
+  仅精确组合。
 - `require_ploop` 与 `min_nbarc` 均为独立开关，互不影响。
 
 ## 9. 记录
 
-- 评测产物：`benchmark/metrics/goldnlr_gene_table.csv`、`goldnlr_summary.csv`、
-  `goldnlr_confusion.csv`。
-- 评测图：`benchmark/figures/Fig8~Fig10-goldnlr-*.pdf`。
+- 评测产物：`benchmark/metrics/refplantnlr_gene_table.csv`、`refplantnlr_summary.csv`、
+  `refplantnlr_by_type.csv`、`refplantnlr_by_domain.csv`。
+- 评测图：`benchmark/figures/FigA1~FigA4-*.pdf`。

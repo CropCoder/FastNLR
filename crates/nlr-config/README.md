@@ -83,8 +83,9 @@ ids, rather than panicking later during scoring.
 windows with a single integer comparison, before any floating-point CDF lookup. Thresholds are
 computed once per run, at parser construction.
 
-File-backed loading uses `memmap2`, so a large profile is never copied into the heap; it is
-parsed directly out of the mapped region.
+File-backed loading uses `memmap2` for the initial read, then copies the mapped bytes into a
+`String` before parsing. The mapping avoids a separate file-read buffer but does not make the
+parsed profile allocation-free.
 
 ## Example
 

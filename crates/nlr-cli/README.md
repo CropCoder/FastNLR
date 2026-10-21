@@ -4,7 +4,7 @@
 
 This crate owns everything that is not an algorithm: argument parsing, input validation, the
 parallel scan pipeline, checkpointing, graceful interruption, run summaries and output file
-management. It links the seven library crates together and produces the `fastnlr` binary.
+management. It links the nine library crates together and produces the `fastnlr` binary.
 
 The package is published as `fastnlr`; the library target keeps the internal name `nlr_cli` so
 that in-tree imports and integration tests stay stable.
@@ -14,7 +14,7 @@ that in-tree imports and integration tests stay stable.
 | | |
 |---|---|
 | Layer | 6 (top) |
-| Depends on | `nlr-core`, `nlr-config`, `nlr-seq`, `nlr-scan`, `nlr-assemble`, `nlr-output`, `nlr-report`, `nlr-plot`, `clap`, `rayon`, `tracing`, `indicatif`, `ctrlc`, `tempfile` |
+| Depends on | `nlr-core`, `nlr-config`, `nlr-seq`, `nlr-scan`, `nlr-assemble`, `nlr-domain`, `nlr-output`, `nlr-report`, `nlr-plot`, `clap`, `rayon`, `tracing`, `indicatif`, `ctrlc`, `tempfile` |
 | Targets | binary `fastnlr`, library `nlr_cli` |
 | Embeds | `data/mot.txt` and `data/store.txt` via `include_str!` |
 
@@ -38,7 +38,7 @@ With `--protein`, `-i` is read as a protein FASTA (see [Protein mode](#protein-m
 | Motif config | `-x <mot.txt>`, `-y <store.txt>` |
 | Output | `-o <DIR>`, `--flank <bp>` (default 2000) |
 | Performance | `-t <threads>`, `-n <fragments per chunk>` (default 1000) |
-| Run control | `--checkpoint <DIR>`, `--tmpdir <DIR>` |
+| Run control | `--checkpoint <DIR>`, `--tmpdir <DIR>` (accepted, but not yet wired into the pipeline) |
 | Observability | `--progress <auto\|bar\|simple\|off>`, `--log-level <level>` |
 | Recall | `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed <n>`, `--flexible-seed <n>`, `--require-ploop` |
 | Motif library metadata | `--motif-category <ID=CAT>`, `--seed-combination <IDS>`, `--signature <IDS>` |
@@ -49,10 +49,10 @@ With `--protein`, `-i` is read as a protein FASTA (see [Protein mode](#protein-m
 `--protein` switches the input from a genome to a protein FASTA and replaces six-frame motif
 scanning with HMMER domain scanning:
 
-- **Domains** — four curated Pfam models are embedded and scored with their gathering
-  thresholds: NB-ARC (`PF00931`), TIR (`PF01582`), Rx_N (`PF18052`, CNL-type CC) and RPW8
-  (`PF05659`, RNL/helper CC). `--hmm <FILE>` adds user models; a model with the same accession
-  replaces the built-in one.
+- **Domains** — five curated Pfam models are embedded and scored with their gathering thresholds:
+  NB-ARC (`PF00931`), TIR (`PF01582`), Rx_N (`PF18052`, CNL-type CC), RPW8 (`PF05659`,
+  RNL/helper CC) and R1-type (`PF12061`, NRC-clade CC). `--hmm <FILE>` adds user models; a model
+  with the same accession replaces the built-in one.
 - **LRR** — called with the existing PWM motifs (`motif_9` / `motif_11`) rather than Pfam LRR
   models, which are far less sensitive on NLRs.
 - **Classification** — `nterm` is the N-terminal-most TIR/CC domain before the NB-ARC domain;
@@ -116,7 +116,7 @@ are still written out.
 | `motif_prelim_p` | `1e-4` | `--motif-prelim-p` |
 | `motif_categories` | empty | `--motif-category` |
 | `extra_seeds` / `extra_signatures` | empty | `--seed-combination` / `--signature` |
-| `flexible_seed` | `None` | `--flexible-seed` / `--require-ploop` |
+| `flexible_seed` | `None` in the library constructor; CLI default is `min_nbarc = 3` | `--flexible-seed` / `--require-ploop`; `--no-flexible-seed` disables it |
 
 ## Outputs
 
@@ -126,7 +126,7 @@ and `.gz`, and the following files are written into `-o`:
 | File | Writer |
 |---|---|
 | `genome.nlr.txt` | `nlr-output` |
-| `genome.nlr.gff` | `nlr-output` |
+| `genome.nlr.gff` (GFF2) | `nlr-output` |
 | `genome.nlr.bed` | `nlr-output` |
 | `genome.motifs.bed` | `nlr-output` |
 | `genome.nbarc.fasta` | `nlr-output` |
@@ -142,9 +142,11 @@ All outputs are written by default; there is no opt-in flag per format.
 - `load_checkpoint` rebuilds the pipeline from the motif TSV and assembles with
   `AssembleParams::default()`, so assembly parameters set through `RunConfig` are not replayed
   on a checkpoint-only run.
+- `--tmpdir` currently only validates and creates the requested directory. It does not change the
+  location used by the scanning, checkpoint or output stages.
 - Locus extraction reads the genome through `nlr_seq::fasta::read_all`, so peak memory for a
   full run scales with the genome size during the output stage.
-- The GFF date header uses UTC.
+- The GFF date header uses the host's local timezone.
 - Peak memory is reported on Linux (`/proc/self/status`) and macOS (`getrusage`); on other
   platforms the summary prints `n/a` instead of a misleading `0.00 MB`.
 
@@ -155,8 +157,10 @@ cargo test -p fastnlr
 ```
 
 `tests/run.rs` drives the library pipeline from synthetic DNA and asserts that motifs are
-recovered; `tests/e2e.rs` covers the scan-to-assembly path on back-translated constructs. The
-argument parser and the output-file set are not covered by automated tests yet.
+recovered; `tests/e2e.rs` covers the scan-to-assembly path on back-translated constructs.
+`tests/outputs.rs` verifies the main output files and BED block structure, while
+`tests/protein_mode.rs` and `tests/logging.rs` cover the protein-mode output set and rejection of
+conflicting genome-only flags.
 
 ## License
 
