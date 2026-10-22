@@ -55,8 +55,8 @@ identically on both strands.
 | Item | Description |
 |---|---|
 | `FastaReader::from_file(path)` | detects gzip by magic bytes (`1f 8b`) and wraps the file in a multi-member gzip decoder when needed |
-| `FastaReader::new(reader)` | reader-agnostic constructor for tests and in-memory input |
-| `read_entry()` | yields the next `BioSequence`, `None` at EOF; the description keeps the remainder of the header |
+| `FastaReader::new(reader)` | reader-agnostic constructor returning `io::Result<Self>` |
+| `read_entry()` | returns `io::Result<Option<BioSequence>>`; I/O and gzip errors are propagated |
 | `read_all(path)` | loads every entry into memory — convenient, but peak memory scales with the genome |
 
 ### `chopper::SequenceChopper`
@@ -65,7 +65,7 @@ identically on both strands.
 |---|---|
 | `from_file(path, fragment_length, overlap)` | sniffs gzip; plain FASTA uses the `mmap` path, gzip takes the streaming path |
 | `from_mmap_file` / `new` | explicit constructors for the two paths |
-| `next_sequence()` | yields fragments named `{contig}_{offset}`, uppercased, `None` at EOF |
+| `next_sequence()` | returns `io::Result<Option<BioSequence>>`; I/O errors and invalid fragment windows are propagated |
 
 Fragments advance by `fragment_length - overlap`, so consecutive fragments share `overlap` bases.
 The overlap exists to guarantee that every motif is fully contained in at least one fragment,

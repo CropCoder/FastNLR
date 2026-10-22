@@ -422,7 +422,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
       </span>
       FastNLR
-      <span class="ver">v1.5.4</span>
+      <span class="ver">v1.6.0</span>
     </a>
     <div class="nav-links">
       <a href="#install">Install</a>
@@ -550,7 +550,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.5.4/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.6.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 
@@ -671,7 +671,7 @@ cargo build --release
           <tr><td class="mono">--flank &lt;bp&gt;</td><td>Flanking bases for loci sequence extraction (default <code>2000</code>).</td></tr>
           <tr><td class="mono">-t &lt;n&gt;</td><td>Threads (default: auto-detect).</td></tr>
           <tr><td class="mono">-n &lt;n&gt;</td><td>Fragments per batch (default <code>1000</code>).</td></tr>
-          <tr><td class="mono">--checkpoint &lt;dir&gt;</td><td>Save/load motif results to skip rescan.</td></tr>
+          <tr><td class="mono">--checkpoint &lt;dir&gt;</td><td>Save/load motif results to skip rescan. A versioned <code>manifest.json</code> records input/profile hashes and all scan/assembly settings; missing, incomplete, corrupt or incompatible checkpoints fail explicitly.</td></tr>
           <tr><td class="mono">--tmpdir &lt;dir&gt;</td><td>Accepted and created, but not yet wired into the scanning, checkpoint or output stages.</td></tr>
           <tr><td class="mono">--progress &lt;auto|bar|simple|off&gt;</td><td>Progress bar (default <code>auto</code>).</td></tr>
           <tr><td class="mono">--log-level &lt;lvl&gt;</td><td>trace / debug / info / warn / error (default <code>info</code>).</td></tr>
@@ -716,7 +716,7 @@ cargo build --release
     <div class="code reveal" style="margin-top: 22px;">
       <div class="code-head"><span class="fn">&lt;prefix&gt;.nlr.gff — header</span></div>
       <pre><span class="c">##gff-version 2</span>
-<span class="c">##source-version FastNLR V1.5.4</span>
+<span class="c">##source-version FastNLR V1.6.0</span>
 <span class="c">##date 2026-10-12 15:23:36</span>
 <span class="c">##Type DNA</span></pre>
     </div>
@@ -783,7 +783,7 @@ cargo build --release
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 14-4M20 12a8 8 0 0 1-14 4M12 4v16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
         <h3>Resumable runs</h3>
-        <p><code>--checkpoint</code> saves motif results after the scan; reruns skip the expensive scanning step and go straight to assembly.</p>
+        <p><code>--checkpoint</code> saves motif results atomically after a complete scan; reruns skip the expensive scanning step and go straight to assembly. A versioned manifest rejects stale inputs, profiles, thresholds or runtime rules instead of silently reusing mismatched results.</p>
       </div>
 
       <div class="card reveal">
@@ -829,15 +829,16 @@ cargo build --release
     <div class="center reveal">
       <span class="eyebrow">Motif library</span>
       <h2 class="h2">Extended RNL / TIR library</h2>
-      <p class="lead">The default build ships the built-in 20-motif profile. The repository also
-        contains an optional library that adds eight motifs.</p>
+      <p class="lead">The default build ships 22 motif profiles: the classic 20 plus conservative
+        RNL/helper-CC profiles 21 and 23. The repository also contains the full optional
+        28-motif RNL/TIR library.</p>
     </div>
 
     <div class="table reveal" style="margin-top: 44px;">
       <table>
         <thead><tr><th>Motifs</th><th>What they add</th></tr></thead>
         <tbody>
-          <tr><td class="mono">21–24</td><td>RNL / helper-NLR N-terminal CC motifs (<code>ADR1</code>, <code>NRG1</code> and Solanaceous <code>NRC</code>).</td></tr>
+          <tr><td class="mono">21–24</td><td>RNL / helper-NLR N-terminal CC motifs (<code>ADR1</code>, <code>NRG1</code> and Solanaceous <code>NRC</code>); 21 and 23 are also present in the conservative default profile.</td></tr>
           <tr><td class="mono">25–28</td><td>TIR-family motifs, covering short and TIR-only loci that the standard <code>[18,15,13]</code> seed could miss.</td></tr>
         </tbody>
       </table>
@@ -949,8 +950,8 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <table>
         <thead><tr><th>Recall on RefPlantNLR (400 curated NLR CDS)</th><th>Gene recall</th><th>RNL / helper NLR</th></tr></thead>
         <tbody>
-          <tr><td class="mono">Default (20 motifs; flexible on)</td><td>99.75%</td><td>6 / 8</td></tr>
-          <tr><td class="mono">Flexible seed (explicit; same semantics)</td><td>99.75%</td><td>6 / 8</td></tr>
+          <tr><td class="mono">Default (22 motifs; flexible on)</td><td>99.75%</td><td>8 / 8</td></tr>
+          <tr><td class="mono">Flexible seed (explicit; same semantics)</td><td>99.75%</td><td>8 / 8</td></tr>
           <tr><td class="mono">Extended (28 motifs)</td><td>99.75%</td><td>6 / 8</td></tr>
           <tr><td class="mono">Protein mode (HMM)</td><td>99.50%</td><td>6 / 8</td></tr>
         </tbody>
@@ -975,7 +976,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
     <div class="center reveal">
       <span class="eyebrow">Correctness</span>
       <h2 class="h2">Implementation notes</h2>
-      <p class="lead">69 unit and integration tests cover coordinate mapping, six-frame translation, motif scanning, three-step assembly with tandem-repeat absorption, protein-mode domain classification, seeding rules, log formatting, and every output format.</p>
+      <p class="lead">Unit, integration and documentation tests cover coordinate mapping, six-frame translation, motif scanning, three-step assembly with tandem-repeat absorption, protein-mode domain classification, seeding rules, checkpoint integrity, strict profile parsing, and every output format.</p>
     </div>
 
     <div class="fixes">
@@ -984,7 +985,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <div class="fix reveal"><span class="idx">3</span><span class="ft">The loci FASTA applies a unified coordinate clamp on the last contig.</span></div>
       <div class="fix reveal"><span class="idx">4</span><span class="ft">The loci FASTA extracts from every contig, not only the first.</span></div>
       <div class="fix reveal"><span class="idx">5</span><span class="ft">The loci FASTA keeps extracted coordinates consistent with the reported GFF/BED coordinates.</span></div>
-      <div class="fix reveal"><span class="idx">6</span><span class="ft"><code>##date</code> reflects the current system time.</span></div>
+      <div class="fix reveal"><span class="idx">6</span><span class="ft"><code>##date</code> uses the current system time; checkpoint resumes retain the first-run timestamp for byte-identical output.</span></div>
       <div class="fix reveal"><span class="idx">7</span><span class="ft">GFF <code>##source-version</code> and <code>source</code> column relabeled <code>FastNLR</code>.</span></div>
       <div class="fix reveal"><span class="idx">8</span><span class="ft">p-value rendering in motif BED / export TSV uses scientific notation for very small values.</span></div>
     </div>

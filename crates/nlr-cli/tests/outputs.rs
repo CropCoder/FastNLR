@@ -110,4 +110,95 @@ fn outputs_have_no_duplicate_bed_blocks() {
         "nlr.txt 应为 6 列（不含 motif 编号清单），实际 {} 列: {cols:?}",
         cols.len()
     );
+    let stats = std::fs::read_to_string(out_dir.join("fixture.stats.tsv")).unwrap();
+    assert!(
+        stats.lines().any(|line| line.starts_with("family\t")),
+        "stats.tsv should include biological-family counts"
+    );
+}
+
+#[test]
+fn checkpoint_resume_is_byte_identical() {
+    let def = AnnotatorSignatureDefinition::new();
+    let protein: String = [1u8, 4, 10]
+        .iter()
+        .map(|&id| def.consensus(id))
+        .collect::<Vec<_>>()
+        .join("GGGG");
+    let dna: String = protein.chars().map(codon).collect();
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let fasta = tmp.path().join("checkpoint.fasta");
+    std::fs::write(&fasta, format!(">chr1\n{dna}\n")).unwrap();
+    let direct = tmp.path().join("direct");
+    let resume = tmp.path().join("resume");
+    let ckpt = tmp.path().join("ckpt");
+
+    let common = [
+        "-i",
+        fasta.to_str().unwrap(),
+        "-t",
+        "2",
+        "--progress",
+        "off",
+        "--no-flexible-seed",
+        "--relaxed-seed",
+        "3",
+        "--checkpoint",
+        ckpt.to_str().unwrap(),
+        "--log-level",
+        "warn",
+    ];
+    for out in [&direct, &resume] {
+        let mut args = common.to_vec();
+        args.extend(["-o", out.to_str().unwrap()]);
+        let status = Command::new(env!("CARGO_BIN_EXE_fastnlr"))
+            .args(&args)
+            .status()
+            .unwrap();
+        assert!(status.success(), "checkpoint run failed");
+    }
+
+    assert!(ckpt.join("manifest.json").is_file());
+    for suffix in [".nlr.txt", ".nlr.gff", ".nlr.bed"] {
+        let a = std::fs::read(direct.join(format!("checkpoint{suffix}"))).unwrap();
+        let b = std::fs::read(resume.join(format!("checkpoint{suffix}"))).unwrap();
+        assert_eq!(a, b, "{suffix} differs after checkpoint resume");
+    }
+}
+
+#[test]
+fn plot_write_failure_is_reported() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let fasta = tmp.path().join("plot_failure.fasta");
+    std::fs::write(&fasta, ">chr1\nATGGCTAGCTAGCTAGCTAGCTAGCTAGCTAA\n").unwrap();
+    let out_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    // 以同名普通文件占位，使 plot 输出目录无法创建。
+    std::fs::write(out_dir.join("plot_failure.plots"), b"not a directory").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_fastnlr"))
+        .args([
+            "-i",
+            fasta.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+            "-t",
+            "1",
+            "--progress",
+            "off",
+            "--log-level",
+            "warn",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "plot write failure must fail the run"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("output write failed"),
+        "plot write failure should be reported: {stderr}"
+    );
 }

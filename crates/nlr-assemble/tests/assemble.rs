@@ -47,6 +47,63 @@ fn no_seed_no_nlr() {
 }
 
 #[test]
+fn rnl_cc_ploop_seed_recovers_complete_locus() {
+    // ADR1-L1 形态：helper CC motif 位于内部命中串中，有效的精确 seed 是 [23,1]。
+    // 后续 LRR 通过 elongation 并入，最终应输出一个完整 CC-NBARC-LRR。
+    let motifs = vec![
+        dna_motif(21, 1000, Strand::Forward),
+        dna_motif(23, 1100, Strand::Forward),
+        dna_motif(1, 1500, Strand::Forward),
+        dna_motif(11, 2000, Strand::Forward),
+        dna_motif(11, 2100, Strand::Forward),
+        dna_motif(11, 2200, Strand::Forward),
+        dna_motif(11, 2300, Strand::Forward),
+    ];
+    let d = def();
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
+    assert_eq!(nlrs.len(), 1);
+    assert_eq!(nlrs[0].domain_string(&d), "CC-NBARC-LRR");
+}
+
+#[test]
+fn rnl_cc_without_ploop_does_not_seed() {
+    // 精度保护：新增补丁不能仅凭 helper CC 或“CC+LRR”造位点。
+    let motifs = vec![
+        dna_motif(21, 1000, Strand::Forward),
+        dna_motif(23, 1100, Strand::Forward),
+        dna_motif(11, 1300, Strand::Forward),
+    ];
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &def());
+    assert!(nlrs.is_empty());
+}
+
+#[test]
+fn unresolved_cc_ploop_fragment_is_suppressed() {
+    // 单个 CC 与 P-loop 可以形成 seed，但若没有 LRR/第三 motif，实际只是
+    // 200-500 bp 的片段；默认输出不应将其报告为一个独立 NLR 位点。
+    let motifs = vec![
+        dna_motif(21, 1000, Strand::Forward),
+        dna_motif(1, 1200, Strand::Forward),
+    ];
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &def());
+    assert!(nlrs.is_empty());
+}
+
+#[test]
+fn cc_ploop_with_third_motif_survives_as_partial_locus() {
+    // DAR5 形态：两个 CC motif + P-loop，虽无 LRR，但已超出无信息的两 motif 片段。
+    let motifs = vec![
+        dna_motif(21, 1000, Strand::Forward),
+        dna_motif(23, 1100, Strand::Forward),
+        dna_motif(1, 1500, Strand::Forward),
+    ];
+    let d = def();
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
+    assert_eq!(nlrs.len(), 1);
+    assert_eq!(nlrs[0].domain_string(&d), "CC-NBARC");
+}
+
+#[test]
 fn overlapping_seeds_do_not_duplicate_motifs() {
     // 间距 300/300/150/150 bp（均 <= distance_within_motif_combination = 500）会形成互相重叠的种子：
     // [1,6] 命中后，[6,4,5]、[4,5,10] 又从各自起点重复并入相同的 motif。
@@ -124,6 +181,18 @@ fn flexible_seed_still_recovers_rank_order_loci() {
 }
 
 #[test]
+fn flexible_seed_one_accepts_an_isolated_ploop() {
+    let motifs = vec![dna_motif(1, 1000, Strand::Forward)];
+    let d = def().with_flexible_seed(FlexibleSeedConfig {
+        min_nbarc: 1,
+        require_ploop: true,
+    });
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
+    assert_eq!(nlrs.len(), 1, "single P-loop should seed with min_nbarc=1");
+    assert_eq!(nlrs[0].motifs.len(), 1);
+}
+
+#[test]
 fn absorbs_nested_tandem_repeat_unit() {
     // RPP2A 形态（金标准真值 TIR-NBARC-TIR-NBARC-LRR）：串联重复的第二单元因 rank 回退
     // 无法被 merge_seeds 合并，会自成一个小位点并**嵌套在主位点跨度内**。
@@ -187,5 +256,34 @@ fn absorbs_trailing_nbarc_segment() {
     let d = def();
     let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
     assert_eq!(nlrs.len(), 1, "尾随 NB-ARC 段应被并入主位点");
+    assert_eq!(nlrs[0].domain_string(&d), "TIR-NBARC-LRR-NBARC");
+}
+
+#[test]
+fn absorbs_trailing_nbarc_segment_on_reverse_strand() {
+    let motifs = vec![
+        dna_motif(18, 3000, Strand::Reverse),
+        dna_motif(15, 2900, Strand::Reverse),
+        dna_motif(1, 2700, Strand::Reverse),
+        dna_motif(4, 2600, Strand::Reverse),
+        dna_motif(5, 2500, Strand::Reverse),
+        dna_motif(10, 2400, Strand::Reverse),
+        dna_motif(3, 2300, Strand::Reverse),
+        dna_motif(12, 2200, Strand::Reverse),
+        dna_motif(7, 2100, Strand::Reverse),
+        dna_motif(11, 2000, Strand::Reverse),
+        dna_motif(11, 1900, Strand::Reverse),
+        dna_motif(9, 1800, Strand::Reverse),
+        dna_motif(11, 1700, Strand::Reverse),
+        // Reverse-strand C-terminal tail is on the lower-coordinate side.
+        dna_motif(1, 1500, Strand::Reverse),
+        dna_motif(4, 1400, Strand::Reverse),
+        dna_motif(5, 1300, Strand::Reverse),
+        dna_motif(10, 1200, Strand::Reverse),
+        dna_motif(3, 1100, Strand::Reverse),
+    ];
+    let d = def();
+    let nlrs = assemble("chr1", motifs, &AssembleParams::default(), &d);
+    assert_eq!(nlrs.len(), 1, "reverse C-terminal tail should merge");
     assert_eq!(nlrs[0].domain_string(&d), "TIR-NBARC-LRR-NBARC");
 }

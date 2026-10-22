@@ -64,7 +64,7 @@ fn protein_mode_writes_its_own_output_set() {
         .collect();
     assert_eq!(rows.len(), 4, "fixture 应产生 4 条 NLR 候选");
     for r in &rows {
-        assert_eq!(r.len(), 10, "nlr.tsv 应为 10 列: {r:?}");
+        assert_eq!(r.len(), 11, "nlr.tsv 应为 11 列: {r:?}");
     }
     let class_of = |needle: &str| {
         rows.iter()
@@ -77,6 +77,18 @@ fn protein_mode_writes_its_own_output_set() {
     assert_eq!(class_of("ADR1_ARATH"), "CC-NBARC-LRR");
     // Prf（NRC 支系 CNL）：N 端由 PF12061(R1-type) 判定为 CC。
     assert_eq!(class_of("Q96485_SOLLC"), "CC-NBARC-LRR");
+    let family_of = |needle: &str| {
+        rows.iter()
+            .find(|r| r[0].contains(needle))
+            .map(|r| r[10])
+            .unwrap_or_else(|| panic!("nlr.tsv 中找不到 {needle}"))
+    };
+    assert_eq!(family_of("RPM1_ARATH"), "CNL");
+    assert_eq!(family_of("RPS4L_ARATH"), "TNL");
+    assert_eq!(family_of("ADR1_ARATH"), "RNL");
+    assert_eq!(family_of("Q96485_SOLLC"), "CNL");
+    let summary = std::fs::read_to_string(out_dir.join("nlr_proteins.summary.txt")).unwrap();
+    assert!(summary.contains("# NLR families (count desc):"));
 
     // domains.tsv：RPM1 的 NB-ARC 命中应通过 GA 且坐标落在蛋白范围内。
     let dom = std::fs::read_to_string(out_dir.join("nlr_proteins.domains.tsv")).unwrap();

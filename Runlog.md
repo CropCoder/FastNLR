@@ -1122,3 +1122,277 @@
   "strictly increasing rank order (a repeated motif does not qualify)"。
 - **conda 配方同步**：source sha256 更新为 v1.5.3 标签归档的校验和
   `11d6b6537abedf69afa548076c7d97cd48097ac356d6623f4ebad1c8b1d40aef`（连续两次下载校验一致）。
+
+## 2026-10-19
+
+### TAIR12 差异位点结构分析与可视化
+
+- **新增脚本**：
+  `benchmark/scripts/S12-Build-TAIR12-Differential-Locus-Structure-V1.R`（差异位点目录、GFF 基因模型、
+  HMM 域坐标、六框 ORF/motif 轨道）与
+  `benchmark/scripts/S13-Plot-TAIR12-Differential-Locus-Structure-V1.R`（主图、补充材料、中文报告）。
+  两个脚本均从仓库根目录运行，复用 S5/S6/S9 与工具对比输出，未重跑全基因组扫描，也未修改 FastNLR 核心代码。
+- **案例口径**：FastNLR default 漏检 4 个金标准基因；NLR-Annotator 漏检 14 个（4 个共同漏检 +
+  10 个 NLR-Annotator 独有漏检）；FastNLR default 未命中金标准 NLR 基因的位点 15 个（5 个
+  `gold_standard_miss` + 10 个 `fragment_call`）。补充材料共 29 个唯一案例，4 个共同漏检只在
+  Section A 展示，Section B 只放 10 个独有漏检，避免重复页面。
+- **结构分析结果**：
+  - FastNLR 的 4 个漏检中，3 个卡在 motif 扫描阈值（AT4G23440、AT4G33300、AT5G66630），
+    1 个卡在单 TIR 无法播种（AT5G45090）；extended 库恢复 AT4G33300 与 AT5G66630。
+  - NLR-Annotator 的 10 个独有漏检集中在 RNL/helper（ADR1、ADR1-L2、NRG1.1）、TIR-only 与
+    NB-only；这些基因全部能被 FastNLR default 检出，结构上对应柔性播种和 HMM 补 N 端域。
+  - FastNLR 未匹配的 15 个位点中，5 个含 P-loop 且 ORF HMM 在 GA 阈值下命中 NB-ARC/TIR，
+    形态上是完整 NLR（`gold_standard_miss`）；10 个为 151–570 bp、无 P-loop 的片段型命中
+    （5 个含终止子），注释上下文为基因间区 3、非编码基因 9、非 NLR 蛋白编码基因 3。
+- **图件与证据表**：
+  - `benchmark/figures/Fig19-TAIR12-differential-locus-structure.pdf`：5 个代表案例，每个案例
+    四层（genome/annotation、six-frame translation、FastNLR、NLR-Annotator），1 页。
+  - `benchmark/figures/FigS19-TAIR12-differential-locus-structure-all.pdf`：29 页补充材料。
+  - `benchmark/metrics/tair12_diff_{cases,gene_catalog,locus_catalog,gene_models,tool_loci,hmm_domains,sixframe_tracks,summary}.csv`
+    与 `benchmark/outputs/tair12/differential_loci/regions.fa`。
+  - `benchmark/reports/TAIR12-differential-locus-structure-V1.md`：方法口径、逐案例结构解读、
+    结构特征汇总与局限性。
+- **验证**：S12 内置断言 4/14/4/10、15/5/10、3/3/9、29 个案例；`nlr49` 必须含 P-loop 且有
+  GA 级 NB-ARC/TIR 证据，`nlr64` 必须为 169 bp 无 P-loop 片段，`AT4G33300` 必须被 extended
+  恢复，`AT5G45090` 必须归因为 `assembly_seed`。S13 输出主图 1 页、补充材料 29 页，PDF 字体为
+  嵌入的 Liberation Sans，图内无中文。`benchmark/README.md` 已同步 Part 5、S12/S13 运行命令、
+  指标表与 Fig19/FigS19 索引。
+
+## 2026-10-21
+
+### TAIR12 注释验证用 10 个 RNA-seq 样本下载
+
+- **下载目录**：`benchmark/data/TAIR12/rnaseq/candidate10/`。包含 10 个 Col-0 样本、
+  共 19 个 FASTQ 文件（9 个双端样本 + 1 个单端样本）。
+- **样本覆盖**：幼苗子叶、成熟根、莲座叶第 7 片、茎生叶、茎节间、萌发后 10 天茎尖分生组织、
+  花第 12 期、角果第 4 期、种子胚第 8 期和成熟花粉。
+- **数据来源**：9 个样本来自 E-MTAB-7978 / PRJEB32665（Mergner et al. 2020 组织图谱），
+  茎尖时间序列样本来自 E-MTAB-4202 / PRJNA268115。
+- **数据量**：压缩 FASTQ 总计 **29.70 GB**。此前按 SRA run size 估算的 16.8 GB 低估了双端
+  R1/R2 总量，已按 FASTQ `Content-Length` 修正。
+- **下载与校验**：全部 19 个文件的文件大小与 ENA 官方 `fastq_bytes` 一致，并通过 ENA/NCBI
+  官方 FASTQ MD5 校验。初次下载发现 `ERR3333396_1`、`ERR3333419_1`、`ERR3333390_1` 存在
+  CRC/长度错误；旧文件已移动到 `checksums/quarantine/` 保留，随后按官方 MD5 重新下载并通过校验。
+- **清单与日志**：
+  - `candidate10_manifest.csv`：样本、run、组织/时期、FASTQ 路径与总大小。
+  - `fastq_urls.txt` / `expected_sizes.tsv`：下载 URL 与预期大小。
+  - `checksums/official_fastq.md5` / `checksums/fastq.md5`：官方与本地 MD5。
+  - `checksums/final_md5_check.log` / `checksums/final_summary.tsv`：最终校验结果。
+  - `logs/`：aria2c 下载与重试日志。
+- **当前状态**：RNA-seq 原始数据已可用于 TAIR12 基因组回帖、转录本组装和基因模型/假基因复核；
+  尚未执行比对和注释评估。
+
+### TAIR12 RNA-seq 数据质控评估
+
+- **检查对象**：`benchmark/data/TAIR12/rnaseq/candidate10/fastq/` 下 10 个样本、19 个 FASTQ。
+- **完整性**：全部文件通过 ENA/NCBI 官方 MD5；`seqkit stats` 确认 9 个双端样本 R1/R2
+  read 数逐对相同，8 个样本为 2×76 bp，1 个为 50 bp 单端。
+- **质量评估**：使用 `work` 环境的 `fastp v1.0.1`，每个样本抽取前 100 万 reads/pairs，
+  关闭修剪与过滤评估原始质量；另跑一次仅接头去除评估。
+- **结果**：Q20 95.40%–99.00%，Q30 92.60%–96.85%，末端平均质量 Q33.3–Q38.2；
+  GC 43.81%–50.32%；接头 reads 0.22%–0.87%；双端插入片段峰值 116–121 bp。
+- **重复率**：多数样本 0.82%–8.48%；胚第 8 期 41.28%、茎尖单端 27.33%，更可能反映
+  高表达组织转录本及 PCR 重复，不支持在 FASTQ 层全局去重。
+- **判断**：数据质量足以直接进入比对/组装。无需强制质量剪切、polyG 修剪或全局去重；
+  建议仅做一次轻量接头去除和质量/长度过滤，或直接使用原始 reads 比对。正式比对后应再
+  检查唯一比对率、rRNA/细胞器 reads、覆盖度和剪接一致性。
+- **产物**：`candidate10/qc/QC_summary.md`、`qc/fastp_qc_summary.tsv`、
+  `qc/seqkit_stats.tsv`、`qc/fastp/` 与 `qc/fastp_adapter/`。
+
+### TAIR12 RNA-seq 冒烟比对与 Fig20
+
+- **样本选择**：使用 E-MTAB-7978 的 cauline leaf 样本 `ERR3333391`（45,325,673 对 2×76 bp reads）。
+  该样本在 E-MTAB-7978 gene count 矩阵中对 `AT4G33300`、`AT5G04720` 等目标基因表达最高。
+- **比对环境**：原 `work` 目录已不是有效 conda 环境，因此新建独立 `rna` 环境并安装
+  HISAT2 2.2.3 + samtools 1.24，未修改 base。
+- **索引与比对**：以 `GCA_978657495.1_TAIR12_genomic.fna` 构建 HISAT2 genome-only index；
+  使用 `--no-unal --no-mixed --no-discordant --dta`、8 线程比对全量样本。
+- **比对结果**：总比对率 **96.45%**；唯一 concordant 42,848,851 对（94.54%），多重
+  concordant 869,760 对（1.92%）；BAM 为
+  `benchmark/data/TAIR12/rnaseq/smoke_test/bam/ERR3333391_full.sorted.bam`
+  （2.2 GB，已建索引）。
+- **Fig20**：扩展 `S13` 支持可选 `--bam`，在 Annotation 与 Six-frame 之间加入 RNA-seq 轨道，
+  展示窗口内 coverage、read blocks、代表性剪接弧线、最大深度和 spliced-read 数。
+  使用 `ggrepel` 处理基因/结构域标签，并将主图每个工具轨道限制为一个 focal 标签，
+  修复原 Fig19 中的文字重叠。
+- **窗口覆盖**：5 个案例均可检出 RNA-seq 支持；例如 `AT4G33300` 窗口 34,047 条 reads、
+  9,176 条剪接 reads、最大深度 1062×；`AT5G45090` 窗口 6,547 条 reads、348 条剪接 reads；
+  `nlr64` 窗口仍有 538 条 reads。逐案例统计见
+  `benchmark/metrics/tair12_Fig20_rnaseq_coverage.csv`。
+- **产物**：
+  - `benchmark/figures/Fig20-TAIR12-RNAseq-alignment.pdf`（1 页，180×340 mm）
+  - `benchmark/data/TAIR12/rnaseq/smoke_test/README.md`
+  - `benchmark/data/TAIR12/rnaseq/smoke_test/logs/ERR3333391_flagstat.txt`
+  - `benchmark/data/TAIR12/rnaseq/reference/hisat2/TAIR12.*.ht2`
+
+### TAIR12 多组织 RNA-seq 合并比对与 Fig20 V2
+
+- **数据范围**：使用已通过 MD5 和质控检查的 10 个 Col-0 样本、19 个 FASTQ，
+  压缩数据共 29.70 GB，覆盖根、叶、茎、子叶、茎尖、花、角果、胚和花粉。
+- **比对策略**：运行 `S15-Align-TAIR12-Multitissue-RNAseq-V1.sh`，各样本以 HISAT2 2.2.3
+  比对到 TAIR12 genome-only index，samtools sort/index 后合并为 pooled BAM。该方式正确
+  处理 9 个双端库和 1 个单端库；逐 read 比对相互独立，因此合并 BAM 与先拼接 FASTQ
+  后比对得到相同的 pooled alignment set，同时保留样本级 BAM 和日志。
+- **pooled BAM**：
+  `benchmark/data/TAIR12/rnaseq/alignment/pooled/TAIR12_multitissue.pooled.sorted.bam`
+  约 19 GB，索引完整。flagstat 为 862,098,517 条 alignment records；primary
+  672,563,251、secondary 189,535,266；properly paired 630,803,174。
+- **Fig20 更新**：`S13` 的 RNA-seq 区域改为 Annotation 下方两个独立轨道：
+  第一层显示 primary、MAPQ ≥10 的代表性 read exon blocks 和不同 junction 的剪接弧线；
+  第二层显示完整窗口内的 IGV 风格 coverage histogram。coverage 由 samtools 在 C 层计算，
+  避免 R 逐 read 展开造成的长耗时。
+- **可视修正**：基因骨架增加正负链箭头；删除两工具轨道底部 2 kb 标尺；主图仅保留
+  focal 基因/位点标签并将状态移至留白区；coverage 仅显示 0、中值、最大值三个 K 单位刻度，
+  避免刻度文字互相遮挡。Fig20 尺寸更新为 180×390 mm，仍为单页 cairo PDF。
+- **窗口结果**：`AT4G33300` 窗口 278,327 条有效比对、72,622 条剪接 read、最大深度
+  7,482×；`AT5G45090` 为 43,602 / 3,238 / 1,997×；`AT5G04720` 为
+  180,592 / 64,064 / 11,594×；`nlr49` 为 98,623 / 15,124 / 1,915×；
+  `nlr64` 窗口仍有 31,382 条 reads 和 11,248 条剪接 read。逐案例统计见
+  `benchmark/metrics/tair12_Fig20_rnaseq_coverage.csv`。
+- **最终产物**：
+  - `benchmark/figures/Fig20-TAIR12-RNAseq-alignment.pdf`
+  - `benchmark/metrics/tair12_Fig20_rnaseq_coverage.csv`
+  - `benchmark/scripts/S15-Align-TAIR12-Multitissue-RNAseq-V1.sh`
+  - `benchmark/data/TAIR12/rnaseq/smoke_test/README.md`
+  - `benchmark/README.md` 的 Part 6、运行命令与 Fig20 索引
+
+### TAIR12 Fig20 单案例拆分与排版优化 V3
+
+- **单案例输出**：Fig20 的 5 个代表案例已分别输出到
+  `benchmark/figures/Fig20-TAIR12-RNAseq-alignment-panels/`，每个 PDF 独立包含
+  annotation、coverage、six-frame、FastNLR、NLR-Annotator 和图例；清单见
+  `Fig20_panel_manifest.csv`。
+- **轨道调整**：删除 RNA-seq reads blocks/arcs 轨道，仅保留 IGV 风格 coverage；
+  coverage 的 reads 与 spliced-read 统计仍写入
+  `benchmark/metrics/tair12_Fig20_rnaseq_coverage.csv`。
+- **注释与六框**：基因方向箭头移动到对应 3' 端；Six-frame 的 ORF 按与其
+  重叠最多的 motif/HMM 类型着色，包括 NB-ARC、TIR、CC、LRR、Linker 和无 motif 灰色。
+- **FastNLR 分档**：Default 与 Extended 改为上下分离的泳道组，左侧分别显示档位名称；
+  Extended 轮廓改为密集点虚线，图例同步更新。
+- **字体排版**：字体族参数改为 Arial，并增大标题、坐标轴、轨道标签和图例字号；
+  由于系统未安装微软原版 Arial，fontconfig 实际回退并嵌入 Liberation Sans。
+- **复核**：5 个单案例 PDF 均为单页、180×160 mm；总图仍为单页、180×390 mm。
+  已逐图检查字号、方向箭头、coverage 刻度、六框配色、Default/Extended 标签和文字遮挡。
+
+### TAIR12 ADR1-L1（AT4G33300）100 kb 局部漏检诊断
+
+- **局部序列**：提取 `OZ408686.1:23,130,628-23,336,715`，长度 206,088 bp，
+  覆盖 AT4G33300 基因两侧各 100 kb；同时提取局部 GFF 和代表蛋白 CAO7049742.1。
+- **HMM 复核**：816 aa 蛋白在 Pfam GA 阈值下命中 NB-ARC 63.1 bits / 6.3e-21
+  （aa 190-340）和 RPW8/CC 41.8 bits / 2.1e-14（aa 9-129），确认是完整
+  helper NLR/RNL，而非假基因或错误注释。
+- **FastNLR 五档测试**：
+  - default：局部 0 个位点，基因内 0 个保留 motif。
+  - `--flexible-seed 1 --require-ploop`：仍为 0 个位点，但保留 6 个真实 motif：
+    `motif_1,motif_11x5`；最近 motif_1→motif_11 距离约 1.5 kb，超过 seed 内
+    500 bp 检查窗口。
+  - `--flexible-seed 2`：仅恢复 855 bp 的无 P-loop `NBARC` 片段，不是正确结构。
+  - sensitive p=1e-3：形成 34,924 bp 的超大重复域合并位点，局部总位点数增至 36。
+  - extended：命中 8 个基因内 motif，`motif_21→23→1→22→11x4`，恢复
+    `CC-NBARC-LRR`；关键 seed 为相距约 402 bp 的 `motif_23→motif_1`。
+- **结论**：default 漏检归因应细化为 **default motif 库/播种组合不足**，而不是
+  简单的 PWM 扫描阈值不足。最优修复方向是把 RNL/helper CC motif 与 `CC,1`
+  播种规则纳入 default，或增加强 P-loop 到 LRR 的结构特异性播种；不建议全局
+  降到 p=1e-3。
+- **产物**：
+  - `benchmark/scripts/S16-Diagnose-TAIR12-ADR1L1-Recall-V1.R`
+  - `benchmark/reports/TAIR12-ADR1L1-recall-diagnosis-V1.md`
+  - `benchmark/outputs/tair12/diagnosis/ADR1L1_100kb/ADR1L1_100kb.fa`
+  - `benchmark/outputs/tair12/diagnosis/ADR1L1_100kb/FastNLR_config_summary.csv`
+  - `benchmark/outputs/tair12/diagnosis/ADR1L1_100kb/FastNLR_target_motifs.csv`
+
+### TAIR12 RNL-aware default 补丁
+
+- **规则修改**：默认 motif profile 从 classic 20 扩展为 22 个 profile，仅新增经过 ADR1、
+  ADR1-L2、NRG1.1、NRG1.2 和 DAR5 验证的 motif 21、23；未加入主要产生短片段的
+  motif 22、24，也未加入 TIR 扩展 25–28。
+- **播种修改**：新增 `[21,1]`、`[23,1]` 两个 CC→P-loop seed 及对应 signature。
+  经典 NB-ARC seed 仍保持整串精确匹配；CC seed 使用连续子串匹配，因而可命中
+  `[21,23,1,...]` 内部。全局 `--motif-accept-p` 保持 1e-5。
+- **精度保护**：合并/延伸后仍只有两个 motif、且无 LRR 的 `CC+P-loop` 残余片段不输出；
+  含 LRR 或第三结构 motif 的候选保留。
+- **单元与集成测试**：`cargo test --workspace --locked` 全部通过；新增 RNL seed、
+  CC 分类、完整 CC-NBARC-LRR、无 P-loop 不播种、两 motif 片段抑制和 DAR5 三 motif
+  部分位点回归测试。
+- **AT4G33300 局部验证**：100 kb 局部输入由 0 个位点恢复为 1 个完整
+  `CC-NBARC-LRR`，motif 顺序 `21,23,1,11x5`。
+- **TAIR12 全基因组回归**：位点 213→215；未匹配位点 15→15；金标准基因
+  194/198→196/198；位点精确率 92.96%→93.02%；拆分基因 12→12；融合位点 10→10；
+  complete NLR 145→146。
+- **RNL 家族变化**：AT4G33300 新增正确位点；ADR1、ADR1-L2、NRG1.1、NRG1.2
+  的基因覆盖率提高；ADR1-L3 保持 `NBARC-LRR` 不变。
+- **产物**：
+  - `benchmark/scripts/S17-Evaluate-TAIR12-RNL-Patch-V1.R`
+  - `benchmark/reports/TAIR12-RNL-default-patch-V1.md`
+  - `benchmark/metrics/tair12_rnl_patch_summary.csv`
+  - `benchmark/metrics/tair12_rnl_patch_locus_changes.csv`
+  - `benchmark/metrics/tair12_rnl_patch_rnl_genes.csv`
+  - `benchmark/outputs/tair12/fastnlr_dna_rnl_patch/`
+
+### FastNLR RNL-aware 新版本综合评估
+
+- **版本标签**：`v1.5.4-rnlpatch-20261021`。所有新评估输出使用独立版本目录和
+  `new_version_*` 指标名，未覆盖既有 S3/S6/S9/S17 baseline 文件。
+- **RefPlantNLR 400 条阳性 CDS**：补丁前后均检出 399/400；RNL 召回 8/8；
+  架构一致率 96.49%，N 端一致率 95.99%，LRR 灵敏度 99.75%，过度切分 0，
+  incomplete 7，假阴性 1。补丁前后无检测状态或架构变化。
+- **评估中发现的回归及修复**：DSC1 曾因 TIR 块后的单条 motif_21 交叉命中被误判为
+  `CC-NBARC-LRR`。N 端规则已改为：CC/TIR 同时出现时优先更大的连续结构块，规模相同
+  再取最靠近 NB-ARC 者。DSC1 恢复为 `TIR-NBARC-LRR`，RefPlantNLR 指标回到补丁前水平。
+- **TAIR12**：215 个位点，200 个匹配、15 个未匹配；检出 196/198 个金标准基因；
+  recall 98.99%，locus precision 93.02%，F1 95.91%；假阳性 15、假阴性 2；
+  split genes 12、merged loci 10、complete NLR 146。
+- **假阴性**：AT4G23440（TN17，NB-only）与 AT5G45090（PP2-A7，TIR-only）。
+- **补丁差异位点**：新增 ADR1-L1、DAR5；修改 ADR1、ADR1-L2、NRG1.1、NRG1.2
+  四个既有 helper NLR 位点。6 个差异位点均与金标准基因重叠；新增位点均具 RNL CC、
+  P-loop 和相应 HMM 证据。
+- **版本化产物**：
+  - `benchmark/scripts/S18-Evaluate-TAIR12-RNL-Version-V1.R`
+  - `benchmark/reports/FastNLR-RNL-version-evaluation-V1.md`
+  - `benchmark/metrics/new_version_refplantnlr_*_v1.5.4-rnlpatch-20261021.csv`
+  - `benchmark/metrics/new_version_tair12_*_v1.5.4-rnlpatch-20261021.csv`
+  - `benchmark/outputs/refplantnlr_accuracy/patched_default_v1_5_4_rnl/`
+  - `benchmark/outputs/tair12/fastnlr_dna_rnl_patch/`
+
+### ADR1/RNL 家族分类修正（2026-10-22）
+
+- **分类口径**：将 TAIR12 金标准从原先的“NB-ARC + CC 一律 CNL”修正为：
+  TNL = NB-ARC + TIR；RNL = NB-ARC + RPW8(PF05659)；CNL = NB-ARC + 非 RPW8 CC。
+- **金标准重算**：198 个金标准基因保持总数不变，分类更新为 TNL 98、RNL 6、CNL 21、
+  NB-only 41、TIR-only 32。ADR1、ADR1-L1、ADR1-L2、DAR5、NRG1.1、NRG1.2 均改为 RNL。
+- **软件输出**：蛋白模式 `NlrArchitecture` 新增 `family` 字段，并追加到 `.nlr.tsv` 末列。
+  ADR1 保持结构类别 `CC-NBARC-LRR`，但 `family=RNL`；RPM1 与 Prf 为 `family=CNL`。
+- **评估逻辑**：S6 通过位点内的 motif_21/23 证据区分 DNA 模式的 RNL 与 CNL；S7/S8
+  的生物学分组增加 RNL。S5/S6/S7/S8 已重新生成 canonical 指标与图件。
+- **新版本复评**：S18 使用 `v1.5.4-rnlpatch-20261022` 独立输出；TAIR12 recall 98.99%、
+  locus precision 93.02%、F1 95.91%、RNL 召回 6/6、类型一致率 87.76%；
+  FP 15、FN 2，split genes 12、merged loci 10。
+- **报告**：`benchmark/reports/FastNLR-RNL-version-evaluation-V2.md`。
+
+### FastNLR 1.6.0 运行时错误修复与回归（2026-10-22）
+
+- **checkpoint 一致性**：新增版本化 `manifest.json`（format v2），记录 FastNLR 版本、输入与
+  mot/store SHA-256、阈值、切片、全部组装参数、柔性/宽松播种及外部 motif 规则。恢复时使用
+  当前已验证的 `AssembleParams`；缺失、损坏、未完成、输入或配置不一致均直接报错。
+- **确定性修复**：checkpoint 固化首次运行时间戳，恢复时沿用；解决同一配置首次与恢复运行
+  在位点起点/分类及 GFF `##date` 上的差异。TAIR12 `--no-flexible-seed --relaxed-seed 3`
+  实跑首次与恢复均为 172 个位点，`.nlr.txt`、`.nlr.gff`、`.nlr.bed` 逐字节一致。
+- **算法修复**：单 motif 可在追加第二个 motif 前成为 seed，`--flexible-seed 1` 生效；
+  修复反向链串联尾段吸收方向；补充 Motif 与 MotifList 的 frame/ID/end/position 等确定性
+  排序键；短序列按每个 motif 的实际长度独立扫描。
+- **RNL/CNL 判定**：蛋白模式仅当真正被选中的 N 端 CC 含 PF05659 时判为 RNL，下游 RPW8
+  交叉命中不再把 Rx_N/R1 型 CNL 误判。ADR1 为 `class=CC-NBARC-LRR, family=RNL`，RPM1 为
+  `class=CC-NBARC-LRR, family=CNL`；summary 与 stats 增加 family 汇总。
+- **严格错误处理**：FASTA/chopper 传播 gzip、截断和 I/O 错误；拒绝非法窗口、线程、batch、
+  p 值、阈值倒置、空/非法/重复 seed/signature/category、未知 motif ID、非法 mot/store
+  数字、重复键及非单调 CDF；图件和依赖基因组的输出失败不再被吞掉。
+- **测试**：`cargo test --workspace --locked`、Clippy `-D warnings`、`cargo fmt --check` 和
+  `git diff --check` 全部通过；release 构建成功，`fastnlr --version` 为 `1.6.0`。
+- **RefPlantNLR 回归**：输出至
+  `benchmark/outputs/refplantnlr_accuracy/patched_default_v1_6_0_rnl/`；检出 399/400，
+  RNL 8/8，架构一致率 96.49%，过度切分 0，incomplete 7，与 1.5.4 RNL 补丁基线一致。
+- **TAIR12 回归**：输出至 `benchmark/outputs/tair12/fastnlr_dna_rnl_patch_v1_6_0/`；
+  215 个位点、匹配 200、未匹配 15、检出 196/198、locus precision 93.02%、
+  拆分基因 12、融合位点 10、complete 146；6 个金标准 RNL 全部检出。
+- **范围**：未修改 `benchmark/scripts/`，未覆盖既有评估输出。conda 版本与 SHA 待正式
+  `v1.6.0` tag 生成后更新。

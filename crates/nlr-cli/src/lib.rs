@@ -4,14 +4,53 @@
 //! user does not pass `-x` / `-y`; explicit user paths take precedence.
 
 use std::collections::HashMap;
+use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
 
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory, FlexibleSeedConfig};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// 柔性播种的默认 NB-ARC motif 门槛（`--flexible-seed` 未显式给值时生效）。
 pub const DEFAULT_FLEXIBLE_SEED_MIN_NBARC: usize = 3;
+
+const CHECKPOINT_FORMAT_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct CheckpointManifest {
+    format_version: u32,
+    fastnlr_version: String,
+    created_at: String,
+    input_sha256: String,
+    profile_sha256: String,
+    motif_accept_p: f64,
+    motif_prelim_p: f64,
+    fragment_length: usize,
+    overlap: usize,
+    distance_within_motif_combination: u64,
+    distance_for_elongating: u64,
+    distance_between_motif_combinations: u64,
+    relaxed_seed_min_nbarc: Option<usize>,
+    flexible_seed_min_nbarc: Option<usize>,
+    flexible_seed_require_ploop: bool,
+    motif_categories: Vec<(u8, String)>,
+    extra_seeds: Vec<Vec<u8>>,
+    extra_signatures: Vec<Vec<u8>>,
+    complete: bool,
+}
+
+impl CheckpointManifest {
+    /// 比较影响扫描和组装结果的配置；首次运行时间只用于固定 GFF 元数据。
+    fn compatibility_matches(&self, expected: &Self) -> bool {
+        let mut actual = self.clone();
+        let mut expected = expected.clone();
+        actual.created_at.clear();
+        expected.created_at.clear();
+        actual == expected
+    }
+}
 
 /// HMM 补充 N 端域时，位点窗口向上游外扩的碱基数（约 500 aa）。
 ///
@@ -69,7 +108,7 @@ pub fn annotate_hmm_nterm(
 
         let window = nlr_seq::translate::BioSequence::new("window", &seq[ws..we]);
         // 选「NB-ARC 命中最强」的读码框，避免误用另一位点的框。
-        let mut best: Option<(f32, Option<DomainCategory>)> = None;
+        let mut best: Option<(f32, Option<DomainCategory>, String)> = None;
         for protein in window.translate2protein() {
             let hits = scanner.scan_protein(&protein.identifier, &protein.sequence);
             let nbarc_best = hits
@@ -86,13 +125,14 @@ pub fn annotate_hmm_nterm(
                 "TIR" => Some(DomainCategory::Tir),
                 _ => None,
             };
-            if best.as_ref().is_none_or(|(b, _)| nbarc_best > *b) {
-                best = Some((nbarc_best, nterm));
+            if best.as_ref().is_none_or(|(b, _, _)| nbarc_best > *b) {
+                best = Some((nbarc_best, nterm, arch.family));
             }
         }
 
-        if let Some((_, Some(category))) = best {
+        if let Some((_, Some(category), family)) = best {
             list.set_hmm_nterm(category);
+            list.set_hmm_family(family);
             annotated += 1;
         }
     }
@@ -161,44 +201,150 @@ pub struct RunConfig {
 }
 
 impl RunConfig {
-    /// Parse motif id lists such as "21,4" or "21,4,6"
-    /// (comma-separated combinations).
-    fn parse_id_lists(list: &[String]) -> Vec<Vec<u8>> {
-        let mut out = Vec::new();
-        for item in list {
-            for combo in item.split(';') {
-                let ids: Vec<u8> = combo
-                    .split(',')
-                    .filter_map(|x| x.trim().parse::<u8>().ok())
-                    .collect();
-                if ids.len() >= 2 {
-                    out.push(ids);
-                }
+    pub fn validate(&self) -> std::io::Result<()> {
+        let invalid =
+            |message: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
+        if self.fragment_length == 0 {
+            return Err(invalid("fragment_length must be greater than 0".into()));
+        }
+        if self.overlap >= self.fragment_length {
+            return Err(invalid(format!(
+                "overlap ({}) must be smaller than fragment_length ({})",
+                self.overlap, self.fragment_length
+            )));
+        }
+        if self.threads == 0 {
+            return Err(invalid("thread count must be greater than 0".into()));
+        }
+        if self.seqs_per_thread == 0 {
+            return Err(invalid("batch size must be greater than 0".into()));
+        }
+        for (name, p) in [
+            ("motif_accept_p", self.motif_accept_p),
+            ("motif_prelim_p", self.motif_prelim_p),
+        ] {
+            if !p.is_finite() || p <= 0.0 || p > 1.0 {
+                return Err(invalid(format!("{name} must be finite and within (0,1]")));
             }
         }
-        out
+        if self.motif_prelim_p < self.motif_accept_p {
+            return Err(invalid(format!(
+                "motif_prelim_p ({}) must be >= motif_accept_p ({})",
+                self.motif_prelim_p, self.motif_accept_p
+            )));
+        }
+        if let Some(cfg) = self.flexible_seed {
+            if cfg.min_nbarc == 0 {
+                return Err(invalid("flexible seed min_nbarc must be >= 1".into()));
+            }
+        }
+        if matches!(self.assemble.relaxed_seed_min_nbarc, Some(0)) {
+            return Err(invalid("relaxed seed min_nbarc must be >= 1".into()));
+        }
+        Ok(())
+    }
+
+    /// Parse motif id lists such as "21,4" or "21,4,6"
+    /// (comma-separated combinations).
+    fn parse_id_lists(list: &[String], label: &str) -> std::io::Result<Vec<Vec<u8>>> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for item in list {
+            for combo in item.split(';') {
+                let combo = combo.trim();
+                if combo.is_empty() {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("{label} rule must not be empty"),
+                    ));
+                }
+                let mut ids = Vec::new();
+                for part in combo.split(',') {
+                    let id = part.trim().parse::<u8>().map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("invalid {label} motif id: {part}"),
+                        )
+                    })?;
+                    if id == 0 {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("{label} motif id must be >= 1"),
+                        ));
+                    }
+                    ids.push(id);
+                }
+                if ids.len() < 2 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("{label} rule requires at least 2 motif ids: {combo}"),
+                    ));
+                }
+                if !seen.insert(ids.clone()) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("duplicate {label} rule: {combo}"),
+                    ));
+                }
+                out.push(ids);
+            }
+        }
+        Ok(out)
     }
 
     /// Parse --motif-category "ID=CAT" entries (CAT in NBARC/LRR/TIR/CC/LINKER/NA).
-    fn parse_motif_categories(list: &[String]) -> std::collections::HashMap<u8, DomainCategory> {
+    fn parse_motif_categories(
+        list: &[String],
+    ) -> std::io::Result<std::collections::HashMap<u8, DomainCategory>> {
         let mut m = std::collections::HashMap::new();
         for item in list {
             for kv in item.split(',') {
                 let kv = kv.trim();
                 if kv.is_empty() {
-                    continue;
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "motif category entry must not be empty",
+                    ));
                 }
                 if let Some((id, cat)) = kv.split_once('=') {
-                    if let Ok(id) = id.trim().parse::<u8>() {
-                        m.insert(
-                            id,
-                            DomainCategory::parse(cat.trim().to_uppercase().as_str()),
-                        );
+                    let id = id.trim().parse::<u8>().map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("invalid motif category id: {id}"),
+                        )
+                    })?;
+                    if id == 0 {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "motif category id must be >= 1",
+                        ));
                     }
+                    let cat = cat.trim().to_uppercase();
+                    if !matches!(
+                        cat.as_str(),
+                        "NBARC" | "LRR" | "TIR" | "CC" | "LINKER" | "NA"
+                    ) {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("invalid motif category: {cat}"),
+                        ));
+                    }
+                    if m.contains_key(&id) {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            format!("duplicate motif category for motif_{id}"),
+                        ));
+                    }
+                    m.insert(id, DomainCategory::parse(&cat));
+                } else {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("invalid motif category entry: {kv}"),
+                    ));
                 }
             }
         }
-        m
+        Ok(m)
     }
 
     pub fn new(
@@ -228,12 +374,68 @@ impl RunConfig {
     }
 }
 
+fn sha256_file(path: &std::path::Path) -> std::io::Result<String> {
+    let mut reader = BufReader::new(std::fs::File::open(path)?);
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn build_checkpoint_manifest(
+    config: &RunConfig,
+    mot_text: &str,
+    store_text: &str,
+    categories: &HashMap<u8, DomainCategory>,
+    seeds: &[Vec<u8>],
+    signatures: &[Vec<u8>],
+) -> std::io::Result<CheckpointManifest> {
+    let mut profile_hasher = Sha256::new();
+    profile_hasher.update(mot_text.as_bytes());
+    profile_hasher.update([0]);
+    profile_hasher.update(store_text.as_bytes());
+    let mut motif_categories: Vec<(u8, String)> = categories
+        .iter()
+        .map(|(&id, &category)| (id, category.as_str().to_string()))
+        .collect();
+    motif_categories.sort_by_key(|(id, _)| *id);
+    Ok(CheckpointManifest {
+        format_version: CHECKPOINT_FORMAT_VERSION,
+        fastnlr_version: env!("CARGO_PKG_VERSION").to_string(),
+        created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        input_sha256: sha256_file(&config.input_fasta)?,
+        profile_sha256: format!("{:x}", profile_hasher.finalize()),
+        motif_accept_p: config.motif_accept_p,
+        motif_prelim_p: config.motif_prelim_p,
+        fragment_length: config.fragment_length,
+        overlap: config.overlap,
+        distance_within_motif_combination: config.assemble.distance_within_motif_combination,
+        distance_for_elongating: config.assemble.distance_for_elongating,
+        distance_between_motif_combinations: config.assemble.distance_between_motif_combinations,
+        relaxed_seed_min_nbarc: config.assemble.relaxed_seed_min_nbarc,
+        flexible_seed_min_nbarc: config.flexible_seed.map(|cfg| cfg.min_nbarc),
+        flexible_seed_require_ploop: config.flexible_seed.is_some_and(|cfg| cfg.require_ploop),
+        motif_categories,
+        extra_seeds: seeds.to_vec(),
+        extra_signatures: signatures.to_vec(),
+        complete: true,
+    })
+}
+
 /// Run result (for CLI output).
 pub struct RunResult {
     pub nlrs: Vec<MotifList>,
     /// All motifs grouped by DNA sequence id (for `-m` / `-c` output).
     pub motifs_by_seq: HashMap<String, Vec<Motif>>,
     pub def: AnnotatorSignatureDefinition,
+    /// Checkpoint-fixed GFF timestamp; `None` uses the current local time.
+    pub gff_date: Option<String>,
 }
 
 /// Core orchestration: input FASTA -> chop -> six-frame translation -> scan -> coord map -> assemble.
@@ -248,6 +450,7 @@ pub fn run_with_progress(
     config: &RunConfig,
     progress: Option<&indicatif::ProgressBar>,
 ) -> std::io::Result<RunResult> {
+    config.validate()?;
     // Interrupt flag (SIGINT graceful shutdown).
     let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let interrupted_flag = interrupted.clone();
@@ -258,13 +461,44 @@ pub fn run_with_progress(
     });
 
     // 1. Load config (Arc-shared across threads). User paths take precedence over built-in.
-    let def_cfg = load_motif_definition(config)?;
+    let (mot_text, store_text) = load_profile_text(&config.mot_file, &config.store_file)?;
+    let def_cfg = nlr_config::MotifDefinition::load_from_str(&mot_text, &store_text)?;
+    let motif_categories = RunConfig::parse_motif_categories(&config.motif_categories)?;
+    let extra_seeds = RunConfig::parse_id_lists(&config.extra_seeds, "seed")?;
+    let extra_signatures = RunConfig::parse_id_lists(&config.extra_signatures, "signature")?;
+    for &id in motif_categories.keys() {
+        if !def_cfg.has_motif(id) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("motif category refers to unknown motif_{id}"),
+            ));
+        }
+    }
+    for (label, rules) in [("seed", &extra_seeds), ("signature", &extra_signatures)] {
+        for rule in rules {
+            if let Some(id) = rule.iter().find(|&&id| !def_cfg.has_motif(id)) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("{label} rule refers to unknown motif_{id}"),
+                ));
+            }
+        }
+    }
+    let checkpoint_manifest = if config.checkpoint_dir.is_some() {
+        Some(build_checkpoint_manifest(
+            config,
+            &mot_text,
+            &store_text,
+            &motif_categories,
+            &extra_seeds,
+            &extra_signatures,
+        )?)
+    } else {
+        None
+    };
     let mut signature_def = AnnotatorSignatureDefinition::new()
-        .with_extra_categories(RunConfig::parse_motif_categories(&config.motif_categories))
-        .with_extra_rules(
-            RunConfig::parse_id_lists(&config.extra_seeds),
-            RunConfig::parse_id_lists(&config.extra_signatures),
-        );
+        .with_extra_categories(motif_categories)
+        .with_extra_rules(extra_seeds, extra_signatures);
     if let Some(cfg) = config.flexible_seed {
         signature_def = signature_def.with_flexible_seed(cfg);
     }
@@ -277,7 +511,14 @@ pub fn run_with_progress(
 
     // 1.5 Checkpoint resume: if a checkpoint exists, assemble and return (skip scan).
     if let Some(dir) = &config.checkpoint_dir {
-        if let Some(existing) = load_checkpoint(dir, signature_def.clone())? {
+        if let Some(existing) = load_checkpoint(
+            dir,
+            signature_def.clone(),
+            &config.assemble,
+            checkpoint_manifest
+                .as_ref()
+                .expect("checkpoint manifest exists"),
+        )? {
             return Ok(existing);
         }
     }
@@ -307,7 +548,7 @@ pub fn run_with_progress(
         // Pull a chunk of fragments from the chopper (streaming).
         let mut chunk: Vec<nlr_seq::translate::BioSequence> = Vec::with_capacity(chunk_size);
         while chunk.len() < chunk_size {
-            match chopper.next_sequence() {
+            match chopper.next_sequence()? {
                 Some(f) => chunk.push(f),
                 None => break,
             }
@@ -398,11 +639,22 @@ pub fn run_with_progress(
         nlrs,
         motifs_by_seq,
         def: signature_def,
+        gff_date: checkpoint_manifest
+            .as_ref()
+            .map(|manifest| manifest.created_at.clone()),
     };
 
-    // 6. Save checkpoint (if configured).
+    // 6. Save checkpoint only after a complete, non-interrupted scan.
     if let Some(dir) = &config.checkpoint_dir {
-        let _ = save_checkpoint(dir, &result);
+        if !interrupted.load(std::sync::atomic::Ordering::SeqCst) {
+            save_checkpoint(
+                dir,
+                &result,
+                checkpoint_manifest
+                    .as_ref()
+                    .expect("checkpoint manifest exists"),
+            )?;
+        }
     }
 
     Ok(result)
@@ -435,12 +687,6 @@ fn scan_one_fragment(
         }
     }
     out
-}
-
-/// Resolve mot/store sources (user path takes precedence over built-in) and load MotifDefinition.
-fn load_motif_definition(config: &RunConfig) -> std::io::Result<nlr_config::MotifDefinition> {
-    let (mot_str, store_str) = load_profile_text(&config.mot_file, &config.store_file)?;
-    nlr_config::MotifDefinition::load_from_str(&mot_str, &store_str)
 }
 
 /// 读取 mot/store 文本：用户路径优先，否则回落到编译期内嵌的默认配置。
@@ -589,26 +835,96 @@ pub fn all_motifs(result: &RunResult) -> Vec<Motif> {
 }
 
 /// Save checkpoint: write motif results in `-c` TSV format into the checkpoint directory.
-pub fn save_checkpoint(dir: &std::path::Path, result: &RunResult) -> std::io::Result<()> {
+fn save_checkpoint(
+    dir: &std::path::Path,
+    result: &RunResult,
+    manifest: &CheckpointManifest,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     let path = dir.join("motifs.tsv");
-    let mut f = std::fs::File::create(&path)?;
+    let manifest_path = dir.join("manifest.json");
+    let nonce = std::process::id();
+    let motifs_tmp = dir.join(format!(".motifs.tsv.tmp-{nonce}"));
+    let manifest_tmp = dir.join(format!(".manifest.json.tmp-{nonce}"));
+
+    let mut f = std::fs::File::create(&motifs_tmp)?;
     nlr_output::export_motifs(&mut f, &all_motifs(result))?;
+    f.sync_all()?;
+    let mut manifest_file = std::fs::File::create(&manifest_tmp)?;
+    manifest_file.write_all(&serde_json::to_vec_pretty(manifest)?)?;
+    manifest_file.sync_all()?;
+    std::fs::rename(&motifs_tmp, &path)?;
+    std::fs::rename(&manifest_tmp, &manifest_path)?;
     tracing::info!("checkpoint saved: {}", path.display());
     Ok(())
 }
 
 /// Load checkpoint: read motif results from the checkpoint directory.
-pub fn load_checkpoint(
+fn load_checkpoint(
     dir: &std::path::Path,
     def: AnnotatorSignatureDefinition,
+    assemble_params: &nlr_assemble::AssembleParams,
+    expected_manifest: &CheckpointManifest,
 ) -> std::io::Result<Option<RunResult>> {
     let path = dir.join("motifs.tsv");
-    if !path.exists() {
+    let manifest_path = dir.join("manifest.json");
+    if !path.exists() && !manifest_path.exists() {
         return Ok(None);
     }
+    if !path.exists() || !manifest_path.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "incomplete checkpoint in {}: motifs.tsv and manifest.json must both exist",
+                dir.display()
+            ),
+        ));
+    }
+    let manifest: CheckpointManifest = serde_json::from_slice(&std::fs::read(&manifest_path)?)
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "cannot parse checkpoint manifest {}: {e}",
+                    manifest_path.display()
+                ),
+            )
+        })?;
+    if manifest.format_version != CHECKPOINT_FORMAT_VERSION {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "checkpoint format {} is incompatible with supported format {}",
+                manifest.format_version, CHECKPOINT_FORMAT_VERSION
+            ),
+        ));
+    }
+    if !manifest.complete {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "checkpoint is marked incomplete",
+        ));
+    }
+    if !manifest.compatibility_matches(expected_manifest) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "checkpoint is incompatible with the current input, motif profiles, thresholds, or assembly parameters: {}",
+                dir.display()
+            ),
+        ));
+    }
+    if chrono::NaiveDateTime::parse_from_str(&manifest.created_at, "%Y-%m-%d %H:%M:%S").is_err() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "checkpoint manifest {} contains an invalid created_at timestamp",
+                manifest_path.display()
+            ),
+        ));
+    }
     let text = std::fs::read_to_string(&path)?;
-    let motifs = nlr_output::import_motifs(&text);
+    let motifs = nlr_output::import_motifs(&text)?;
     let mut motifs_by_seq: HashMap<String, Vec<Motif>> = HashMap::new();
     for m in motifs {
         let seq = m.dna_sequence_id.clone().unwrap_or_default();
@@ -624,8 +940,7 @@ pub fn load_checkpoint(
     seq_ids.sort();
     for seq_id in seq_ids {
         let ms = motifs_by_seq.get(seq_id).unwrap().clone();
-        let mut assembled =
-            nlr_assemble::assemble(seq_id, ms, &nlr_assemble::AssembleParams::default(), &def);
+        let mut assembled = nlr_assemble::assemble(seq_id, ms, assemble_params, &def);
         nlrs.append(&mut assembled);
     }
     tracing::info!("checkpoint loaded: {} sequences", motifs_by_seq.len());
@@ -633,6 +948,7 @@ pub fn load_checkpoint(
         nlrs,
         motifs_by_seq,
         def,
+        gff_date: Some(manifest.created_at),
     }))
 }
 
@@ -670,6 +986,32 @@ impl ProteinConfig {
             motif_accept_p: 1e-5,
             motif_prelim_p: 1e-4,
         }
+    }
+
+    pub fn validate(&self) -> std::io::Result<()> {
+        let invalid =
+            |message: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
+        if self.threads == 0 {
+            return Err(invalid("thread count must be greater than 0".into()));
+        }
+        if self.batch == 0 {
+            return Err(invalid("batch size must be greater than 0".into()));
+        }
+        for (name, p) in [
+            ("motif_accept_p", self.motif_accept_p),
+            ("motif_prelim_p", self.motif_prelim_p),
+        ] {
+            if !p.is_finite() || p <= 0.0 || p > 1.0 {
+                return Err(invalid(format!("{name} must be finite and within (0,1]")));
+            }
+        }
+        if self.motif_prelim_p < self.motif_accept_p {
+            return Err(invalid(format!(
+                "motif_prelim_p ({}) must be >= motif_accept_p ({})",
+                self.motif_prelim_p, self.motif_accept_p
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -713,6 +1055,7 @@ pub fn run_protein(
     config: &ProteinConfig,
     progress: Option<&indicatif::ProgressBar>,
 ) -> std::io::Result<ProteinResult> {
+    config.validate()?;
     // 1) 模型库：内置 4 个精选 Pfam 模型 + 用户 --hmm 覆盖/追加。
     let mut library = nlr_domain::HmmLibrary::from_embedded();
     for path in &config.hmm_files {
@@ -748,7 +1091,7 @@ pub fn run_protein(
     loop {
         let mut batch: Vec<nlr_seq::translate::BioSequence> = Vec::with_capacity(batch_size);
         while batch.len() < batch_size {
-            match reader.read_entry() {
+            match reader.read_entry()? {
                 Some(seq) => batch.push(seq),
                 None => break,
             }
@@ -870,9 +1213,10 @@ pub fn write_protein_outputs(
     let mut f = std::fs::File::create(&p)?;
     writeln!(
         f,
-        "#protein_id\tlength\tclass\tnterm\thas_nbarc\thas_tir\thas_lrr\tcomplete\tn_domains\tdomains"
+        "#protein_id\tlength\tclass\tnterm\thas_nbarc\thas_tir\thas_lrr\tcomplete\tn_domains\tdomains\tfamily"
     )?;
     let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut family_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut model_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut nlr_total = 0usize;
     let mut complete_total = 0usize;
@@ -892,6 +1236,7 @@ pub fn write_protein_outputs(
             complete_total += 1;
         }
         *type_counts.entry(r.arch.class.clone()).or_default() += 1;
+        *family_counts.entry(r.arch.family.clone()).or_default() += 1;
 
         // 结构域摘要：HMM 通过 GA 的命中 + LRR 位点，按起点排序。
         let mut items: Vec<(usize, String)> = passed
@@ -911,7 +1256,7 @@ pub fn write_protein_outputs(
             .join(";");
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.id,
             r.length,
             r.arch.class,
@@ -921,7 +1266,8 @@ pub fn write_protein_outputs(
             r.arch.has_lrr,
             r.arch.complete,
             items.len(),
-            domains
+            domains,
+            r.arch.family
         )?;
     }
     written.push(p);
@@ -930,24 +1276,22 @@ pub fn write_protein_outputs(
     let plot_dir = output_dir.join(format!("{prefix}.plots"));
     std::fs::create_dir_all(&plot_dir)?;
     let p1 = plot_dir.join("01-nlr-types.png");
-    if let Err(e) = nlr_plot::plot_counts(
+    nlr_plot::plot_counts(
         &p1,
         "NLR types (protein mode)",
         "protein count",
         &type_counts,
-    ) {
-        tracing::warn!("NLR type plot generation failed: {e}");
-    }
+    )
+    .map_err(|e| std::io::Error::other(e.to_string()))?;
     written.push(p1);
     let p2 = plot_dir.join("02-domain-counts.png");
-    if let Err(e) = nlr_plot::plot_counts(
+    nlr_plot::plot_counts(
         &p2,
         "Domain hits (protein mode)",
         "hit count",
         &model_counts,
-    ) {
-        tracing::warn!("domain count plot generation failed: {e}");
-    }
+    )
+    .map_err(|e| std::io::Error::other(e.to_string()))?;
     written.push(p2);
 
     // 运行摘要。
@@ -974,6 +1318,12 @@ pub fn write_protein_outputs(
     types.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
     for (class, count) in types {
         let _ = writeln!(s, "# {}\t{}", count, class);
+    }
+    let _ = writeln!(s, "# NLR families (count desc):");
+    let mut families: Vec<(&String, &usize)> = family_counts.iter().collect();
+    families.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    for (family, count) in families {
+        let _ = writeln!(s, "# {}\t{}", count, family);
     }
     let _ = writeln!(s, "# output files:");
     for path in &written {
@@ -1028,5 +1378,199 @@ mod tests {
         // --no-flexible-seed 回退到仅精确组合。
         assert!(resolve_flexible_seed(None, true, false).is_none());
         assert!(resolve_flexible_seed(Some(2), true, false).is_none());
+    }
+
+    #[test]
+    fn run_config_rejects_invalid_windows_and_thresholds() {
+        let mut config = RunConfig::new(PathBuf::from("input.fa"), None, None);
+        config.overlap = config.fragment_length;
+        assert!(config.validate().is_err());
+
+        let mut config = RunConfig::new(PathBuf::from("input.fa"), None, None);
+        config.motif_accept_p = 1e-3;
+        config.motif_prelim_p = 1e-5;
+        assert!(config.validate().is_err());
+
+        let mut config = RunConfig::new(PathBuf::from("input.fa"), None, None);
+        config.threads = 0;
+        assert!(config.validate().is_err());
+    }
+
+    fn checkpoint_motif(id: u8, start: u64) -> Motif {
+        let mut motif = Motif::new_protein(id, "chr1".to_string(), 1, "AAA".to_string(), 1e-6);
+        motif.set_dna("chr1".to_string(), start, 20_000, 0, Strand::Forward);
+        motif
+    }
+
+    fn manifest_for(config: &RunConfig) -> CheckpointManifest {
+        build_checkpoint_manifest(
+            config,
+            EMBEDDED_MOT,
+            EMBEDDED_STORE,
+            &HashMap::new(),
+            &[],
+            &[],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn checkpoint_roundtrip_uses_saved_runtime_rules() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let input = tmp.path().join("input.fa");
+        std::fs::write(&input, ">chr1\nACGTACGTACGT\n").unwrap();
+        let ckpt = tmp.path().join("ckpt");
+
+        let mut config = RunConfig::new(input, None, None);
+        config.assemble.relaxed_seed_min_nbarc = Some(3);
+        let manifest = manifest_for(&config);
+        let motifs = vec![
+            checkpoint_motif(1, 1000),
+            checkpoint_motif(4, 1100),
+            checkpoint_motif(10, 1200),
+        ];
+        let mut by_seq = HashMap::new();
+        by_seq.insert("chr1".to_string(), motifs);
+        let result = RunResult {
+            nlrs: Vec::new(),
+            motifs_by_seq: by_seq,
+            def: AnnotatorSignatureDefinition::new(),
+            gff_date: None,
+        };
+        save_checkpoint(&ckpt, &result, &manifest).unwrap();
+
+        let loaded = load_checkpoint(
+            &ckpt,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &manifest,
+        )
+        .unwrap()
+        .expect("checkpoint should load");
+        assert_eq!(
+            loaded.nlrs.len(),
+            1,
+            "relaxed runtime seeding rules must be used"
+        );
+        assert_eq!(
+            loaded.gff_date.as_deref(),
+            Some(manifest.created_at.as_str())
+        );
+    }
+
+    #[test]
+    fn checkpoint_rejects_mismatched_rules_and_old_layout() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let input = tmp.path().join("input.fa");
+        std::fs::write(&input, ">chr1\nACGTACGTACGT\n").unwrap();
+        let ckpt = tmp.path().join("ckpt");
+        let mut config = RunConfig::new(input.clone(), None, None);
+        config.assemble.relaxed_seed_min_nbarc = Some(3);
+        let manifest = manifest_for(&config);
+        let result = RunResult {
+            nlrs: Vec::new(),
+            motifs_by_seq: HashMap::new(),
+            def: AnnotatorSignatureDefinition::new(),
+            gff_date: None,
+        };
+        save_checkpoint(&ckpt, &result, &manifest).unwrap();
+
+        config.motif_accept_p = 1e-3;
+        config.motif_prelim_p = 1e-2;
+        let changed = manifest_for(&config);
+        let err = load_checkpoint(
+            &ckpt,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &changed,
+        )
+        .err()
+        .expect("mismatched checkpoint should fail");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+
+        let old = tmp.path().join("old");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("motifs.tsv"), "").unwrap();
+        assert!(load_checkpoint(
+            &old,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &changed,
+        )
+        .is_err());
+
+        let mut incomplete = manifest_for(&config);
+        incomplete.complete = false;
+        std::fs::write(
+            ckpt.join("manifest.json"),
+            serde_json::to_vec_pretty(&incomplete).unwrap(),
+        )
+        .unwrap();
+        let err = load_checkpoint(
+            &ckpt,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &incomplete,
+        )
+        .err()
+        .expect("incomplete checkpoint should fail");
+        assert!(err.to_string().contains("incomplete"));
+    }
+
+    #[test]
+    fn checkpoint_rejects_changed_input_and_corrupt_manifest() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let input = tmp.path().join("input.fa");
+        std::fs::write(&input, ">chr1\nACGTACGTACGT\n").unwrap();
+        let ckpt = tmp.path().join("ckpt");
+        let config = RunConfig::new(input.clone(), None, None);
+        let manifest = manifest_for(&config);
+        let result = RunResult {
+            nlrs: Vec::new(),
+            motifs_by_seq: HashMap::new(),
+            def: AnnotatorSignatureDefinition::new(),
+            gff_date: None,
+        };
+        save_checkpoint(&ckpt, &result, &manifest).unwrap();
+
+        std::fs::write(&input, ">chr1\nACGTACGTACGA\n").unwrap();
+        let changed_input = manifest_for(&config);
+        let err = load_checkpoint(
+            &ckpt,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &changed_input,
+        )
+        .err()
+        .expect("changed input must reject the checkpoint");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+
+        std::fs::write(ckpt.join("manifest.json"), b"{not-json").unwrap();
+        let err = load_checkpoint(
+            &ckpt,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &changed_input,
+        )
+        .err()
+        .expect("corrupt manifest must be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+
+        let mut invalid_timestamp = changed_input.clone();
+        invalid_timestamp.created_at = "not-a-timestamp".to_string();
+        std::fs::write(
+            ckpt.join("manifest.json"),
+            serde_json::to_vec_pretty(&invalid_timestamp).unwrap(),
+        )
+        .unwrap();
+        let err = load_checkpoint(
+            &ckpt,
+            AnnotatorSignatureDefinition::new(),
+            &config.assemble,
+            &changed_input,
+        )
+        .err()
+        .expect("invalid timestamp must be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
     }
 }

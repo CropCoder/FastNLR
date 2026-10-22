@@ -344,7 +344,26 @@ pub fn export_motifs<W: Write>(w: &mut W, motifs: &[Motif]) -> std::io::Result<(
     Ok(())
 }
 
-/// Motif TSV import (`-c` import): parse line by line.
-pub fn import_motifs(lines: &str) -> Vec<Motif> {
-    lines.lines().filter_map(Motif::from_export_line).collect()
+/// Motif TSV import (`-c` import): parse line by line and reject malformed rows.
+pub fn import_motifs(lines: &str) -> std::io::Result<Vec<Motif>> {
+    let mut motifs = Vec::new();
+    for (idx, line) in lines.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let motif = Motif::from_export_line(line).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid checkpoint motif line {}", idx + 1),
+            )
+        })?;
+        if !motif.dna_parameters_set {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("checkpoint motif line {} lacks DNA coordinates", idx + 1),
+            ));
+        }
+        motifs.push(motif);
+    }
+    Ok(motifs)
 }

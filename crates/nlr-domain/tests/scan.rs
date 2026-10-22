@@ -94,6 +94,7 @@ fn embedded_models_find_expected_domain_architecture() {
                 );
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
+                assert_eq!(arch.family, "CNL");
                 assert!(arch.has_nbarc && !arch.has_lrr && !arch.complete);
             }
             "RPS4L_ARATH" => {
@@ -122,6 +123,7 @@ fn embedded_models_find_expected_domain_architecture() {
                 );
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
+                assert_eq!(arch.family, "RNL");
             }
             "Q96485_SOLLC" => {
                 // Prf（番茄）：NRC 支系 CNL，N 端为 R1 型结构域（PF12061），无 PF18052/PF05659 命中。
@@ -179,8 +181,30 @@ fn classification_rules() {
     ];
     let a = classify(&hits, 3);
     assert_eq!(a.class, "CC-NBARC-LRR");
+    assert_eq!(a.family, "CNL");
     assert_eq!(a.nterm, "CC");
     assert!(a.is_nlr && a.complete);
+
+    // A downstream RPW8 cross-hit must not turn an Rx_N-driven CNL into RNL.
+    let with_acc = |acc: &str, cat: DomainCategory, start: usize, end: usize| DomainHit {
+        protein_id: "p".into(),
+        model_acc: acc.into(),
+        model_name: "m".into(),
+        category: cat,
+        start,
+        end,
+        bitscore: 50.0,
+        pvalue: 1e-20,
+        passed: true,
+    };
+    let hits = vec![
+        with_acc("PF18052", DomainCategory::Cc, 10, 100),
+        with_acc("PF00931", DomainCategory::Nbarc, 150, 350),
+        with_acc("PF05659", DomainCategory::Cc, 500, 600),
+    ];
+    let a = classify(&hits, 3);
+    assert_eq!(a.class, "CC-NBARC-LRR");
+    assert_eq!(a.family, "CNL");
 
     // TIR-NBARC（无 LRR）
     let hits = vec![
@@ -189,18 +213,21 @@ fn classification_rules() {
     ];
     let a = classify(&hits, 0);
     assert_eq!(a.class, "TIR-NBARC");
+    assert_eq!(a.family, "TNL");
     assert_eq!(a.nterm, "TIR");
     assert!(!a.complete && a.is_nlr);
 
     // NBARC-LRR（无 N 端结构域）
     let a = classify(&[mk(DomainCategory::Nbarc, 100, 300, true)], 2);
     assert_eq!(a.class, "NBARC-LRR");
+    assert_eq!(a.family, "NB-only");
     assert_eq!(a.nterm, "NB-only");
     assert!(a.complete && a.is_nlr);
 
     // TIR-only + LRR 也算候选（TIR-only NLR）
     let a = classify(&[mk(DomainCategory::Tir, 30, 200, true)], 1);
     assert_eq!(a.class, "TIR-LRR");
+    assert_eq!(a.family, "TIR-only");
     assert_eq!(a.nterm, "TIR");
     assert!(a.is_nlr && !a.complete);
 

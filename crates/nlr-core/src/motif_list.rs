@@ -24,6 +24,8 @@ pub struct MotifList {
     /// 内置 HMM，若发现 PWM 未给出的 CC/TIR，就记在这里，由 [`MotifList::domain_string`] 放到
     /// 域串最前面。`None` 表示沿用 PWM 判定。
     pub hmm_nterm: Option<DomainCategory>,
+    /// HMM 证据给出的生物学家族（TNL/RNL/CNL/NB-only/TIR-only）。
+    pub hmm_family: Option<String>,
 }
 
 impl MotifList {
@@ -32,6 +34,7 @@ impl MotifList {
             name,
             motifs,
             hmm_nterm: None,
+            hmm_family: None,
         };
         list.sort();
         list
@@ -40,6 +43,11 @@ impl MotifList {
     /// 由 HMM 证据补充 N 端结构域。
     pub fn set_hmm_nterm(&mut self, category: DomainCategory) {
         self.hmm_nterm = Some(category);
+    }
+
+    /// Store the family inferred from HMM evidence for DNA-mode reporting.
+    pub fn set_hmm_family(&mut self, family: impl Into<String>) {
+        self.hmm_family = Some(family.into());
     }
 
     /// Sort (forward strand ascending, reverse strand descending).
@@ -188,6 +196,31 @@ impl MotifList {
         crate::signature_def::canonical_domain_string(&cats, DNA_REPEAT_MIN_BLOCK).1
     }
 
+    /// Biological family, separating RNL from CNL when they share `CC-NBARC-LRR`.
+    pub fn family<'a>(&'a self, def: &AnnotatorSignatureDefinition) -> &'a str {
+        if let Some(family) = self.hmm_family.as_deref() {
+            return family;
+        }
+        let class = self.domain_string(def);
+        if class.starts_with("TIR") {
+            if class.contains("NBARC") {
+                "TNL"
+            } else {
+                "TIR-only"
+            }
+        } else if class.starts_with("CC") {
+            if self.motifs.iter().any(|m| matches!(m.id, 21 | 23)) {
+                "RNL"
+            } else {
+                "CNL"
+            }
+        } else if class.contains("NBARC") {
+            "NB-only"
+        } else {
+            "Other"
+        }
+    }
+
     /// Loci span (0-based, min/max of the four first/last values).
     pub fn span(&self) -> (u64, u64) {
         let a = self.first_motif();
@@ -221,9 +254,30 @@ impl Ord for MotifList {
             Strand::Forward => s.dna_start.cmp(&o.dna_start),
             Strand::Reverse => o.dna_start.cmp(&s.dna_start),
         };
-        match start_cmp {
-            Ordering::Equal => other.motifs.len().cmp(&self.motifs.len()),
-            o => o,
+        if start_cmp != Ordering::Equal {
+            return start_cmp;
         }
+        let self_key: Vec<_> = self
+            .motifs
+            .iter()
+            .map(|m| (m.id, m.dna_start, m.dna_end, m.frame, m.position))
+            .collect();
+        let other_key: Vec<_> = other
+            .motifs
+            .iter()
+            .map(|m| (m.id, m.dna_start, m.dna_end, m.frame, m.position))
+            .collect();
+        other
+            .motifs
+            .len()
+            .cmp(&self.motifs.len())
+            .then_with(|| self_key.cmp(&other_key))
+            .then_with(|| {
+                self.hmm_nterm
+                    .map(DomainCategory::as_str)
+                    .cmp(&other.hmm_nterm.map(DomainCategory::as_str))
+            })
+            .then_with(|| self.hmm_family.cmp(&other.hmm_family))
+            .then_with(|| self.name.cmp(&other.name))
     }
 }

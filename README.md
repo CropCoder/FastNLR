@@ -4,14 +4,12 @@
 
 **Fast, self-contained NLR immune-receptor locus annotation for plant genomes**
 
-A high-speed, accurate NLR annotation tool written in Rust for plant genomes
-
 [![bioconda](https://anaconda.org/bioconda/fastnlr/badges/version.svg)](https://anaconda.org/bioconda/fastnlr)
 [![Downloads](https://anaconda.org/bioconda/fastnlr/badges/downloads.svg)](https://anaconda.org/bioconda/fastnlr)
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.5.4-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.6.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Citation](#citation)
 
@@ -41,7 +39,7 @@ conda install bioconda::fastnlr
 
 ```bash
 curl -L -o fastnlr.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.5.4/fastnlr-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/CropCoder/FastNLR/releases/download/v1.6.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 ```
@@ -95,13 +93,18 @@ details and benchmark results.
   that missing N-terminal domain instead of leaving a bare `NBARC-LRR`.
 - **Tandem-repeat aware assembly** — repeated or duplicated domain units and trailing NB-ARC
   segments are merged back into their parent locus, so one gene is not reported as several loci.
-- **Extensible motif libraries** — an optional RNL/helper-CC + TIR library (28 motifs) recovers
-  RNL/helper NLR and TIR-only loci that the built-in 20-motif profile misses.
+- **RNL-aware default library** — the default profile includes the classic 20 motifs plus
+  RNL/helper-CC profiles 21 and 23 and conservative `CC,1` seeds. This recovers ADR1-L1
+  without relaxing the global PWM p-value threshold. An optional 28-motif RNL/TIR library
+  remains available for broader exploratory scans.
 - **Protein input mode** — `--protein` classifies domain architecture with a bundled HMMER 3.4
   port (Pfam NB-ARC / TIR / Rx_N / RPW8 / R1-type at gathering thresholds) plus the PWM LRR motifs.
-- **Resumable runs, rich reporting, graceful interruption** — `--checkpoint` skips the scan on
-  reruns; every run writes a human-readable summary, per-chromosome and per-motif TSV statistics
-  and PNG plots; Ctrl-C still emits the batches already completed.
+  The output reports both structural class (for example `CC-NBARC-LRR`) and biological family
+  (`TNL` / `RNL` / `CNL` / `NB-only` / `TIR-only`), so RPW8-type ADR1/NRG1 proteins are not
+  mislabeled as CNL merely because they share the same CC-NBARC-LRR architecture.
+- **Strict resumable runs** — checkpoints include input/profile/configuration fingerprints and are
+  reused only when the current run is compatible. Incomplete or stale checkpoints fail explicitly;
+  every run writes a human-readable summary, per-chromosome/per-motif TSV statistics and PNG plots.
 
 ## Performance
 

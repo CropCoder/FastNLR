@@ -14,9 +14,20 @@ fn real_parser() -> MotifParser {
 #[test]
 fn short_sequence_returns_empty() {
     let parser = real_parser();
-    // Sequences shorter than the maximum motif length (50) return empty immediately.
+    // This sequence contains no motif consensus.
     let list = parser.find_motifs("short", "ACDEFGHIKLMNPQRSTVWY");
     assert_eq!(list.motifs.len(), 0);
+}
+
+#[test]
+fn short_sequence_can_hit_a_shorter_motif() {
+    let parser = real_parser();
+    // 21 aa is shorter than the global maximum motif length, but motif_1 itself is 21 aa.
+    let list = parser.find_motifs("short_hit", "PIWGMGGVGKTTLARAVYNDP");
+    assert!(
+        list.motifs.iter().any(|m| m.id == 1),
+        "short sequence should still be scanned against shorter motifs"
+    );
 }
 
 #[test]

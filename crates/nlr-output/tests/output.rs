@@ -4,7 +4,10 @@ use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
 use nlr_core::strand::Strand;
-use nlr_output::{write_nbarc_alignment_fasta, write_nlr_bed, write_nlr_gff, write_report_txt};
+use nlr_output::{
+    export_motifs, import_motifs, write_nbarc_alignment_fasta, write_nlr_bed, write_nlr_gff,
+    write_report_txt,
+};
 
 fn def() -> AnnotatorSignatureDefinition {
     AnnotatorSignatureDefinition::new()
@@ -130,4 +133,26 @@ fn nbarc_alignment_pads_missing_block() {
 
     assert_eq!(seq.len(), NBARC_ALIGNMENT_LEN);
     assert_eq!(seq.matches('-').count(), d.consensus(4).len());
+}
+
+#[test]
+fn motif_checkpoint_import_is_strict() {
+    let motifs = sample_nlr().motifs;
+    let mut buf = Vec::new();
+    export_motifs(&mut buf, &motifs).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    let imported = import_motifs(&text).unwrap();
+    assert_eq!(imported.len(), motifs.len());
+    assert!(imported.iter().all(|m| m.dna_parameters_set));
+
+    assert!(import_motifs("not-a-checkpoint-row\n").is_err());
+
+    let no_dna = Motif::new_protein(1, "protein".to_string(), 1, "P".to_string(), 1e-6);
+    let mut buf = Vec::new();
+    export_motifs(&mut buf, &[no_dna]).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    assert!(
+        import_motifs(&text).is_err(),
+        "DNA-free motif must not enter a genome checkpoint"
+    );
 }

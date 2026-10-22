@@ -57,7 +57,8 @@ scanning with HMMER domain scanning:
   models, which are far less sensitive on NLRs.
 - **Classification** — `nterm` is the N-terminal-most TIR/CC domain before the NB-ARC domain;
   `class` collapses adjacent equal categories (`CC-NBARC-LRR`); `complete` means NB-ARC + LRR;
-  a protein is an NLR candidate when it has NB-ARC, or TIR together with LRR.
+  `family` distinguishes TNL / RNL / CNL / NB-only / TIR-only (RPW8 CC is RNL, non-RPW8 CC is
+  CNL); a protein is an NLR candidate when it has NB-ARC, or TIR together with LRR.
 - **Genome-only flags are rejected** in this mode: `--flank`, `--relaxed-seed`,
   `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`.
 
@@ -72,8 +73,10 @@ Outputs: `<prefix>.domains.tsv`, `<prefix>.nlr.tsv`, `<prefix>.summary.txt` and
 1. **Load the profile and build the rule definition.** User paths take precedence over the
    embedded defaults; CLI-declared categories, seeds, signatures and the flexible-seeding
    configuration are injected into `AnnotatorSignatureDefinition`.
-2. **Checkpoint short-circuit.** If `--checkpoint` names a directory containing `motifs.tsv`,
-   the scan is skipped and only assembly runs.
+2. **Strict checkpoint short-circuit.** `manifest.json` fingerprints the input, profiles,
+   thresholds, slicing/assembly parameters and external rules. Missing, incomplete, corrupt or
+   mismatched checkpoints fail explicitly. The first-run timestamp is retained so direct and
+   resumed runs produce byte-identical `.nlr.txt`, `.nlr.gff` and `.nlr.bed` files.
 3. **Stream and scan.** `SequenceChopper` yields fragments in fixed-size chunks; each chunk is
    scanned in parallel by a dedicated rayon pool with one task per fragment. The chunk is
    dropped after merging, so peak memory during this stage is bounded by the chunk size rather
@@ -84,7 +87,7 @@ Outputs: `<prefix>.domains.tsv`, `<prefix>.nlr.tsv`, `<prefix>.summary.txt` and
    phase.
 5. **Assemble.** Contigs are assembled in parallel and re-ordered by sorted contig id so that
    output order is deterministic.
-6. **Write the checkpoint** (if requested) and return a `RunResult`.
+6. **Write the checkpoint atomically** after a complete, non-interrupted scan.
 
 `SIGINT` sets an atomic flag; the scan stops after the current chunk and the completed results
 are still written out.
@@ -94,10 +97,10 @@ are still written out.
 | Item | Description |
 |---|---|
 | `RunConfig` | full run configuration, see below |
-| `RunResult` | `nlrs`, `motifs_by_seq`, `def` |
+| `RunResult` | `nlrs`, `motifs_by_seq`, `def`, and an optional checkpoint-fixed GFF timestamp |
 | `run(&RunConfig)` / `run_with_progress(&RunConfig, Option<&ProgressBar>)` | pipeline entry points; the second reports progress |
 | `all_motifs(&RunResult)` | flattens motif hits across contigs |
-| `save_checkpoint(dir, &RunResult)` / `load_checkpoint(dir, def)` | TSV-based checkpoint round trip |
+| checkpoint internals | versioned `manifest.json` plus strict motif TSV import |
 | `EMBEDDED_MOT` / `EMBEDDED_STORE` | the built-in profiles |
 
 ### `RunConfig`
@@ -139,14 +142,14 @@ All outputs are written by default; there is no opt-in flag per format.
 
 ## Notes
 
-- `load_checkpoint` rebuilds the pipeline from the motif TSV and assembles with
-  `AssembleParams::default()`, so assembly parameters set through `RunConfig` are not replayed
-  on a checkpoint-only run.
+- Checkpoints are reused only with identical input/profile hashes and runtime settings; the saved
+  motif set is assembled with the current validated `AssembleParams`.
 - `--tmpdir` currently only validates and creates the requested directory. It does not change the
   location used by the scanning, checkpoint or output stages.
 - Locus extraction reads the genome through `nlr_seq::fasta::read_all`, so peak memory for a
   full run scales with the genome size during the output stage.
-- The GFF date header uses the host's local timezone.
+- The GFF date header uses the host's local timezone; checkpoint runs retain the first-run
+  timestamp so resumed output is reproducible.
 - Peak memory is reported on Linux (`/proc/self/status`) and macOS (`getrusage`); on other
   platforms the summary prints `n/a` instead of a misleading `0.00 MB`.
 

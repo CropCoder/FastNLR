@@ -190,7 +190,7 @@ struct Cli {
 
     /// Relaxed seeding: treat a consecutive motif run with at least N NB-ARC motifs
     /// as a seed (disabled by default). Recovers NLR/RNL loci whose motif combinations
-    /// are not among the 11 built-in seed combinations. Mutually exclusive with the
+    /// are not among the built-in exact seed combinations. Mutually exclusive with the
     /// default flexible seeding — pass --no-flexible-seed together with it.
     #[arg(long, help_heading = "NLR recall enhancements")]
     relaxed_seed: Option<usize>,
@@ -502,14 +502,20 @@ fn estimate_total_fragments(input: &PathBuf, fragment_length: usize, overlap: us
 
 /// Create a progress bar (auto: bar on TTY, otherwise off).
 fn make_progress_bar(mode: &str, total: u64) -> Option<indicatif::ProgressBar> {
-    let enabled = match mode {
-        "off" => false,
-        "bar" => true,
-        "simple" => false, // simple mode degrades to logging
+    use std::io::IsTerminal;
+    let (enabled, template) = match mode {
+        "off" => (false, ""),
+        "bar" => (
+            true,
+            "[{bar:40}] {percent}% | elapsed {elapsed} | remaining {eta}",
+        ),
+        "simple" => (true, "{pos}/{len} | elapsed {elapsed}"),
         _ => {
             // auto: enable only on TTY.
-            use std::io::IsTerminal;
-            std::io::stdout().is_terminal()
+            (
+                std::io::stdout().is_terminal(),
+                "[{bar:40}] {percent}% | elapsed {elapsed} | remaining {eta}",
+            )
         }
     };
     if !enabled {
@@ -518,11 +524,9 @@ fn make_progress_bar(mode: &str, total: u64) -> Option<indicatif::ProgressBar> {
     let pb = indicatif::ProgressBar::new(total);
     // Show: completed/total, percent, elapsed, and remaining time.
     pb.set_style(
-        indicatif::ProgressStyle::with_template(
-            "[{bar:40}] {percent}% | elapsed {elapsed} | remaining {eta}",
-        )
-        .unwrap()
-        .progress_chars("=> "),
+        indicatif::ProgressStyle::with_template(template)
+            .unwrap()
+            .progress_chars("=> "),
     );
     // 1-second steady tick: refreshes the bar once per second instead of 10×/s,
     // avoiding redraw overhead on fast scans.
@@ -537,6 +541,36 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         return Err(format!(
             "input file does not exist or is not a file: -i specifies {}",
             cli.input.display()
+        ));
+    }
+
+    if cli.threads == Some(0) {
+        return Err("--threads must be greater than 0".to_string());
+    }
+    if cli.seqs_per_thread == 0 {
+        return Err("-n/--seqs-per-thread must be greater than 0".to_string());
+    }
+    for (name, value) in [
+        ("--motif-accept-p", cli.motif_accept_p),
+        ("--motif-prelim-p", cli.motif_prelim_p),
+    ] {
+        if !value.is_finite() || value <= 0.0 || value > 1.0 {
+            return Err(format!("{name} must be finite and within (0,1]"));
+        }
+    }
+    if cli.motif_prelim_p < cli.motif_accept_p {
+        return Err(format!(
+            "--motif-prelim-p ({}) must be >= --motif-accept-p ({})",
+            cli.motif_prelim_p, cli.motif_accept_p
+        ));
+    }
+    if matches!(cli.flexible_seed, Some(0)) || matches!(cli.relaxed_seed, Some(0)) {
+        return Err("seed min_nbarc values must be >= 1".to_string());
+    }
+    if !matches!(cli.progress.as_str(), "auto" | "bar" | "simple" | "off") {
+        return Err(format!(
+            "invalid --progress value: {} (valid: auto/bar/simple/off)",
+            cli.progress
         ));
     }
 
@@ -790,11 +824,18 @@ fn build_summary(
         .count();
     let mut type_counts: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
+    let mut family_counts: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
     for list in &result.nlrs {
         *type_counts.entry(list.domain_string(def)).or_default() += 1;
+        *family_counts
+            .entry(list.family(def).to_string())
+            .or_default() += 1;
     }
     let mut type_counts: Vec<(String, usize)> = type_counts.into_iter().collect();
     type_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let mut family_counts: Vec<(String, usize)> = family_counts.into_iter().collect();
+    family_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     let mut s = String::new();
     let _ = writeln!(s, "# FastNLR run summary");
@@ -815,6 +856,10 @@ fn build_summary(
     for (class, count) in type_counts {
         let _ = writeln!(s, "# {}\t{}", count, class);
     }
+    let _ = writeln!(s, "# NLR families (count desc):");
+    for (family, count) in family_counts {
+        let _ = writeln!(s, "# {}\t{}", count, family);
+    }
     let _ = writeln!(s, "# output files:");
     for p in written {
         let _ = writeln!(s, "# {}", p.display());
@@ -833,30 +878,23 @@ fn write_outputs(
     result: &mut nlr_cli::RunResult,
 ) -> std::io::Result<Vec<PathBuf>> {
     // 先读一次基因组：既用于 HMM 补充 N 端结构域，也用于位点序列提取（避免重复读取）。
-    let contigs = match nlr_seq::fasta::read_all(&cli.input) {
-        Ok(c) => Some(c),
-        Err(e) => {
-            tracing::warn!(
-                "cannot read genome {}, skipping loci fasta and HMM N-terminal domain annotation: {}",
-                cli.input.display(),
-                e
-            );
-            None
-        }
-    };
+    let contigs = nlr_seq::fasta::read_all(&cli.input).map_err(|e| {
+        std::io::Error::other(format!(
+            "cannot read genome {} for HMM/loci output: {}",
+            cli.input.display(),
+            e
+        ))
+    })?;
 
     // HMM 补充 N 端结构域：DNA 模式的 N 端域原本只能靠 PWM，内置库对 CC 覆盖有限。
     // 必须在写任何输出之前完成，因为 .nlr.txt/.gff/.bed 都会用到域串。
-    if let Some(contigs) = &contigs {
-        let library = nlr_domain::HmmLibrary::from_embedded();
-        let annotated =
-            nlr_cli::annotate_hmm_nterm(&mut result.nlrs, contigs, &result.def, &library);
-        tracing::info!(
-            "HMM N-terminal domain annotation: {} / {} loci updated",
-            annotated,
-            result.nlrs.len()
-        );
-    }
+    let library = nlr_domain::HmmLibrary::from_embedded();
+    let annotated = nlr_cli::annotate_hmm_nterm(&mut result.nlrs, &contigs, &result.def, &library);
+    tracing::info!(
+        "HMM N-terminal domain annotation: {} / {} loci updated",
+        annotated,
+        result.nlrs.len()
+    );
 
     let def = &result.def;
     let nlrs = &result.nlrs;
@@ -879,7 +917,8 @@ fn write_outputs(
 
     // 位点 GFF
     let (p, mut f) = create(".nlr.gff")?;
-    nlr_output::write_nlr_gff(&mut f, nlrs, def, &now_date_string(), false)
+    let gff_date = result.gff_date.clone().unwrap_or_else(now_date_string);
+    nlr_output::write_nlr_gff(&mut f, nlrs, def, &gff_date, false)
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
     written.push(p);
 
@@ -902,18 +941,16 @@ fn write_outputs(
     written.push(p);
 
     // 位点序列 fasta（复用前面读取的基因组，flank 由 --flank 控制）
-    if let Some(contigs) = &contigs {
-        let pairs: Vec<(&str, &str)> = contigs
-            .iter()
-            .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
-            .collect();
-        let p = output_path(&cli.output_dir, prefix, ".loci.fasta");
-        let mut f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank.unwrap_or(DEFAULT_FLANK))
-            .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-        written.push(p);
-    }
+    let pairs: Vec<(&str, &str)> = contigs
+        .iter()
+        .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
+        .collect();
+    let p = output_path(&cli.output_dir, prefix, ".loci.fasta");
+    let mut f = std::fs::File::create(&p)
+        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+    nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank.unwrap_or(DEFAULT_FLANK))
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
 
     // 统计 TSV
     let stats = nlr_report::collect(&result.motifs_by_seq, nlrs, def);
@@ -934,15 +971,11 @@ fn write_outputs(
     let p1 = plot_dir.join("01-motif-counts.png");
     let p2 = plot_dir.join("02-chromosome-nlrs.png");
     let p3 = plot_dir.join("03-nlr-types.png");
-    if let Err(e) = nlr_plot::plot_motif_counts(&p1, &stats) {
-        tracing::warn!("motif plot generation failed: {}", e);
-    }
-    if let Err(e) = nlr_plot::plot_chromosome_nlrs(&p2, &stats) {
-        tracing::warn!("chromosome plot generation failed: {}", e);
-    }
-    if let Err(e) = nlr_plot::plot_nlr_type_counts(&p3, &stats) {
-        tracing::warn!("NLR type plot generation failed: {}", e);
-    }
+    nlr_plot::plot_motif_counts(&p1, &stats).map_err(|e| std::io::Error::other(e.to_string()))?;
+    nlr_plot::plot_chromosome_nlrs(&p2, &stats)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+    nlr_plot::plot_nlr_type_counts(&p3, &stats)
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     written.push(p1);
     written.push(p2);
     written.push(p3);

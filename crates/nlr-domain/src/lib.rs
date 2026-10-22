@@ -106,6 +106,9 @@ pub struct DomainHit {
 pub struct NlrArchitecture {
     /// 按位置折叠相邻重复后的结构域串，如 `CC-NBARC-LRR`。
     pub class: String,
+    /// 生物学家族：TNL / RNL / CNL / NB-only / TIR-only / Other。
+    /// RNL 与 CNL 可共享 `CC-NBARC-LRR` 结构，但 N 端 CC 分别来自 RPW8 与 Rx_N/R1。
+    pub family: String,
     /// N 端结构域：`CC` / `TIR` / `NB-only` / `None`。
     pub nterm: String,
     pub has_nbarc: bool,
@@ -326,6 +329,7 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
     let has_nbarc = passed.iter().any(|h| h.category == DomainCategory::Nbarc);
     let has_tir = passed.iter().any(|h| h.category == DomainCategory::Tir);
     let has_lrr = lrr_hits > 0;
+    let selected_nterm_rpw8 = selected_nterm_uses_rpw8(&passed);
 
     // 按位置构造类别序列；LRR 来自 PWM（无位置信息），按 C 端证据追加。
     let mut cats: Vec<DomainCategory> = passed.iter().map(|h| h.category).collect();
@@ -342,9 +346,23 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
         None if has_nbarc => "NB-only".to_string(),
         None => "None".to_string(),
     };
+    let family = if has_nbarc && has_tir {
+        "TNL"
+    } else if has_nbarc && nterm == "CC" && selected_nterm_rpw8 {
+        "RNL"
+    } else if has_nbarc && nterm == "CC" {
+        "CNL"
+    } else if has_nbarc {
+        "NB-only"
+    } else if has_tir {
+        "TIR-only"
+    } else {
+        "Other"
+    };
 
     NlrArchitecture {
         class,
+        family: family.to_string(),
         nterm,
         has_nbarc,
         has_tir,
@@ -352,4 +370,51 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
         complete: has_nbarc && has_lrr,
         is_nlr: has_nbarc || (has_tir && has_lrr),
     }
+}
+
+/// Whether the N-terminal CC evidence selected by the ordered-domain model contains RPW8.
+///
+/// A passed RPW8 hit elsewhere (for example after NB-ARC) must not turn an Rx_N/R1-type
+/// CNL into an RNL.
+fn selected_nterm_uses_rpw8(passed: &[&DomainHit]) -> bool {
+    let Some(first_nbarc) = passed
+        .iter()
+        .position(|h| h.category == DomainCategory::Nbarc)
+    else {
+        return false;
+    };
+
+    let mut blocks: Vec<(DomainCategory, usize, usize)> = Vec::new();
+    for (idx, hit) in passed[..first_nbarc].iter().enumerate() {
+        let cat = hit.category;
+        if !matches!(cat, DomainCategory::Cc | DomainCategory::Tir) {
+            continue;
+        }
+        match blocks.last_mut() {
+            Some(last) if last.0 == cat => last.2 = idx + 1,
+            _ => blocks.push((cat, idx, idx + 1)),
+        }
+    }
+    if blocks.is_empty() {
+        return false;
+    }
+
+    let mixed = blocks.iter().any(|b| b.0 == DomainCategory::Cc)
+        && blocks.iter().any(|b| b.0 == DomainCategory::Tir);
+    let selected = if mixed {
+        blocks
+            .iter()
+            .enumerate()
+            .max_by_key(|(idx, (_, start, end))| (end - start, *idx))
+            .map(|(_, block)| block)
+    } else {
+        blocks.last()
+    };
+    let Some((category, start, end)) = selected else {
+        return false;
+    };
+    *category == DomainCategory::Cc
+        && passed[*start..*end]
+            .iter()
+            .any(|h| h.model_acc.split('.').next() == Some("PF05659"))
 }

@@ -222,30 +222,44 @@ impl Ord for Motif {
         if self.dna_parameters_set && other.dna_parameters_set {
             let self_id = self.dna_sequence_id.as_deref().unwrap_or("");
             let other_id = other.dna_sequence_id.as_deref().unwrap_or("");
-            if self_id.eq_ignore_ascii_case(other_id) {
+            let group_cmp = self_id.cmp(other_id);
+            if group_cmp == Ordering::Equal {
                 // Same group: first by strand (forward strand first), then by coordinate.
-                match (self.strand, other.strand) {
+                let strand_cmp = match (self.strand, other.strand) {
                     (Strand::Forward, Strand::Reverse) => Ordering::Less,
                     (Strand::Reverse, Strand::Forward) => Ordering::Greater,
-                    _ => match self.strand {
-                        Strand::Forward => self.dna_start.cmp(&other.dna_start),
-                        Strand::Reverse => other.dna_start.cmp(&self.dna_start),
-                    },
+                    _ => Ordering::Equal,
+                };
+                if strand_cmp != Ordering::Equal {
+                    return strand_cmp;
                 }
+                let coordinate_cmp = match self.strand {
+                    Strand::Forward => self.dna_start.cmp(&other.dna_start),
+                    Strand::Reverse => other.dna_start.cmp(&self.dna_start),
+                };
+                coordinate_cmp
+                    .then_with(|| self.dna_end.cmp(&other.dna_end))
+                    .then_with(|| self.frame.cmp(&other.frame))
+                    .then_with(|| self.id.cmp(&other.id))
+                    .then_with(|| self.position.cmp(&other.position))
+                    .then_with(|| self.protein_sequence.cmp(&other.protein_sequence))
+                    .then_with(|| self.protein_sequence_id.cmp(&other.protein_sequence_id))
+                    .then_with(|| self.pvalue.total_cmp(&other.pvalue))
+                    .then_with(|| self.score.total_cmp(&other.score))
             } else {
-                // Different groups: sort by fragment id.
-                self.protein_sequence_id.cmp(&other.protein_sequence_id)
+                group_cmp.then_with(|| self.protein_sequence_id.cmp(&other.protein_sequence_id))
             }
+        } else if self.dna_parameters_set != other.dna_parameters_set {
+            other.dna_parameters_set.cmp(&self.dna_parameters_set)
         } else {
             // DNA unset: sort by protein id + position.
-            if self
-                .protein_sequence_id
-                .eq_ignore_ascii_case(&other.protein_sequence_id)
-            {
-                self.position.cmp(&other.position)
-            } else {
-                self.protein_sequence_id.cmp(&other.protein_sequence_id)
-            }
+            self.protein_sequence_id
+                .cmp(&other.protein_sequence_id)
+                .then_with(|| self.position.cmp(&other.position))
+                .then_with(|| self.id.cmp(&other.id))
+                .then_with(|| self.protein_sequence.cmp(&other.protein_sequence))
+                .then_with(|| self.pvalue.total_cmp(&other.pvalue))
+                .then_with(|| self.score.total_cmp(&other.score))
         }
     }
 }

@@ -31,7 +31,7 @@ applying the requested flank.
 | `write_nbarc_alignment_fasta` | `.nbarc.fasta` | P-loop-anchored alignment, gap-padded per missing consensus block, `*`/`X` replaced by `_`; optional CED-4 reference row |
 | `write_nlr_loci` | locus FASTA | extraction from a single contig (legacy entry point) |
 | `write_nlr_loci_all` | `.loci.fasta` | extraction across all contigs, ±`--flank` bases, reverse-complemented on the reverse strand, wrapped at 100 bp |
-| `export_motifs` / `import_motifs` | TSV | 11-field round trip used by the checkpoint mechanism |
+| `export_motifs` / `import_motifs` | TSV | 11-field round trip used by the checkpoint mechanism; import rejects malformed rows and motifs without DNA coordinates |
 
 ### BED colour convention
 
@@ -83,6 +83,7 @@ write_nlr_loci_all(&mut fasta, &loci, &contigs, 2_000).unwrap();
   `write_nlr_loci_all`.
 - `export_motifs` / `import_motifs` are the serialisation format behind
   `--checkpoint`, and are the only place where a locus-free motif list round-trips through text.
+  `import_motifs` returns `io::Result` and never silently drops damaged rows.
 
 ## Testing
 

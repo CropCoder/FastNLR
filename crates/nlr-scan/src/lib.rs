@@ -58,15 +58,12 @@ impl MotifParser {
 
     /// Scan all motifs against a protein sequence (equivalent to `findMotifs`).
     ///
-    /// Returns the MotifList for the sequence; returns empty when the sequence is shorter
-    /// than the maximum motif length.
+    /// Returns the MotifList for the sequence. Each motif is considered independently, so a
+    /// short sequence can still match a motif shorter than itself.
     pub fn find_motifs(&self, protein_seq_id: &str, protein: &str) -> MotifList {
         let mut motif_list = MotifList::new(protein_seq_id.to_string(), Vec::new());
 
         let seq_len = protein.len();
-        if seq_len < self.definition.max_length() as usize {
-            return motif_list;
-        }
 
         let (hits, pvalues) = self.get_motifs_stats(protein, seq_len);
 
@@ -75,7 +72,7 @@ impl MotifParser {
             if hit == 0 {
                 continue;
             }
-            let motif_id = hit; // hit directly stores the motif id (1..=20)
+            let motif_id = hit; // hit directly stores the motif id from the loaded profile
             let p = pvalues[q];
             if p < self.thresh_accept {
                 let width = self.definition.length(motif_id) as usize;

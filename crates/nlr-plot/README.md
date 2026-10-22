@@ -20,7 +20,7 @@ and cross-compiles cleanly.
 
 | Function | File written by `fastnlr` | Contents |
 |---|---|---|
-| `plot_motif_counts` | `01-motif-counts.png` | bar chart of hits per motif id; the x-axis range is derived from the data, so the 20-motif built-in profile and the 28-motif extended library both render correctly |
+| `plot_motif_counts` | `01-motif-counts.png` | bar chart of hits per motif id; the x-axis range is derived from the data, so both the RNL-aware default profile and the 28-motif extended library render correctly |
 | `plot_chromosome_nlrs` | `02-chromosome-nlrs.png` | bar chart of loci per contig, labelled with contig names |
 | `plot_nlr_type_counts` | `03-nlr-types.png` | bar chart of locus types (for example `CC-NBARC-LRR`), sorted by count descending |
 

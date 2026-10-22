@@ -25,7 +25,7 @@ fn mmap_chopper_matches_reader() {
     // mmap path (from_file auto-selects mmap for non-gzip).
     let mut c = SequenceChopper::from_file(&path, 10, 4).unwrap();
     let mut mmap_seqs = Vec::new();
-    while let Some(s) = c.next_sequence() {
+    while let Some(s) = c.next_sequence().unwrap() {
         mmap_seqs.push((s.identifier.clone(), s.sequence.clone()));
     }
 
@@ -33,7 +33,7 @@ fn mmap_chopper_matches_reader() {
     let reader: Box<dyn std::io::BufRead> = Box::new(std::io::Cursor::new(fasta.clone()));
     let mut c2 = SequenceChopper::new(reader, 10, 4).unwrap();
     let mut reader_seqs = Vec::new();
-    while let Some(s) = c2.next_sequence() {
+    while let Some(s) = c2.next_sequence().unwrap() {
         reader_seqs.push((s.identifier.clone(), s.sequence.clone()));
     }
 

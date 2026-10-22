@@ -161,3 +161,46 @@ fn conflicting_seeding_flags_are_rejected() {
         );
     }
 }
+
+#[test]
+fn malformed_runtime_rules_and_thresholds_are_rejected() {
+    let (_tmp, fasta, out) = tiny_input();
+    let cases: [(&[&str], &str); 13] = [
+        (&["--motif-category", "21=BOGUS"], "invalid motif category"),
+        (&["--motif-category", ""], "must not be empty"),
+        (
+            &["--motif-category", "21=CC,21=CC"],
+            "duplicate motif category",
+        ),
+        (&["--motif-category", "99=CC"], "unknown motif_99"),
+        (&["--seed-combination", "foo,bar"], "invalid seed motif id"),
+        (&["--seed-combination", ""], "must not be empty"),
+        (&["--seed-combination", "99,1"], "unknown motif_99"),
+        (
+            &["--seed-combination", "1,4", "--seed-combination", "1,4"],
+            "duplicate seed rule",
+        ),
+        (&["--signature", "1,x"], "invalid signature motif id"),
+        (&["--signature", "1,4;"], "must not be empty"),
+        (&["--motif-accept-p", "2"], "within (0,1]"),
+        (
+            &["--motif-accept-p", "1e-3", "--motif-prelim-p", "1e-5"],
+            "must be >=",
+        ),
+        (&["-n", "0"], "must be greater than 0"),
+    ];
+    for (extra, expected) in cases {
+        let mut args = vec!["-i", fasta.as_str(), "-o", out.as_str()];
+        args.extend_from_slice(extra);
+        let output = Command::new(env!("CARGO_BIN_EXE_fastnlr"))
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{extra:?} should fail");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "{extra:?} error should contain {expected}, got: {stderr}"
+        );
+    }
+}

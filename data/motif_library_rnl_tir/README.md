@@ -1,13 +1,15 @@
 # FastNLR 扩展 motif 库：RNL/helper CC 与 TIR 家族
 
-本目录提供一套可选的外部 motif 库，在 FastNLR 默认的 20 个 motif 之外增加 8 个 motif：
+本目录提供一套可选的外部 28-motif 库。FastNLR 1.6.0 默认库已包含经典 20 个 motif
+以及保守 RNL/helper CC motif 21、23；本完整库进一步包含 motif 22、24 和 TIR motif 25–28，
+并在使用时以库文件中的 21、23 PWM/CDF 为准。
 
 | 家族 | 解决的缺口 | 实测效果 |
 |---|---|---|
 | **RNL / helper NLR**（ADR1/NRG1 + 茄科 **NRC**） | 默认库主要覆盖 Rx_N 型 CC，对 RPW8/CC-RPW8 型 helper NLR 不够敏感 | 历史 Wm82 T2T 测试中 11 个 RNL 区域均可形成位点 |
 | **TIR 家族**（含单子叶 TIR-only / TN / TNP） | Pfam TIR 和默认 PWM 对短、分化 TIR 域覆盖不足 | 历史测试中单子叶 TIR/TIR-only 序列从 0 个位点提高到 11–16 个 |
 
-本库是外部配置，不替换内置 20-motif 库，也不需要修改或重新编译 FastNLR。
+本库是外部配置，不需要修改或重新编译 FastNLR。
 
 ## 当前用法
 

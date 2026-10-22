@@ -8,8 +8,12 @@ position-weight matrix, a cumulative-distribution table for p-values, per-motif 
 precomputed score thresholds.
 
 The crate is deliberately size-agnostic: the number of motifs is derived from the largest id
-found in the files, so the built-in 20-motif profile and the 28-motif extended library
-(`data/motif_library_rnl_tir/`) are handled by the same code path.
+found in the files, so the RNL-aware default profile (motifs 1–21 and 23) and the 28-motif
+extended library (`data/motif_library_rnl_tir/`) are handled by the same code path.
+
+Profile loading is strict: malformed rows, duplicate keys, non-finite/out-of-range p-values,
+empty profiles and non-monotonic CDFs are rejected instead of silently assigning misleading
+default scores.
 
 ## Position in the workspace
 
@@ -103,8 +107,8 @@ assert!(def.cdf(1, 20) < 1e-5);
 
 ## Guarantees
 
-- Parsing never panics on malformed input: unknown motif names, short lines and unparsable
-  numeric fields are skipped.
+- Parsing never panics on malformed input: unknown motif names, short lines, invalid numeric
+  fields and conflicting duplicate keys return `InvalidData`.
 - Ids may be sparse; absent ids become zero-length motifs and are effectively inert.
 - The CDF is right-tailed and decreasing — callers must not treat it as a left-tail probability.
 - `mot.txt` and `store.txt` must cover the same motif ids; a motif declared without a CDF table

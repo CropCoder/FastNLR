@@ -1,16 +1,17 @@
 //! NLR static rule tables and signature definitions.
 //!
 //! The tables define:
-//! - rank, category (domain category), and RGB color for each of the 20 motifs;
-//! - 11 seed combinations (findSeeds targets);
-//! - 18 "NLR signatures" (contiguous motif sequence patterns used for pre-filtering);
+//! - rank, category (domain category), and RGB color for the default motifs;
+//! - classic NB-ARC and RNL/helper seed combinations (findSeeds targets);
+//! - "NLR signatures" (contiguous motif sequence patterns used for pre-filtering);
 //! - consensus sequences for 8 NB-ARC motifs;
 //! - P-loop motif id (motif_1).
 
-/// Motif id（内置 1..=20；外部 mot.txt 可带更多，见 BUILTIN_MOTIF_COUNT）。
+/// Motif id（默认最高到 23；外部 mot.txt 可带更多，见 BUILTIN_MOTIF_COUNT）。
 ///
-/// Built-in motifs use ids 1..=20. The upper bound is a constant so external `mot.txt`/`store.txt`
-/// files can carry additional motifs (for example RNL/helper-CC and TIR family profiles).
+/// The default library uses the classic 20 motifs plus RNL/helper-CC
+/// profiles 21 and 23. The upper bound is a constant so external
+/// `mot.txt`/`store.txt` files can carry additional TIR/CC profiles.
 pub type MotifId = u8;
 
 /// Domain category.
@@ -119,10 +120,10 @@ pub const RGB_COLORS: [[u8; 3]; 29] = [
     [255, 192, 0],   // 22（RNL CC）
     [255, 64, 0],    // 23（RNL CC）
     [255, 96, 32],   // 24（RNL CC）
-    [255, 160, 64],  // 25（RNL CC）
-    [255, 128, 0],   // 26（RNL CC）
-    [255, 192, 0],   // 27（RNL CC）
-    [255, 64, 0],    // 28（RNL CC）
+    [255, 160, 64],  // 25（TIR）
+    [255, 128, 0],   // 26（TIR）
+    [255, 192, 0],   // 27（TIR）
+    [255, 64, 0],    // 28（TIR）
 ];
 
 /// Enabled seed combinations.
@@ -141,6 +142,11 @@ pub const SEED_COMBINATIONS: &[&[MotifId]] = &[
     // ---- 以下为 RNL/helper NLR 补丁新增：以 CC motif 开头、后接 NB-ARC motif ----
     &[18, 15],
     &[15, 13],
+    // ---- 默认 RNL-aware 补丁：helper CC 紧邻 P-loop。 ----
+    // 仅采用两条在 ADR1/NRG1/DAR5 中反复命中的 CC profile；
+    // 22/24 会主要产生短的 CC+P-loop 片段，因此不进入默认库。
+    &[21, 1],
+    &[23, 1],
 ];
 
 /// NLR signatures.
@@ -163,7 +169,9 @@ pub const SIGNATURES: &[&[MotifId]] = &[
     &[15, 13],
     &[13, 1],
     &[1, 4, 5],
-    // ---- RNL 补丁新增（用于 has_signature 预过滤）----
+    // ---- 默认 RNL-aware 补丁：与新增 CC→P-loop seed 对齐的局部预过滤规则 ----
+    &[21, 1],
+    &[23, 1],
 ];
 
 /// Consensus sequences for NB-ARC motifs.
@@ -230,9 +238,9 @@ impl Default for FlexibleSeedConfig {
 /// 也不再是 Copy——需要多处使用时 clone。
 #[derive(Debug, Clone, Default)]
 pub struct AnnotatorSignatureDefinition {
-    /// 内置表之外的 motif 类别（外部库用命令行声明，例如 21=CC、25=TIR）。
+    /// 内置表之外的 motif 类别（外部库可用命令行声明，例如 25=TIR）。
     extra_categories: std::collections::HashMap<MotifId, DomainCategory>,
-    /// 外部库额外声明的播种组合（形如 [21,4]）；含 >20 的 id 时用连续子串匹配。
+    /// 外部库额外声明的播种组合（形如 [25,1]）；含 >23 的 id 时用连续子串匹配。
     extra_seeds: Vec<Vec<MotifId>>,
     /// 外部库额外声明的 signature（预过滤用）。
     extra_signatures: Vec<Vec<MotifId>>,
@@ -240,9 +248,9 @@ pub struct AnnotatorSignatureDefinition {
     flexible_seed: Option<FlexibleSeedConfig>,
 }
 
-/// Number of built-in motifs. Ids above this value are treated as library-specific motifs;
+/// Number of default motifs. Ids above this value are treated as library-specific motifs;
 /// their categories default to `NA` and can be declared via `with_extra_categories()`.
-pub const BUILTIN_MOTIF_COUNT: MotifId = 20;
+pub const BUILTIN_MOTIF_COUNT: MotifId = 23;
 
 impl AnnotatorSignatureDefinition {
     pub fn new() -> Self {
@@ -347,8 +355,9 @@ impl AnnotatorSignatureDefinition {
 
     /// Whether the accumulated motif id sequence is a seed combination.
     ///
-    /// 内置组合（只含 motif_1..motif_20）保持原版语义：**整串精确相等** `seq == combo`。
-    /// 含"外部库新增 motif"（id > BUILTIN_MOTIF_COUNT）的组合改用**连续子串匹配**：
+    /// 经典 NB-ARC 组合保持原版语义：**整串精确相等** `seq == combo`。
+    /// 含"外部库新增 motif"（id > BUILTIN_MOTIF_COUNT）或以 CC motif 起始的
+    /// RNL/helper 组合改用**连续子串匹配**：
     /// 实测 helper NLR/RNL 区域的命中串形如 `[21, 23, 1, 6, 4, ...]`，若仍要求整串相等，
     /// 新 motif 永远无法播种（这也是原版 motif 法找不到 RNL 的原因之一）。
     pub fn is_seed(&self, seq: &[MotifId]) -> bool {
@@ -358,7 +367,10 @@ impl AnnotatorSignatureDefinition {
             .copied()
             .chain(extra)
             .any(|s: &[MotifId]| {
-                if s.iter().any(|&i| i > BUILTIN_MOTIF_COUNT) {
+                let substring_match = s.iter().any(|&i| i > BUILTIN_MOTIF_COUNT)
+                    || s.first()
+                        .is_some_and(|&i| self.category(i) == DomainCategory::Cc);
+                if substring_match {
                     s.len() <= seq.len() && seq.windows(s.len()).any(|w| w == s)
                 } else {
                     s == seq
@@ -520,12 +532,31 @@ pub fn canonical_domain_string(
             .join("-");
         return (nterm, s);
     };
-    // 2. N 端域：首个 NB-ARC 之前、最靠近它的 CC/TIR
-    let nterm = blocks[..first_nbarc]
+    // 2. N 端域：若 CC/TIR 同时出现在首个 NB-ARC 之前，生物学上 N 端只能有一个；
+    //    此时优先规模更大的连续结构块，规模相同再取最靠近 NB-ARC 者。
+    //    该规则修复 TIR 基因内部落入单条 RNL-CC 交叉命中的误判（如 DSC1：
+    //    TIR×3 -> CC×1 -> NB-ARC 应判为 TIR，而不是 CC）。
+    let nterm_candidates: Vec<(usize, DomainCategory, usize)> = blocks
         .iter()
-        .rev()
-        .map(|b| b.0)
-        .find(|&b| is_nterm(b));
+        .take(first_nbarc)
+        .enumerate()
+        .filter(|(_, (cat, _))| is_nterm(*cat))
+        .map(|(idx, (cat, size))| (idx, *cat, *size))
+        .collect();
+    let mixed_nterm = nterm_candidates
+        .iter()
+        .any(|(_, cat, _)| *cat == DomainCategory::Cc)
+        && nterm_candidates
+            .iter()
+            .any(|(_, cat, _)| *cat == DomainCategory::Tir);
+    let nterm = if mixed_nterm {
+        nterm_candidates
+            .iter()
+            .max_by_key(|(idx, _, size)| (*size, *idx))
+            .map(|(_, cat, _)| *cat)
+    } else {
+        nterm_candidates.last().map(|(_, cat, _)| *cat)
+    };
 
     let mut parts: Vec<&'static str> = Vec::new();
     if let Some(nt) = nterm {

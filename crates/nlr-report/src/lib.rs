@@ -24,6 +24,8 @@ pub struct RunStats {
     pub motif_counts: BTreeMap<u8, usize>,
     /// NLR 结构域类型计数（domain_string -> count）。
     pub nlr_type_counts: BTreeMap<String, usize>,
+    /// 生物学家族计数（TNL/RNL/CNL/NB-only/TIR-only/Other）。
+    pub nlr_family_counts: BTreeMap<String, usize>,
 }
 
 /// Aggregate statistics from run results.
@@ -58,8 +60,12 @@ pub fn collect(
     }
 
     let mut nlr_type_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut nlr_family_counts: BTreeMap<String, usize> = BTreeMap::new();
     for list in nlrs {
         *nlr_type_counts.entry(list.domain_string(def)).or_default() += 1;
+        *nlr_family_counts
+            .entry(list.family(def).to_string())
+            .or_default() += 1;
     }
 
     RunStats {
@@ -70,6 +76,7 @@ pub fn collect(
         per_chromosome,
         motif_counts,
         nlr_type_counts,
+        nlr_family_counts,
     }
 }
 
@@ -87,6 +94,9 @@ pub fn write_tsv<W: Write>(w: &mut W, stats: &RunStats) -> std::io::Result<()> {
 
     for (id, count) in &stats.motif_counts {
         writeln!(w, "motif\tmotif_{}\t{}", id, count)?;
+    }
+    for (family, count) in &stats.nlr_family_counts {
+        writeln!(w, "family\t{}\t{}", family, count)?;
     }
     Ok(())
 }

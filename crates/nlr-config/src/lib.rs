@@ -12,6 +12,7 @@
 pub type MotifId = u8;
 
 /// Motif definition (PWM + CDF + length + order of appearance).
+#[derive(Debug)]
 pub struct MotifDefinition {
     /// mot.txt 里出现的最大 motif id（数组尺寸 = 该值 + 1）。
     max_motif_id: MotifId,
@@ -34,6 +35,12 @@ impl MotifDefinition {
         self.max_motif_id
     }
 
+    /// Whether an id has a parsed PWM in this profile.
+    #[inline]
+    pub fn has_motif(&self, id: MotifId) -> bool {
+        self.lengths.get(id as usize).copied().unwrap_or(0) > 0
+    }
+
     /// Load from `mot.txt` and `store.txt` file paths.
     pub fn load(pwm_file: &std::path::Path, cdf_file: &std::path::Path) -> std::io::Result<Self> {
         let mot_text = read_mmap_str(pwm_file)?;
@@ -43,11 +50,20 @@ impl MotifDefinition {
 
     /// Load from in-memory mot.txt / store.txt text (enables `include_str!` embedding).
     pub fn load_from_str(mot: &str, store: &str) -> std::io::Result<Self> {
-        let (lengths, motif_names) = Self::lengths_from(mot);
+        if mot.trim().is_empty() {
+            return Err(invalid_data("mot.txt is empty"));
+        }
+        if store.trim().is_empty() {
+            return Err(invalid_data("store.txt is empty"));
+        }
+        let (lengths, motif_names) = Self::lengths_from(mot)?;
+        if motif_names.is_empty() {
+            return Err(invalid_data("mot.txt contains no motif entries"));
+        }
         let slots = lengths.len();
         let max_motif_id = (slots.saturating_sub(1)) as MotifId;
-        let pwm = Self::pwm_from(mot, &lengths);
-        let cdf = Self::cdf_from(store);
+        let pwm = Self::pwm_from(mot, &lengths)?;
+        let cdf = Self::cdf_from(store)?;
         let max_length = lengths.iter().copied().max().unwrap_or(0);
 
         // 一致性校验：mot.txt 与 store.txt 的最大 id 各自独立推导，二者不一致时
@@ -89,42 +105,73 @@ impl MotifDefinition {
     }
 
     /// First pass: compute each motif's length.
-    fn lengths_from(text: &str) -> (Vec<u16>, Vec<MotifId>) {
+    fn lengths_from(text: &str) -> std::io::Result<(Vec<u16>, Vec<MotifId>)> {
         // 第一遍：扫出最大 motif id（决定数组尺寸，支持 >20 的外部库）
         let mut max_id = 0usize;
         for line in text.lines() {
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.is_empty() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
                 continue;
+            }
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() != 2 {
+                return Err(invalid_data(format!(
+                    "invalid mot.txt line, expected 2 columns: {line}"
+                )));
             }
             let parts: Vec<&str> = cols[0].split('@').collect();
-            if parts.len() < 2 {
-                continue;
+            if parts.len() != 3 {
+                return Err(invalid_data(format!(
+                    "invalid mot.txt key, expected motif_ID@position@AA: {line}"
+                )));
             }
-            if let Some(i) = Self::parse_motif_id(parts[0]) {
-                max_id = max_id.max(i as usize);
+            let id = Self::parse_motif_id(parts[0])
+                .filter(|&id| id > 0)
+                .ok_or_else(|| invalid_data(format!("invalid motif id in line: {line}")))?;
+            parts[1]
+                .parse::<usize>()
+                .map_err(|_| invalid_data(format!("invalid motif position in line: {line}")))?;
+            let aa = parts[2].as_bytes();
+            if aa.len() != 1 || !aa[0].is_ascii_uppercase() {
+                return Err(invalid_data(format!(
+                    "invalid amino acid in mot.txt line: {line}"
+                )));
             }
+            cols[1]
+                .parse::<i32>()
+                .map_err(|_| invalid_data(format!("invalid PWM score in line: {line}")))?;
+            max_id = max_id.max(id as usize);
         }
         let slots = max_id + 1;
         let mut lengths = vec![0u16; slots];
         let mut motif_names: Vec<MotifId> = Vec::new();
         let mut seen = vec![false; slots];
 
+        let mut seen_keys = std::collections::HashSet::new();
         for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
             let first = match line.split_whitespace().next() {
                 Some(f) => f,
                 None => continue,
             };
             let parts: Vec<&str> = first.split('@').collect();
-            if parts.len() < 2 {
-                continue;
-            }
             let id = match Self::parse_motif_id(parts[0]) {
                 Some(i) => i,
-                None => continue,
+                None => return Err(invalid_data(format!("invalid motif id in line: {line}"))),
             };
             // mot.txt position is 0-based; length = max pos + 1.
-            let pos = parts[1].parse::<usize>().unwrap_or(0) + 1;
+            let pos = parts[1]
+                .parse::<usize>()
+                .map_err(|_| invalid_data(format!("invalid motif position in line: {line}")))?
+                + 1;
+            if !seen_keys.insert((id, pos - 1, parts[2].to_string())) {
+                return Err(invalid_data(format!(
+                    "duplicate PWM entry in mot.txt: {line}"
+                )));
+            }
             if !seen[id as usize] {
                 seen[id as usize] = true;
                 motif_names.push(id);
@@ -133,31 +180,37 @@ impl MotifDefinition {
                 lengths[id as usize] = pos as u16;
             }
         }
-        (lengths, motif_names)
+        Ok((lengths, motif_names))
     }
 
     /// Second pass: fill the position-weight matrix.
-    fn pwm_from(text: &str, lengths: &[u16]) -> Vec<Vec<i32>> {
+    fn pwm_from(text: &str, lengths: &[u16]) -> std::io::Result<Vec<Vec<i32>>> {
         let mut pwm: Vec<Vec<i32>> = (0..lengths.len())
             .map(|i| vec![0; 26 * lengths[i] as usize])
             .collect();
 
         for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
             let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.len() < 2 {
-                continue;
-            }
             let parts: Vec<&str> = cols[0].split('@').collect();
-            if parts.len() < 3 {
-                continue;
-            }
             let id = match Self::parse_motif_id(parts[0]) {
                 Some(i) => i,
-                None => continue,
+                None => return Err(invalid_data(format!("invalid motif id in line: {line}"))),
             };
-            let position = parts[1].parse::<usize>().unwrap_or(0);
-            let aa = parts[2].as_bytes().first().copied().unwrap_or(b'A');
-            let score = cols[1].parse::<i32>().unwrap_or(0);
+            let position = parts[1]
+                .parse::<usize>()
+                .map_err(|_| invalid_data(format!("invalid motif position in line: {line}")))?;
+            let aa = parts[2]
+                .as_bytes()
+                .first()
+                .copied()
+                .ok_or_else(|| invalid_data(format!("empty amino acid in line: {line}")))?;
+            let score = cols[1]
+                .parse::<i32>()
+                .map_err(|_| invalid_data(format!("invalid PWM score in line: {line}")))?;
 
             let width = lengths[id as usize] as usize;
             let aa_idx = (aa as usize).saturating_sub(b'A' as usize);
@@ -165,75 +218,73 @@ impl MotifDefinition {
                 pwm[id as usize][aa_idx * width + position] = score;
             }
         }
-        pwm
+        Ok(pwm)
     }
 
-    /// Parse `store.txt` (CDF), two passes.
-    fn cdf_from(text: &str) -> Vec<Vec<f64>> {
-        // motif 槽位数从 store.txt 自身的最大 id 推断（与 mot.txt 保持一致）
-        let slot_count = {
-            let mut m = 0usize;
-            for line in text.lines() {
-                let cols: Vec<&str> = line.split_whitespace().collect();
-                if cols.is_empty() {
-                    continue;
-                }
-                let parts: Vec<&str> = cols[0].split('@').collect();
-                if parts.len() < 2 {
-                    continue;
-                }
-                if let Some(i) = Self::parse_motif_id(parts[0]) {
-                    m = m.max(i as usize);
-                }
-            }
-            m + 1
-        };
-        // First pass: find max index per motif.
-        let mut max_idx = vec![0usize; slot_count];
+    /// Parse and validate `store.txt` (right-tail CDF).
+    fn cdf_from(text: &str) -> std::io::Result<Vec<Vec<f64>>> {
+        let mut entries: Vec<std::collections::HashMap<usize, f64>> = vec![Default::default()];
+        let mut seen = std::collections::HashSet::new();
         for line in text.lines() {
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.is_empty() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
                 continue;
+            }
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            if cols.len() != 2 {
+                return Err(invalid_data(format!(
+                    "invalid store.txt line, expected 2 columns: {line}"
+                )));
             }
             let parts: Vec<&str> = cols[0].split('@').collect();
-            if parts.len() < 2 {
-                continue;
+            if parts.len() != 2 {
+                return Err(invalid_data(format!(
+                    "invalid store.txt key, expected motif_ID@score: {line}"
+                )));
             }
-            let id = match Self::parse_motif_id(parts[0]) {
-                Some(i) => i,
-                None => continue,
-            };
-            let idx = parts[1].parse::<usize>().unwrap_or(0);
-            if idx > max_idx[id as usize] {
-                max_idx[id as usize] = idx;
+            let id = Self::parse_motif_id(parts[0])
+                .filter(|&id| id > 0)
+                .ok_or_else(|| invalid_data(format!("invalid motif id in line: {line}")))?;
+            let idx = parts[1]
+                .parse::<usize>()
+                .map_err(|_| invalid_data(format!("invalid CDF score index in line: {line}")))?;
+            let val = cols[1]
+                .parse::<f64>()
+                .map_err(|_| invalid_data(format!("invalid CDF p-value in line: {line}")))?;
+            if !val.is_finite() || !(0.0..=1.0).contains(&val) {
+                return Err(invalid_data(format!(
+                    "CDF p-value must be finite and within [0,1]: {line}"
+                )));
             }
+            if !seen.insert((id, idx)) {
+                return Err(invalid_data(format!(
+                    "duplicate CDF entry in store.txt: {line}"
+                )));
+            }
+            if entries.len() <= id as usize {
+                entries.resize_with(id as usize + 1, Default::default);
+            }
+            entries[id as usize].insert(idx, val);
+        }
+        if seen.is_empty() {
+            return Err(invalid_data("store.txt contains no CDF entries"));
         }
 
-        // Second pass: fill.
-        // 未在 store.txt 出现的分数段默认 1.0（不显著），而不是 0.0：0.0 会被当成
-        // "极显著"，一旦自定义表缺行就会凭空产生高分命中。内置表 0..max 无缺行，
-        // 表尾不可达分数的 0.0 都是显式写出的，故不受影响。
-        let mut cdf: Vec<Vec<f64>> = (0..slot_count).map(|i| vec![1.0; max_idx[i] + 1]).collect();
-        for line in text.lines() {
-            let cols: Vec<&str> = line.split_whitespace().collect();
-            if cols.len() < 2 {
-                continue;
+        let mut cdf = Vec::with_capacity(entries.len());
+        for table in entries {
+            let max_idx = table.keys().copied().max().unwrap_or(0);
+            let mut values = vec![1.0; max_idx + 1];
+            for (&idx, &val) in &table {
+                values[idx] = val;
             }
-            let parts: Vec<&str> = cols[0].split('@').collect();
-            if parts.len() < 2 {
-                continue;
+            if values.windows(2).any(|w| w[0] < w[1]) {
+                return Err(invalid_data(
+                    "CDF must be monotonically non-increasing with score",
+                ));
             }
-            let id = match Self::parse_motif_id(parts[0]) {
-                Some(i) => i,
-                None => continue,
-            };
-            let idx = parts[1].parse::<usize>().unwrap_or(0);
-            let val = cols[1].parse::<f64>().unwrap_or(0.0);
-            if idx < cdf[id as usize].len() {
-                cdf[id as usize][idx] = val;
-            }
+            cdf.push(values);
         }
-        cdf
+        Ok(cdf)
     }
 
     /// Order of first appearance (scan iteration order).
@@ -248,7 +299,7 @@ impl MotifDefinition {
         self.lengths[id as usize]
     }
 
-    /// Max motif length (sequences shorter than this skip scanning).
+    /// Maximum motif length across the profile.
     #[inline]
     pub fn max_length(&self) -> u16 {
         self.max_length
@@ -313,6 +364,10 @@ impl MotifDefinition {
 /// Load from standard filenames (mot.txt / store.txt) in a directory.
 pub fn load_default(dir: &std::path::Path) -> std::io::Result<MotifDefinition> {
     MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt"))
+}
+
+fn invalid_data(message: impl Into<String>) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
 }
 
 /// Memory-map a file read-only and return its contents as a string.

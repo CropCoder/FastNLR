@@ -92,7 +92,9 @@ cargo test -p nlr-domain
 
 `tests/scan.rs` scans four real NLR proteins (CNL/TNL/RNL plus an NRC-clade CNL, all from
 UniProt) with golden bitscores locked to ±0.5 bit, checks the classification rule table, and
-asserts that shuffled versions of the same sequences are not called as NLRs.
+asserts that shuffled versions of the same sequences are not called as NLRs. The
+`NlrArchitecture.family` field distinguishes RNL from CNL even when both share a
+`CC-NBARC-LRR` architecture: RPW8(PF05659) gives `RNL`, while Rx_N/R1-type CC gives `CNL`.
 
 ## License
 

@@ -31,59 +31,61 @@ impl FastaReader<Box<dyn BufRead>> {
         } else {
             Box::new(BufReader::new(file))
         };
-        Ok(Self::new(reader))
+        Self::new(reader)
     }
 }
 
 impl<R: BufRead> FastaReader<R> {
     /// Construct from any BufRead, skipping leading non-header lines.
-    pub fn new(mut reader: R) -> Self {
+    pub fn new(mut reader: R) -> std::io::Result<Self> {
         let mut last_line = None;
         loop {
             let mut line = String::new();
-            match reader.read_line(&mut line) {
-                Ok(0) => break, // EOF
-                Ok(_) => {
-                    if line.trim_start().starts_with('>') {
-                        last_line = Some(line);
-                        break;
-                    }
-                }
-                Err(_) => break,
+            let bytes = reader.read_line(&mut line)?;
+            if bytes == 0 {
+                break; // EOF
+            }
+            if line.trim_start().starts_with('>') {
+                last_line = Some(line);
+                break;
             }
         }
-        FastaReader { reader, last_line }
+        Ok(FastaReader { reader, last_line })
     }
 
-    /// Read the next sequence; returns None at EOF.
-    pub fn read_entry(&mut self) -> Option<BioSequence> {
-        let header = self.last_line.take()?;
+    /// Read the next sequence; returns `Ok(None)` at EOF.
+    pub fn read_entry(&mut self) -> std::io::Result<Option<BioSequence>> {
+        let Some(header) = self.last_line.take() else {
+            return Ok(None);
+        };
         let header = header.trim_end();
         // identifier = first whitespace-delimited token with '>' stripped; description = remainder.
         let mut parts = header.split_whitespace();
-        let identifier = parts.next()?.trim_start_matches('>').to_string();
+        let identifier = parts
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('>')
+            .to_string();
         let description = parts.collect::<Vec<_>>().join(" ");
 
         let mut sequence = String::new();
         loop {
             let mut line = String::new();
-            match self.reader.read_line(&mut line) {
-                Ok(0) => break, // EOF
-                Ok(_) => {
-                    let trimmed = line.trim();
-                    if trimmed.starts_with('>') {
-                        self.last_line = Some(line);
-                        break;
-                    }
-                    sequence.push_str(trimmed);
-                }
-                Err(_) => break,
+            let bytes = self.reader.read_line(&mut line)?;
+            if bytes == 0 {
+                break; // EOF
             }
+            let trimmed = line.trim();
+            if trimmed.starts_with('>') {
+                self.last_line = Some(line);
+                break;
+            }
+            sequence.push_str(trimmed);
         }
 
         let mut seq = BioSequence::new(identifier, sequence);
         seq.description = description;
-        Some(seq)
+        Ok(Some(seq))
     }
 }
 
@@ -91,7 +93,7 @@ impl<R: BufRead> FastaReader<R> {
 pub fn read_all(path: &std::path::Path) -> std::io::Result<Vec<BioSequence>> {
     let mut reader = FastaReader::from_file(path)?;
     let mut out = Vec::new();
-    while let Some(seq) = reader.read_entry() {
+    while let Some(seq) = reader.read_entry()? {
         out.push(seq);
     }
     Ok(out)

@@ -194,3 +194,17 @@ fastnlr -i genome.fa -o out --flexible-seed 2
 - 评测产物：`benchmark/metrics/refplantnlr_gene_table.csv`、`refplantnlr_summary.csv`、
   `refplantnlr_by_type.csv`、`refplantnlr_by_domain.csv`。
 - 评测图：`benchmark/figures/FigA1~FigA4-*.pdf`。
+
+## 10. RNL-aware default 补丁（2026-10-21）
+
+ADR1-L1（AT4G33300）局部诊断显示，default 库只留下 `motif_1 -> motif_11xN`，无法满足
+3 个 NB-ARC motif 的柔性 seed；但 helper CC 与 P-loop 相邻。补丁采用两项保守扩展：
+
+1. default profile 新增 motif 21、23，并加入 `21,1`、`23,1` 两个精确 seed 及对应 signature；
+2. 新增 CC seed 使用连续子串匹配，经典 NB-ARC seed 仍要求整串精确相等；合并/延伸后仍只有
+   两个 motif 且无 LRR 的 `CC+P-loop` 残余片段不输出。
+3. CC/TIR 同时出现在首个 NB-ARC 前时，N 端域优先连续块规模更大的类别，规模相同再取更靠近
+   NB-ARC 者；防止 TIR 基因中的单条 RNL-CC 交叉命中覆盖完整 TIR 块。
+
+TAIR12 全基因组回归：位点 213→215，未匹配位点 15→15，金标准基因 194→196/198，
+拆分基因 12→12、融合位点 10→10。AT4G33300 从未检出恢复为完整 `CC-NBARC-LRR`。

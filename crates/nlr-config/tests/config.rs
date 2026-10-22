@@ -12,16 +12,17 @@ fn load_real_config() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../nlr-cli/data");
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
 
-    // The built-in library has the standard 20 motifs; an extended library may have more,
-    // so assert "the 20 built-ins are present" instead of an exact count.
+    // The RNL-aware default library contains the classic 20 motifs plus
+    // RNL/helper-CC profiles 21 and 23. Profile 22 remains optional.
     let mut names = def.motif_names().to_vec();
     names.sort();
-    let builtins: Vec<u8> = (1..=20).collect();
-    assert!(
-        names.len() >= builtins.len(),
-        "should load at least 20 motifs, got {}",
-        names.len()
+    let builtins: Vec<u8> = (1..=21).chain(std::iter::once(23)).collect();
+    assert_eq!(
+        def.max_motif_id(),
+        23,
+        "default library should end at motif_23"
     );
+    assert_eq!(names.len(), builtins.len());
     assert!(
         builtins.iter().all(|i| names.contains(i)),
         "missing built-in motifs"
@@ -50,7 +51,7 @@ fn thresholds_monotonic() {
     let def = MotifDefinition::load(&dir.join("mot.txt"), &dir.join("store.txt")).unwrap();
     let t = def.score_thresholds(1e-4);
     // Thresholds are non-negative, and every motif has a value.
-    for id in 1..=20u8 {
+    for id in (1..=21u8).chain(std::iter::once(23)) {
         assert!(t[id as usize] >= 0);
     }
 }
@@ -99,4 +100,28 @@ fn score_thresholds_never_matching_marks_motif_unreachable() {
     let def = MotifDefinition::load_from_str(mot, store).unwrap();
     let t = def.score_thresholds(1e-4);
     assert_eq!(t[1], i32::MAX, "无任何分数达标时应标记为不可达");
+}
+
+#[test]
+fn invalid_cdf_value_is_rejected() {
+    let mot = "motif_1@0@G 10\n";
+    let store = "motif_1@0 nope\n";
+    let err = MotifDefinition::load_from_str(mot, store).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("CDF p-value"));
+}
+
+#[test]
+fn non_monotonic_cdf_is_rejected() {
+    let mot = "motif_1@0@G 10\n";
+    let store = "motif_1@0 1e-6\nmotif_1@1 1e-3\n";
+    let err = MotifDefinition::load_from_str(mot, store).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    assert!(err.to_string().contains("monotonically non-increasing"));
+}
+
+#[test]
+fn empty_profiles_are_rejected() {
+    assert!(MotifDefinition::load_from_str("", "motif_1@0 1.0\n").is_err());
+    assert!(MotifDefinition::load_from_str("motif_1@0@G 10\n", "").is_err());
 }

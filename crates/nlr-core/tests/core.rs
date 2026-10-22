@@ -4,7 +4,9 @@
 mod tests {
     use nlr_core::motif::Motif;
     use nlr_core::motif_list::MotifList;
-    use nlr_core::signature_def::{AnnotatorSignatureDefinition, FlexibleSeedConfig};
+    use nlr_core::signature_def::{
+        AnnotatorSignatureDefinition, DomainCategory, FlexibleSeedConfig,
+    };
     use nlr_core::strand::Strand;
 
     fn def() -> AnnotatorSignatureDefinition {
@@ -45,6 +47,40 @@ mod tests {
         assert!(!d.is_seed(&[6, 1])); // order-sensitive
         assert!(d.has_signature(&[1, 6, 4, 5]));
         assert!(!d.has_signature(&[1, 2, 3]));
+        // RNL/helper 回归：CC motif 位于真实命中串内部，但 CC→P-loop 必须能播种。
+        assert!(d.is_seed(&[21, 23, 1, 11, 11]));
+        assert!(d.has_signature(&[21, 23, 1, 11, 11]));
+        assert!(!d.is_seed(&[21, 23, 11, 11]));
+    }
+
+    #[test]
+    fn rnl_helper_cc_motifs_have_cc_category() {
+        let d = def();
+        for id in 21..=24 {
+            assert_eq!(d.category(id), DomainCategory::Cc);
+        }
+        assert_eq!(
+            d.domain_string(&[21, 23, 1, 22, 11, 11, 11]),
+            "CC-NBARC-LRR"
+        );
+        let rnl = MotifList::new(
+            "rnl".into(),
+            vec![
+                protein_motif(21, 1, "C", 1e-6),
+                protein_motif(1, 10, "P", 1e-6),
+                protein_motif(11, 20, "L", 1e-6),
+            ],
+        );
+        assert_eq!(rnl.family(&d), "RNL");
+        let cnl = MotifList::new(
+            "cnl".into(),
+            vec![
+                protein_motif(17, 1, "C", 1e-6),
+                protein_motif(1, 10, "P", 1e-6),
+                protein_motif(11, 20, "L", 1e-6),
+            ],
+        );
+        assert_eq!(cnl.family(&d), "CNL");
     }
 
     #[test]
@@ -69,6 +105,12 @@ mod tests {
         assert_eq!(
             d.domain_string(&[9, 17, 16, 1, 6, 4, 5, 10, 3, 12, 2, 8, 7, 11]),
             "CC-NBARC-LRR"
+        );
+        // TIR 基因内部的单 motif RNL-CC 交叉命中不得覆盖前面的完整 TIR 块。
+        // DSC1：TIR×3 -> CC×1 -> NB-ARC -> LRR 应为 TIR-NBARC-LRR。
+        assert_eq!(
+            d.domain_string(&[18, 15, 13, 21, 1, 4, 10, 3, 12, 11, 11]),
+            "TIR-NBARC-LRR"
         );
         // NB-ARC 之后混入 CC：丢弃。对应 RPM1（修复前 "CC-NBARC-CC-NBARC-LRR"）。
         assert_eq!(
@@ -199,5 +241,25 @@ mod tests {
         assert_eq!(list.motifs[0].dna_start, 100);
         assert_eq!(list.motifs[0].pvalue, 1e-6);
         assert_eq!(list.motifs[1].dna_start, 200);
+    }
+
+    #[test]
+    fn same_start_motifs_have_deterministic_order() {
+        let mut a = protein_motif(6, 1, "AAAA", 1e-6);
+        a.set_dna("chr1".into(), 100, 20000, 0, Strand::Forward);
+        let mut b = protein_motif(4, 1, "BBBB", 1e-7);
+        b.set_dna("chr1".into(), 100, 20000, 0, Strand::Forward);
+
+        let mut first = vec![a.clone(), b.clone()];
+        let mut second = vec![b, a];
+        first.sort();
+        second.sort();
+        let key = |v: &[Motif]| {
+            v.iter()
+                .map(|m| (m.id, m.dna_start, m.dna_end, m.frame))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(key(&first), key(&second));
+        assert_ne!(first[0].cmp(&first[1]), std::cmp::Ordering::Equal);
     }
 }

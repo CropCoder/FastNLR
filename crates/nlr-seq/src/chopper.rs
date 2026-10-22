@@ -23,6 +23,24 @@ pub struct SequenceChopper {
 }
 
 impl SequenceChopper {
+    fn validate_window(fragment_length: usize, overlap: usize) -> std::io::Result<()> {
+        if fragment_length == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "fragment_length must be greater than 0",
+            ));
+        }
+        if overlap >= fragment_length {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "overlap ({overlap}) must be smaller than fragment_length ({fragment_length})"
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     /// Construct from file, auto-sniffing gzip.
     /// Non-gzip files take the mmap path (zero-copy slicing); gzip takes the streaming decompression path.
     pub fn from_file(
@@ -30,6 +48,7 @@ impl SequenceChopper {
         fragment_length: usize,
         overlap: usize,
     ) -> std::io::Result<Self> {
+        Self::validate_window(fragment_length, overlap)?;
         let mut file = std::fs::File::open(path)?;
         let mut header = [0u8; 2];
         let is_gzip = {
@@ -57,6 +76,7 @@ impl SequenceChopper {
         fragment_length: usize,
         overlap: usize,
     ) -> std::io::Result<Self> {
+        Self::validate_window(fragment_length, overlap)?;
         let file = std::fs::File::open(path)?;
         // SAFETY: read-only mapping, lifetime owned by Mmap.
         let mmap = unsafe { memmap2::Mmap::map(&file)? };
@@ -105,13 +125,14 @@ impl SequenceChopper {
         fragment_length: usize,
         overlap: usize,
     ) -> std::io::Result<Self> {
+        Self::validate_window(fragment_length, overlap)?;
         // Skip leading non-'>' content.
-        let mut c = reader.read_byte();
+        let mut c = reader.read_byte()?;
         while let Some(ch) = c {
             if ch == b'>' {
                 break;
             }
-            c = reader.read_byte();
+            c = reader.read_byte()?;
         }
         // Now c == Some(b'>'); read identifier.
         let current_id = if c == Some(b'>') {
@@ -132,10 +153,10 @@ impl SequenceChopper {
         })
     }
 
-    /// Read the next fragment; returns None at EOF.
-    pub fn next_sequence(&mut self) -> Option<BioSequence> {
+    /// Read the next fragment; returns `Ok(None)` at EOF.
+    pub fn next_sequence(&mut self) -> std::io::Result<Option<BioSequence>> {
         if self.eof {
-            return None;
+            return Ok(None);
         }
         if self.mmap.is_some() {
             return self.next_sequence_mmap();
@@ -144,9 +165,11 @@ impl SequenceChopper {
     }
 
     /// mmap path: bytes come from the mmap slice (saves syscalls); accumulation logic matches the reader path.
-    fn next_sequence_mmap(&mut self) -> Option<BioSequence> {
+    fn next_sequence_mmap(&mut self) -> std::io::Result<Option<BioSequence>> {
         // Take out the current mapping and position.
-        let mmap = self.mmap.take()?;
+        let Some(mmap) = self.mmap.take() else {
+            return Ok(None);
+        };
         let data = mmap.0;
         let mut pos = mmap.1;
 
@@ -160,9 +183,9 @@ impl SequenceChopper {
                         self.current_sequence.to_uppercase(),
                     );
                     self.current_sequence.clear();
-                    return Some(seq);
+                    return Ok(Some(seq));
                 }
-                return None;
+                return Ok(None);
             }
             let b = data[pos];
             match b {
@@ -191,7 +214,7 @@ impl SequenceChopper {
                         pos += 1;
                     }
                     self.mmap = Some((data, pos));
-                    return Some(seq);
+                    return Ok(Some(seq));
                 }
                 b'\n' | b'\r' => {
                     // Newline (\n or \r, CRLF-tolerant) skipped, not accumulated.
@@ -210,7 +233,7 @@ impl SequenceChopper {
                         self.current_sequence = tail;
                         self.current_sequence.push(b as char);
                         self.mmap = Some((data, pos + 1));
-                        return Some(seq);
+                        return Ok(Some(seq));
                     } else {
                         self.current_sequence.push(b as char);
                         pos += 1;
@@ -221,9 +244,9 @@ impl SequenceChopper {
     }
 
     /// reader path (gzip or in-memory Cursor).
-    fn next_sequence_reader(&mut self) -> Option<BioSequence> {
+    fn next_sequence_reader(&mut self) -> std::io::Result<Option<BioSequence>> {
         loop {
-            let ch = self.reader.read_byte();
+            let ch = self.reader.read_byte()?;
             match ch {
                 None => {
                     self.eof = true;
@@ -233,9 +256,9 @@ impl SequenceChopper {
                             self.current_sequence.to_uppercase(),
                         );
                         self.current_sequence.clear();
-                        return Some(seq);
+                        return Ok(Some(seq));
                     }
-                    return None;
+                    return Ok(None);
                 }
                 Some(b'>') => {
                     let seq = BioSequence::new(
@@ -244,10 +267,8 @@ impl SequenceChopper {
                     );
                     self.offset = 0;
                     self.current_sequence = String::new();
-                    if let Ok(id) = self.reader.read_identifier() {
-                        self.current_id = id;
-                    }
-                    return Some(seq);
+                    self.current_id = self.reader.read_identifier()?;
+                    return Ok(Some(seq));
                 }
                 Some(b'\n') | Some(b'\r') => {}
                 Some(b) => {
@@ -261,7 +282,7 @@ impl SequenceChopper {
                         let tail: String = self.current_sequence[keep..].to_string();
                         self.current_sequence = tail;
                         self.current_sequence.push(b as char);
-                        return Some(seq);
+                        return Ok(Some(seq));
                     } else {
                         self.current_sequence.push(b as char);
                     }
@@ -273,17 +294,16 @@ impl SequenceChopper {
 
 /// Internal extension: byte-by-byte read + read identifier.
 trait ReadByte {
-    fn read_byte(&mut self) -> Option<u8>;
+    fn read_byte(&mut self) -> std::io::Result<Option<u8>>;
     fn read_identifier(&mut self) -> std::io::Result<String>;
 }
 
 impl<R: BufRead + ?Sized> ReadByte for R {
-    fn read_byte(&mut self) -> Option<u8> {
+    fn read_byte(&mut self) -> std::io::Result<Option<u8>> {
         let mut buf = [0u8; 1];
-        match self.read(&mut buf) {
-            Ok(0) => None,
-            Ok(_) => Some(buf[0]),
-            Err(_) => None,
+        match self.read(&mut buf)? {
+            0 => Ok(None),
+            _ => Ok(Some(buf[0])),
         }
     }
 
@@ -315,10 +335,10 @@ mod tests {
     fn chop_basic() {
         // 10-base sequence, frag=4, overlap=2.
         let mut c = chopper(b">chr1\nACGTACGTAC\n", 4, 2);
-        let s1 = c.next_sequence().unwrap();
+        let s1 = c.next_sequence().unwrap().unwrap();
         assert_eq!(s1.identifier, "chr1_0");
         assert_eq!(s1.sequence, "ACGT");
-        let s2 = c.next_sequence().unwrap();
+        let s2 = c.next_sequence().unwrap().unwrap();
         assert_eq!(s2.identifier, "chr1_2"); // offset step = 4-2 = 2
         assert_eq!(s2.sequence, "GTAC");
     }
@@ -326,9 +346,9 @@ mod tests {
     #[test]
     fn offset_advances_by_fragment_minus_overlap() {
         let mut c = chopper(b">x\nAAAAAAAAAA\n", 5, 1);
-        let s1 = c.next_sequence().unwrap();
+        let s1 = c.next_sequence().unwrap().unwrap();
         assert_eq!(s1.identifier, "x_0");
-        let s2 = c.next_sequence().unwrap();
+        let s2 = c.next_sequence().unwrap().unwrap();
         assert_eq!(s2.identifier, "x_4"); // 5-1=4
     }
 }

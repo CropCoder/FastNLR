@@ -59,6 +59,9 @@ pub fn assemble(
     let mut pre_nlrs = elongate(merged, &motifs, params.distance_for_elongating, def);
     // 组装后处理：吸收被过度切分的冗余位点（与结构域判定无关，纯结构层面的收敛）。
     pre_nlrs = absorb_redundant_loci(pre_nlrs, params.distance_for_elongating, def);
+    // RNL 精度保护：丢弃仅有“单个 CC + P-loop”的两 motif 短片段。
+    // 完整/可延伸的 helper NLR 会先经过 absorb，再保留 LRR 或第三个结构 motif。
+    pre_nlrs.retain(|list| !is_unresolved_cc_ploop_fragment(list, def));
 
     // Sort candidate NLRs before naming (forward strand ascending / reverse strand
     // descending), which determines the nlrN naming order.
@@ -78,6 +81,19 @@ pub fn assemble(
     nlrs
 }
 
+/// 是否为未延伸的 `CC→P-loop` 两 motif 短片段。
+///
+/// 新增的 RNL/helper CC seed 可以恢复 ADR1 类基因，但单独一条 CC motif 与
+/// P-loop 相邻时也容易产生 200-500 bp 的短片段。若该候选经合并/延伸后仍只有
+/// 两个 motif 且没有 LRR，则属于未形成可解释 NLR 结构的残余 seed。
+fn is_unresolved_cc_ploop_fragment(list: &MotifList, def: &AnnotatorSignatureDefinition) -> bool {
+    if list.motifs.len() > 2 {
+        return false;
+    }
+    let domain = list.domain_string(def);
+    domain.starts_with("CC-NBARC") && !domain.contains("-LRR")
+}
+
 /// (1) Find seeds from adjacent motifs.
 fn find_seeds(
     motifs: &[Motif],
@@ -92,6 +108,30 @@ fn find_seeds(
     while i < motifs.len() {
         let mut potential = vec![motifs[i].clone()];
         let mut s: Vec<u8> = vec![motifs[i].id];
+        let is_seed_ids = |ids: &[u8]| {
+            if let Some(cfg) = def.flexible_seed() {
+                def.is_seed_flexible(ids, &cfg) || def.is_seed(ids)
+            } else if let Some(n) = relaxed_seed_min_nbarc {
+                def.is_seed_relaxed(ids, n)
+            } else {
+                def.is_seed(ids)
+            }
+        };
+
+        // The original loop only checked seeding after appending a second motif.
+        // With --flexible-seed 1, an isolated P-loop could never seed if the next
+        // motif was more than the intra-seed distance away.
+        if is_seed_ids(&s) {
+            count += 1;
+            let name = format!(
+                "{}_nlr{}",
+                motifs[i].dna_sequence_id.as_deref().unwrap_or(""),
+                count
+            );
+            seeds.push(MotifList::new(name, potential));
+            i += 1;
+            continue;
+        }
 
         let mut j = i + 1;
         let mut cur = &motifs[i];
@@ -109,13 +149,7 @@ fn find_seeds(
                 // 的位点。RefPlantNLR 的 Pb1（命中精确组合 [12,2,8]，但 NB-ARC 类 motif 只有
                 // 2 个、达不到柔性门槛）就是这种情形，开启 --flexible-seed 后反而漏检。
                 // 并集只会新增种子，不会移除任何原有种子，因此默认路径的行为完全不变。
-                let seeded = if let Some(cfg) = def.flexible_seed() {
-                    def.is_seed_flexible(&s, &cfg) || def.is_seed(&s)
-                } else if let Some(n) = relaxed_seed_min_nbarc {
-                    def.is_seed_relaxed(&s, n)
-                } else {
-                    def.is_seed(&s)
-                };
+                let seeded = is_seed_ids(&s);
                 if seeded {
                     count += 1;
                     let name = format!(
@@ -239,14 +273,32 @@ fn absorb_redundant_loci(
             {
                 continue;
             }
-            let a_end = lists[idx[a]].as_ref().unwrap().span().1;
-            for b in (a + 1)..idx.len() {
+            let (a_start, a_end) = lists[idx[a]].as_ref().unwrap().span();
+            let is_forward = lists[idx[a]].as_ref().unwrap().is_forward();
+            let tail_candidates: Vec<(usize, u64)> = if is_forward {
+                ((a + 1)..idx.len())
+                    .filter(|&b| !dropped[b])
+                    .filter_map(|b| {
+                        let (b_start, _) = lists[idx[b]].as_ref().unwrap().span();
+                        (b_start >= a_end).then_some((b, b_start - a_end))
+                    })
+                    .collect()
+            } else {
+                (0..a)
+                    .rev()
+                    .filter(|&b| !dropped[b])
+                    .filter_map(|b| {
+                        let (_, b_end) = lists[idx[b]].as_ref().unwrap().span();
+                        (b_end <= a_start).then_some((b, a_start - b_end))
+                    })
+                    .collect()
+            };
+            for (b, tail_gap_bp) in tail_candidates {
                 if dropped[b] {
                     continue;
                 }
                 let tail = lists[idx[b]].as_ref().unwrap();
-                let (b_start, _) = tail.span();
-                if b_start.saturating_sub(a_end) > tail_gap {
+                if tail_gap_bp > tail_gap {
                     break;
                 }
                 let only_nbarc = tail.motifs.iter().all(|m| {

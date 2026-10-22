@@ -21,7 +21,7 @@ fn both_paths(data: &[u8], frag: usize, overlap: usize) -> (Fragments, Fragments
     }
     let mut c_mmap = SequenceChopper::from_file(&path, frag, overlap).unwrap();
     let mut mmap_out = Vec::new();
-    while let Some(s) = c_mmap.next_sequence() {
+    while let Some(s) = c_mmap.next_sequence().unwrap() {
         mmap_out.push((s.identifier.clone(), s.sequence.clone()));
     }
     let _ = std::fs::remove_file(&path);
@@ -30,7 +30,7 @@ fn both_paths(data: &[u8], frag: usize, overlap: usize) -> (Fragments, Fragments
     let reader: Box<dyn std::io::BufRead> = Box::new(std::io::Cursor::new(data.to_vec()));
     let mut c_reader = SequenceChopper::new(reader, frag, overlap).unwrap();
     let mut reader_out = Vec::new();
-    while let Some(s) = c_reader.next_sequence() {
+    while let Some(s) = c_reader.next_sequence().unwrap() {
         reader_out.push((s.identifier.clone(), s.sequence.clone()));
     }
 

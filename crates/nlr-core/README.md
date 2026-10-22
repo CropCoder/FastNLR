@@ -70,18 +70,19 @@ mean "first and last in translation direction".
 ### Rule tables
 
 All tables are compile-time constants, indexed by `MotifId` (`u8`). Index `0` is an unused
-placeholder, ids `1..=20` are built-in, and ids `21..=28` are reserved for the optional
-RNL/TIR extension library shipped in `data/motif_library_rnl_tir/`.
+placeholder. The default profile contains ids `1..=21` and `23`; ids `22` and `24..=28`
+remain available to the optional RNL/TIR extension library shipped in
+`data/motif_library_rnl_tir/`.
 
 | Constant | Size | Purpose |
 |---|---|---|
 | `PLOOP_MOTIF` | 1 | id of the P-loop motif (`motif_1`), the NB-ARC anchor used by the alignment output |
-| `BUILTIN_MOTIF_COUNT` | 20 | default-profile motif count; extension ids 21–28 have explicit built-in CC/TIR categories |
+| `BUILTIN_MOTIF_COUNT` | 23 | highest default-profile motif id; ids 21 and 23 are built-in RNL/helper CC profiles |
 | `RANKS` | 29 | translation-direction ordering used for seeding and elongation |
 | `CATEGORIES` | 29 | `NBARC` / `LRR` / `TIR` / `CC` / `LINKER` / `NA` |
 | `RGB_COLORS` | 29 | per-motif colour emitted into BED `itemRgb` |
-| `SEED_COMBINATIONS` | 13 | motif-id sequences that trigger seed creation |
-| `SIGNATURES` | 18 | local cluster pre-filter patterns |
+| `SEED_COMBINATIONS` | 15 | classic seeds plus conservative `21,1` / `23,1` RNL seeds |
+| `SIGNATURES` | 20 | local cluster pre-filter patterns aligned with seed rules |
 | `CONSENSUS_SEQUENCES` | 29 | gap lengths used by the NB-ARC multiple alignment |
 
 ## Public API
@@ -107,7 +108,7 @@ RNL/TIR extension library shipped in `data/motif_library_rnl_tir/`.
 | `is_complete_nlr(def)` / `has_stop_codon()` | locus classification |
 | `can_be_merged_with(other, distance, def)` | merge predicate used by `nlr-assemble` |
 | `remove_redundant_motifs()` | deduplicate by `(id, dna_start, dna_end)` |
-| `domain_string(def)` / `span()` | reporting helpers |
+| `domain_string(def)` / `family(def)` / `span()` | structural class, biological family and coordinate span helpers |
 
 ### `AnnotatorSignatureDefinition`
 
