@@ -1396,3 +1396,27 @@
   拆分基因 12、融合位点 10、complete 146；6 个金标准 RNL 全部检出。
 - **范围**：未修改 `benchmark/scripts/`，未覆盖既有评估输出。conda 版本与 SHA 待正式
   `v1.6.0` tag 生成后更新。
+
+### TAIR12 Fig20d NLR49 位点解析（2026-10-23）
+
+- **分析对象**：`OZ408683.1_nlr49`，`OZ408683.1:25,908,110-25,912,136`，负链；
+  按 BED half-open 坐标计算核心长度为 4,027 bp。现有多数汇总表中的 4,028 bp
+  系 `end - start + 1` 的坐标口径错误。
+- **结构证据**：FastNLR 调用 `TIR-NBARC-LRR`，含 3 个 TIR、5 个 NB-ARC 和
+  9 个 LRR motif；Pfam GA 命中 TIR 165.4 bits（读框 `-0`）与 NB-ARC
+  58.1 bits（读框 `-1`）。TIR、NB-ARC 和 LRR 不在同一连续读框，不能解释为
+  单一全长 TNL CDS。
+- **工具与注释**：FastNLR default/extended 与 NLR-Annotator 均在同一区间调用位点；
+  金标准未收录，区间内注释仅有两个转座元件。图题中的 `FastNLR-only` 应理解为
+  “金标准未匹配”，而非仅 FastNLR 检出。
+- **表达证据**：10 组织 pooled RNA-seq 在核心区平均深度 2.19x、1x 覆盖广度 40.1%，
+  仅有 88 条有效 read（5 条含剪接 CIGAR）；
+  两侧完整 TNL AT1G63860 与 RLM1B 的平均深度分别为 267.2x 和 786.5x。
+  现有数据不支持该核心区的全长转录，较合理解释为 NLR 来源片段、假基因或重排残余。
+- **代码与产物**：
+  - `benchmark/scripts/S19-Analyze-TAIR12-NLR49-Locus-V1.R`
+  - `benchmark/reports/TAIR12-OZ408683.1-nlr49-analysis-V1.md`
+  - `benchmark/outputs/tair12/OZ408683.1_nlr49_analysis/OZ408683.1_nlr49.core.locus_strand.fasta`
+  - `benchmark/outputs/tair12/OZ408683.1_nlr49_analysis/OZ408683.1_nlr49.core.reference_plus.fasta`
+  - `benchmark/outputs/tair12/OZ408683.1_nlr49_analysis/OZ408683.1_nlr49.flank2kb.locus_strand.fasta`
+  - `benchmark/outputs/tair12/OZ408683.1_nlr49_analysis/Fig20d-OZ408683.1-nlr49-detailed.pdf`

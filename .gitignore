@@ -3,6 +3,9 @@
 **/target
 Cargo.lock.bak
 
+AGENTS.md
+Runlog.md
+
 # Release distribution (uploaded to GitHub Releases, not committed)
 /dist
 
