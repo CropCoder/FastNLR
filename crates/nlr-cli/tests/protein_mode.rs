@@ -29,7 +29,7 @@ fn protein_mode_writes_its_own_output_set() {
         .unwrap();
     assert!(status.success(), "protein mode 运行失败: {status}");
 
-    // 蛋白模式的 4 类输出。
+    // 蛋白模式的 3 类表格与摘要输出。
     for name in [
         "nlr_proteins.domains.tsv",
         "nlr_proteins.nlr.tsv",
@@ -37,12 +37,10 @@ fn protein_mode_writes_its_own_output_set() {
     ] {
         assert!(out_dir.join(name).is_file(), "缺少输出文件 {name}");
     }
-    for name in ["01-nlr-types.png", "02-domain-counts.png"] {
-        assert!(
-            out_dir.join("nlr_proteins.plots").join(name).is_file(),
-            "缺少统计图 {name}"
-        );
-    }
+    assert!(
+        !out_dir.join("nlr_proteins.plots").exists(),
+        "蛋白模式不应创建统计图目录"
+    );
     // 不应产生基因组坐标类输出。
     for name in [
         "nlr_proteins.nlr.gff",
@@ -89,6 +87,8 @@ fn protein_mode_writes_its_own_output_set() {
     assert_eq!(family_of("Q96485_SOLLC"), "CNL");
     let summary = std::fs::read_to_string(out_dir.join("nlr_proteins.summary.txt")).unwrap();
     assert!(summary.contains("# NLR families (count desc):"));
+    assert!(!summary.contains(".plots"));
+    assert!(!summary.contains(".png"));
 
     // domains.tsv：RPM1 的 NB-ARC 命中应通过 GA 且坐标落在蛋白范围内。
     let dom = std::fs::read_to_string(out_dir.join("nlr_proteins.domains.tsv")).unwrap();

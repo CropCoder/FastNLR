@@ -136,7 +136,7 @@ struct Cli {
 
     // ===== Protein mode =====
     /// Protein input mode: scan a protein FASTA for NLR domains with HMMER instead of
-    /// six-frame translating a genome. Writes domains.tsv / nlr.tsv / summary.txt / plots
+    /// six-frame translating a genome. Writes domains.tsv / nlr.tsv / summary.txt
     /// and does not produce genome-coordinate outputs (GFF/BED/loci FASTA).
     #[arg(long, help_heading = "Protein mode")]
     protein: bool,
@@ -871,7 +871,7 @@ fn build_summary(
     s
 }
 
-/// 写入全部输出文件（默认全部产出：序列 / 表格 / 图），返回成功写入的路径列表。
+/// 写入全部输出文件（序列 / 表格），返回成功写入的路径列表。
 fn write_outputs(
     cli: &Cli,
     prefix: &str,
@@ -958,27 +958,6 @@ fn write_outputs(
     nlr_report::write_tsv(&mut f, &stats)
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
     written.push(p);
-
-    // 图（PNG）
-    let plot_dir = cli.output_dir.join(format!("{}.plots", prefix));
-    std::fs::create_dir_all(&plot_dir).map_err(|e| {
-        std::io::Error::other(format!(
-            "cannot create plot dir {}: {}",
-            plot_dir.display(),
-            e
-        ))
-    })?;
-    let p1 = plot_dir.join("01-motif-counts.png");
-    let p2 = plot_dir.join("02-chromosome-nlrs.png");
-    let p3 = plot_dir.join("03-nlr-types.png");
-    nlr_plot::plot_motif_counts(&p1, &stats).map_err(|e| std::io::Error::other(e.to_string()))?;
-    nlr_plot::plot_chromosome_nlrs(&p2, &stats)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    nlr_plot::plot_nlr_type_counts(&p3, &stats)
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    written.push(p1);
-    written.push(p2);
-    written.push(p3);
 
     Ok(written)
 }

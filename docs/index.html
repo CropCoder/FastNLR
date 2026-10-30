@@ -574,7 +574,7 @@ cargo build --release
         The <code>-o</code> directory contains the full result set prefixed by the genome
         filename: <code>*.nlr.txt</code>, <code>*.nlr.gff</code>, <code>*.nlr.bed</code>,
         <code>*.motifs.bed</code>, <code>*.nbarc.fasta</code>, <code>*.loci.fasta</code>,
-        <code>*.stats.tsv</code>, <code>*.summary.txt</code>, and <code>*.plots/</code>.
+        <code>*.stats.tsv</code>, and <code>*.summary.txt</code>.
         Package page:
         <a href="https://anaconda.org/bioconda/fastnlr" target="_blank" rel="noopener">anaconda.org/bioconda/fastnlr</a>.
       </p>
@@ -708,7 +708,6 @@ cargo build --release
           <tr><td class="mono">&lt;prefix&gt;.loci.fasta</td><td>Extracted &plusmn;flanking sequence, reverse-complemented on the reverse strand.</td></tr>
           <tr><td class="mono">&lt;prefix&gt;.stats.tsv</td><td>Global / per-chromosome / per-motif statistics.</td></tr>
           <tr><td class="mono">&lt;prefix&gt;.summary.txt</td><td>Human-readable run summary (counts, class breakdown, output list).</td></tr>
-          <tr><td class="mono">&lt;prefix&gt;.plots/</td><td>PNG statistics plots: motif counts, per-chromosome NLRs, NLR types.</td></tr>
         </tbody>
       </table>
     </div>
@@ -727,7 +726,7 @@ cargo build --release
         <tbody>
           <tr><td class="mono">&lt;prefix&gt;.domains.tsv</td><td>One row per domain hit: protein id, source (<code>hmm</code>/<code>pwm</code>), model, model name, category, coordinates, bitscore, p-value, whether it passed the Pfam gathering threshold.</td></tr>
           <tr><td class="mono">&lt;prefix&gt;.nlr.tsv</td><td>One row per NLR candidate: class, N-terminal domain, <code>has_nbarc</code>/<code>has_tir</code>/<code>has_lrr</code>, completeness and a compact domain map.</td></tr>
-          <tr><td class="mono">&lt;prefix&gt;.summary.txt · .plots/</td><td>Model set, thresholds, counts by class, and PNG plots.</td></tr>
+          <tr><td class="mono">&lt;prefix&gt;.summary.txt</td><td>Model set, thresholds and counts by class.</td></tr>
         </tbody>
       </table>
     </div>
@@ -791,7 +790,7 @@ cargo build --release
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M3 20h18M5 20V9l7-5 7 5v11M9 20v-6h6v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <h3>Rich reporting</h3>
-        <p>Human-readable summary, TSV statistics (global / per-chromosome / per-motif), and PNG plots out of the box — no external tools.</p>
+        <p>Human-readable summary and TSV statistics (global / per-chromosome / per-motif) out of the box — no external tools.</p>
       </div>
 
       <div class="card reveal">
@@ -903,7 +902,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <div class="crate"><span class="cname">nlr-domain</span><span class="cdesc">Protein-mode HMMER domain scanning (NB-ARC / TIR / CC) + architecture classification.</span></div>
       <div class="crate"><span class="cname">nlr-output</span><span class="cdesc">txt / GFF / BED / motifBED / alignment-fasta / loci-fasta / TSV output.</span></div>
       <div class="crate"><span class="cname">nlr-report</span><span class="cdesc">Run statistics aggregation.</span></div>
-      <div class="crate"><span class="cname">nlr-plot</span><span class="cdesc">plotters statistics plots (bundled font backend, no system font deps).</span></div>
+      <div class="crate"><span class="cname">nlr-plot</span><span class="cdesc">Standalone optional PNG plotting library; not invoked by the CLI result pipeline.</span></div>
       <div class="crate"><span class="cname">nlr-cli</span><span class="cdesc">clap CLI entry + pipeline orchestration (rayon + checkpoint + SIGINT); binary: <code>fastnlr</code>.</span></div>
     </div>
   </div>

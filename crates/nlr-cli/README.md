@@ -4,7 +4,7 @@
 
 This crate owns everything that is not an algorithm: argument parsing, input validation, the
 parallel scan pipeline, checkpointing, graceful interruption, run summaries and output file
-management. It links the nine library crates together and produces the `fastnlr` binary.
+management. It links the eight library crates together and produces the `fastnlr` binary.
 
 The package is published as `fastnlr`; the library target keeps the internal name `nlr_cli` so
 that in-tree imports and integration tests stay stable.
@@ -14,7 +14,7 @@ that in-tree imports and integration tests stay stable.
 | | |
 |---|---|
 | Layer | 6 (top) |
-| Depends on | `nlr-core`, `nlr-config`, `nlr-seq`, `nlr-scan`, `nlr-assemble`, `nlr-domain`, `nlr-output`, `nlr-report`, `nlr-plot`, `clap`, `rayon`, `tracing`, `indicatif`, `ctrlc`, `tempfile` |
+| Depends on | `nlr-core`, `nlr-config`, `nlr-seq`, `nlr-scan`, `nlr-assemble`, `nlr-domain`, `nlr-output`, `nlr-report`, `clap`, `rayon`, `tracing`, `indicatif`, `ctrlc`, `tempfile` |
 | Targets | binary `fastnlr`, library `nlr_cli` |
 | Embeds | `data/mot.txt` and `data/store.txt` via `include_str!` |
 
@@ -62,9 +62,9 @@ scanning with HMMER domain scanning:
 - **Genome-only flags are rejected** in this mode: `--flank`, `--relaxed-seed`,
   `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`.
 
-Outputs: `<prefix>.domains.tsv`, `<prefix>.nlr.tsv`, `<prefix>.summary.txt` and
-`<prefix>.plots/{01-nlr-types.png,02-domain-counts.png}`. The genome-coordinate outputs
-(GFF/BED/motifs BED/loci FASTA/NB-ARC alignment) are intentionally not produced.
+Outputs: `<prefix>.domains.tsv`, `<prefix>.nlr.tsv` and `<prefix>.summary.txt`.
+The genome-coordinate outputs (GFF/BED/motifs BED/loci FASTA/NB-ARC alignment) are
+intentionally not produced.
 
 ## Pipeline
 
@@ -136,9 +136,9 @@ and `.gz`, and the following files are written into `-o`:
 | `genome.loci.fasta` | `nlr-output` |
 | `genome.stats.tsv` | `nlr-report` |
 | `genome.summary.txt` | this crate |
-| `genome.plots/{01-motif-counts,02-chromosome-nlrs,03-nlr-types}.png` | `nlr-plot` |
 
 All outputs are written by default; there is no opt-in flag per format.
+PNG statistics plots are not generated.
 
 ## Notes
 

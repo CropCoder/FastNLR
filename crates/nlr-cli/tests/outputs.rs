@@ -168,14 +168,11 @@ fn checkpoint_resume_is_byte_identical() {
 }
 
 #[test]
-fn plot_write_failure_is_reported() {
+fn png_plots_are_not_generated() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let fasta = tmp.path().join("plot_failure.fasta");
+    let fasta = tmp.path().join("no_plots.fasta");
     std::fs::write(&fasta, ">chr1\nATGGCTAGCTAGCTAGCTAGCTAGCTAGCTAA\n").unwrap();
     let out_dir = tmp.path().join("out");
-    std::fs::create_dir_all(&out_dir).unwrap();
-    // 以同名普通文件占位，使 plot 输出目录无法创建。
-    std::fs::write(out_dir.join("plot_failure.plots"), b"not a directory").unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_fastnlr"))
         .args([
@@ -192,13 +189,26 @@ fn plot_write_failure_is_reported() {
         ])
         .output()
         .unwrap();
+    assert!(output.status.success(), "fastnlr 运行失败");
     assert!(
-        !output.status.success(),
-        "plot write failure must fail the run"
+        !out_dir.join("no_plots.plots").exists(),
+        "不应创建统计图目录"
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("output write failed"),
-        "plot write failure should be reported: {stderr}"
-    );
+
+    // 输出目录顶层不得出现 PNG，摘要中的输出清单也不得再列出图件。
+    let pngs: Vec<_> = std::fs::read_dir(&out_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("png"))
+        })
+        .map(|entry| entry.path())
+        .collect();
+    assert!(pngs.is_empty(), "不应生成 PNG 文件: {pngs:?}");
+    let summary = std::fs::read_to_string(out_dir.join("no_plots.summary.txt")).unwrap();
+    assert!(!summary.contains(".plots"));
+    assert!(!summary.contains(".png"));
 }

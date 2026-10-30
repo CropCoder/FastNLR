@@ -64,11 +64,11 @@ Package page: <https://anaconda.org/bioconda/fastnlr> · Packaging recipe: [`con
 ```bash
 # 1. Genome (DNA) mode — built-in motif library, 8 threads
 #    -> results/<genome>.nlr.txt, .nlr.gff, .nlr.bed, .motifs.bed, .nbarc.fasta,
-#       .loci.fasta, .stats.tsv, .summary.txt, .plots/
+#       .loci.fasta, .stats.tsv, .summary.txt
 fastnlr -i genome.fasta -o results -t 8
 
 # 2. Protein mode — HMMER domain scan on a protein FASTA (no genome coordinates)
-#    -> protein_results/<prefix>.domains.tsv, .nlr.tsv, .summary.txt, .plots/
+#    -> protein_results/<prefix>.domains.tsv, .nlr.tsv, .summary.txt
 fastnlr --protein -i proteins.fa -o protein_results
 
 # 3. Resume a run (skips the expensive scan)
@@ -104,7 +104,7 @@ details and benchmark results.
   mislabeled as CNL merely because they share the same CC-NBARC-LRR architecture.
 - **Strict resumable runs** — checkpoints include input/profile/configuration fingerprints and are
   reused only when the current run is compatible. Incomplete or stale checkpoints fail explicitly;
-  every run writes a human-readable summary, per-chromosome/per-motif TSV statistics and PNG plots.
+  every run writes a human-readable summary and per-chromosome/per-motif TSV statistics.
 
 ## Performance
 

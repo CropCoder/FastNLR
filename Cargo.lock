@@ -387,7 +387,6 @@ dependencies = [
  "nlr-core",
  "nlr-domain",
  "nlr-output",
- "nlr-plot",
  "nlr-report",
  "nlr-scan",
  "nlr-seq",

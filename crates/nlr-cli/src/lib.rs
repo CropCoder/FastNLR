@@ -1158,7 +1158,7 @@ fn scan_one_protein(
     }
 }
 
-/// 写出蛋白模式结果集（domains.tsv / nlr.tsv / summary.txt / plots）。
+/// 写出蛋白模式结果集（domains.tsv / nlr.tsv / summary.txt）。
 pub fn write_protein_outputs(
     output_dir: &std::path::Path,
     prefix: &str,
@@ -1217,17 +1217,10 @@ pub fn write_protein_outputs(
     )?;
     let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut family_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut model_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut nlr_total = 0usize;
     let mut complete_total = 0usize;
     for r in &result.records {
         let passed = r.passed_domains();
-        for h in &passed {
-            *model_counts.entry(h.model_name.clone()).or_default() += 1;
-        }
-        if !r.lrr_sites.is_empty() {
-            *model_counts.entry("LRR(PWM)".to_string()).or_default() += 1;
-        }
         if !r.arch.is_nlr {
             continue;
         }
@@ -1271,28 +1264,6 @@ pub fn write_protein_outputs(
         )?;
     }
     written.push(p);
-
-    // 统计图（复用 nlr-plot 的通用计数柱状图）。
-    let plot_dir = output_dir.join(format!("{prefix}.plots"));
-    std::fs::create_dir_all(&plot_dir)?;
-    let p1 = plot_dir.join("01-nlr-types.png");
-    nlr_plot::plot_counts(
-        &p1,
-        "NLR types (protein mode)",
-        "protein count",
-        &type_counts,
-    )
-    .map_err(|e| std::io::Error::other(e.to_string()))?;
-    written.push(p1);
-    let p2 = plot_dir.join("02-domain-counts.png");
-    nlr_plot::plot_counts(
-        &p2,
-        "Domain hits (protein mode)",
-        "hit count",
-        &model_counts,
-    )
-    .map_err(|e| std::io::Error::other(e.to_string()))?;
-    written.push(p2);
 
     // 运行摘要。
     use std::fmt::Write as _;

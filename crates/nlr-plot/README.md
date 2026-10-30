@@ -1,6 +1,6 @@
 # nlr-plot
 
-> PNG statistics charts for FastNLR runs.
+> Standalone PNG statistics charts for FastNLR run data.
 
 `nlr-plot` renders the run statistics produced by `nlr-report` into three bitmaps:
 motif hit counts, per-contig locus counts and locus type counts. It uses `plotters` with the
@@ -13,12 +13,12 @@ and cross-compiles cleanly.
 |---|---|
 | Layer | 5 |
 | Depends on | `nlr-report`, `plotters` |
-| Used by | `nlr-cli` (`.plots/` directory) |
-| Output | PNG files, 1200 × 800 px |
+| Used by | Standalone callers (the `fastnlr` CLI does not invoke this crate) |
+| Output | Caller-selected PNG files, 1200 × 800 px |
 
 ## Charts
 
-| Function | File written by `fastnlr` | Contents |
+| Function | Suggested file name | Contents |
 |---|---|---|
 | `plot_motif_counts` | `01-motif-counts.png` | bar chart of hits per motif id; the x-axis range is derived from the data, so both the RNL-aware default profile and the 28-motif extended library render correctly |
 | `plot_chromosome_nlrs` | `02-chromosome-nlrs.png` | bar chart of loci per contig, labelled with contig names |
@@ -31,6 +31,7 @@ pub fn plot_...(path: &Path, stats: &RunStats) -> Result<(), Box<dyn std::error:
 ```
 
 and take their data from `nlr_report::RunStats`.
+The CLI no longer creates a `.plots/` directory or these files automatically.
 
 ## Font handling
 
