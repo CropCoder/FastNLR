@@ -13,7 +13,7 @@ use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
 use std::io::Write;
 
-/// Loci report txt (`-o`): no header, 7 columns per NLR.
+/// Loci report txt (`-o`): no header, 6 columns per NLR.
 pub fn write_report_txt<W: Write>(
     w: &mut W,
     nlrs: &[MotifList],
@@ -39,7 +39,7 @@ pub fn write_report_txt<W: Write>(
     Ok(())
 }
 
-/// Loci GFF (`-g`): 6 header lines, start+1 (1-based), end unchanged, feature=NBSLRR.
+/// Loci GFF (`-g`): 5 header lines, start+1 (1-based), end unchanged, feature=NBSLRR.
 pub fn write_nlr_gff<W: Write>(
     w: &mut W,
     nlrs: &[MotifList],
@@ -245,6 +245,9 @@ pub fn write_nbarc_alignment_fasta<W: Write>(
 
 /// Loci sequence fasta for a single contig (`-f`): extract ± flanking from the genome,
 /// reverse-complement on the reverse strand, unified clamp.
+///
+/// 只写 `sequence_name() == genome_id` 的位点，避免把其它 contig 的位点错误地用
+/// 当前 contig 序列提取。
 pub fn write_nlr_loci<W: Write>(
     w: &mut W,
     nlrs: &[MotifList],
@@ -253,7 +256,7 @@ pub fn write_nlr_loci<W: Write>(
     flanking: u64,
 ) -> std::io::Result<()> {
     let genome_len = genome.len() as u64;
-    for list in nlrs {
+    for list in nlrs.iter().filter(|l| l.sequence_name() == genome_id) {
         let (start, end) = list.span();
         let s = start.saturating_sub(flanking);
         let e = (end + flanking).min(genome_len); // unified clamp

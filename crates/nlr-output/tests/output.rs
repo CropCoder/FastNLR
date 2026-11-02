@@ -6,7 +6,7 @@ use nlr_core::signature_def::AnnotatorSignatureDefinition;
 use nlr_core::strand::Strand;
 use nlr_output::{
     export_motifs, import_motifs, write_nbarc_alignment_fasta, write_nlr_bed, write_nlr_gff,
-    write_report_txt,
+    write_nlr_loci, write_report_txt,
 };
 
 fn def() -> AnnotatorSignatureDefinition {
@@ -155,4 +155,21 @@ fn motif_checkpoint_import_is_strict() {
         import_motifs(&text).is_err(),
         "DNA-free motif must not enter a genome checkpoint"
     );
+}
+
+#[test]
+fn single_contig_loci_writer_filters_by_sequence_name() {
+    // 传入 chr1 的序列，只应写出 chr1 位点；chr2 位点不能被错误地按 chr1 序列提取。
+    let chr1 = sample_nlr();
+    let mut chr2_m1 = Motif::new_protein(1, "chr2".to_string(), 1, "P".to_string(), 1e-6);
+    chr2_m1.set_dna("chr2".to_string(), 10, 20_000, 0, Strand::Forward);
+    let mut chr2_m2 = Motif::new_protein(9, "chr2".to_string(), 2, "L".to_string(), 1e-6);
+    chr2_m2.set_dna("chr2".to_string(), 20, 20_000, 0, Strand::Forward);
+    let chr2 = MotifList::new("chr2_nlr1".to_string(), vec![chr2_m1, chr2_m2]);
+
+    let mut buf = Vec::new();
+    write_nlr_loci(&mut buf, &[chr1, chr2], &"A".repeat(200), "chr1", 2).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    assert!(text.contains("chr1_nlr1"));
+    assert!(!text.contains("chr2_nlr1"));
 }
