@@ -38,7 +38,7 @@ With `--protein`, `-i` is read as a protein FASTA (see [Protein mode](#protein-m
 | Motif config | `-x <mot.txt>`, `-y <store.txt>` |
 | Output | `-o <DIR>`, `--flank <bp>` (default 2000) |
 | Performance | `-t <threads>`, `-n <fragments per chunk>` (default 1000) |
-| Run control | `--checkpoint <DIR>`, `--tmpdir <DIR>` (accepted, but not yet wired into the pipeline) |
+| Run control | `--checkpoint <DIR>` |
 | Observability | `--progress <auto\|bar\|simple\|off>`, `--log-level <level>` |
 | Recall | `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed <n>`, `--flexible-seed <n>`, `--require-ploop` |
 | Motif library metadata | `--motif-category <ID=CAT>`, `--seed-combination <IDS>`, `--signature <IDS>` |
@@ -144,10 +144,9 @@ PNG statistics plots are not generated.
 
 - Checkpoints are reused only with identical input/profile hashes and runtime settings; the saved
   motif set is assembled with the current validated `AssembleParams`.
-- `--tmpdir` currently only validates and creates the requested directory. It does not change the
-  location used by the scanning, checkpoint or output stages.
-- Locus extraction reads the genome through `nlr_seq::fasta::read_all`, so peak memory for a
-  full run scales with the genome size during the output stage.
+- Locus extraction streams the genome contig by contig: each contig is read once, used to append
+  its locus FASTA records and to annotate the HMM N-terminal domain, then dropped. Peak memory in
+  the output stage no longer scales with the whole genome.
 - The GFF date header uses the host's local timezone; checkpoint runs retain the first-run
   timestamp so resumed output is reproducible.
 - Peak memory is reported on Linux (`/proc/self/status`) and macOS (`getrusage`); on other

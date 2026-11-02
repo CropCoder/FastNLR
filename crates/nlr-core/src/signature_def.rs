@@ -57,7 +57,9 @@ pub const PLOOP_MOTIF: MotifId = 1;
 /// Rank table (index = motif id; `RANKS[0]` is an unused placeholder).
 pub const RANKS: [u8; 29] = [
     0, 4, 11, 9, 6, 7, 5, 13, 12, 14, 8, 14, 10, 3, 3, 2, 2, 1, 1, 14, 15, 14, 14, 14, 14, 14, 14,
-    14, 14, // 8 个 RNL(helper) 专用 CC motif（不参与 NB-ARC 排序）
+    // 21..=28 为扩展 motif（21..=24 CC、25..=28 TIR），rank 统一为 14，
+    // 不参与 NB-ARC 排序。
+    14, 14,
 ];
 
 /// Category table (index = motif id).
@@ -202,10 +204,10 @@ pub const CONSENSUS_SEQUENCES: [&str; 29] = [
     "", // 22（RNL CC，非 NB-ARC）
     "", // 23（RNL CC，非 NB-ARC）
     "", // 24（RNL CC，非 NB-ARC）
-    "", // 25（RNL CC，非 NB-ARC）
-    "", // 26（RNL CC，非 NB-ARC）
-    "", // 27（RNL CC，非 NB-ARC）
-    "", // 28（RNL CC，非 NB-ARC）
+    "", // 25（扩展 TIR，非 NB-ARC）
+    "", // 26（扩展 TIR，非 NB-ARC）
+    "", // 27（扩展 TIR，非 NB-ARC）
+    "", // 28（扩展 TIR，非 NB-ARC）
 ];
 
 /// Convert a motif id to a "motif_N" string.

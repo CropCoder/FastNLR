@@ -132,7 +132,7 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
 
 ```bash
 cargo build --release                              # optimized build
-cargo test --workspace                             # 69 tests
+cargo test --workspace                             # 95 tests
 cargo fmt --all -- --check                         # formatting
 cargo clippy --workspace --all-targets -- -D warnings
 ```
