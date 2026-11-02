@@ -16,6 +16,9 @@ members = [
     "crates/nlr-output",
     "crates/nlr-report",
     "crates/nlr-plot",
+    "crates/nlr-service",
+    "crates/nlr-server",
+    "crates/nlr-mcp",
     "crates/nlr-cli",
 ]
 

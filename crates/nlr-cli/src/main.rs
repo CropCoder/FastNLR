@@ -1,7 +1,7 @@
 //! FastNLR command-line entry point.
 //!
 //! Short options: `-i/-x/-y/-o/-t/-n`. Everything else — `--flank`, `--protein`,
-//! `--hmm`, `--checkpoint`, `--tmpdir`, `--progress`, `--log-level`, the recall
+//! `--hmm`, `--checkpoint`, `--progress`, `--log-level`, the recall
 //! enhancements and the custom-motif-library declarations — is long-form only;
 //! run `fastnlr --help` for the full reference.
 //!
@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::Parser;
-use nlr_cli::{all_motifs, run_with_progress, RunConfig};
+use nlr_cli::{run_with_progress, RunConfig};
 
 /// Valid log-level values (for --log-level validation and hints).
 const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
@@ -164,10 +164,6 @@ struct Cli {
     #[arg(long, help_heading = "Run enhancements")]
     checkpoint: Option<PathBuf>,
 
-    /// Temp file directory (default: system temp dir)
-    #[arg(long, help_heading = "Run enhancements")]
-    tmpdir: Option<PathBuf>,
-
     // ===== Observability =====
     /// Progress bar mode: auto (TTY-enabled) / bar / simple / off
     #[arg(long, default_value = "auto", help_heading = "Observability")]
@@ -241,9 +237,6 @@ fn main() {
         print_cli_error(&msg);
         std::process::exit(1);
     }
-
-    // Configure temp dir (--tmpdir > TMPDIR/TEMP > system temp).
-    let _tmpdir = setup_tmpdir(&cli);
 
     // 蛋白模式：输入是蛋白 FASTA，走 HMMER + PWM 的独立流水线，产出独立结果集。
     if cli.protein {
@@ -457,26 +450,6 @@ fn init_logging(level: &str) {
         .with_timer(LocalTimer)
         .with_ansi(ansi)
         .init();
-}
-
-/// 当前本地时间 `YYYY-MM-DD HH:MM:SS`（用于 GFF 的 `##date` 头）。
-fn now_date_string() -> String {
-    chrono::Local::now().format(DATE_TIME_FORMAT).to_string()
-}
-
-/// Configure the temp dir and return its path (mainly in-memory here; reserved for checkpoint).
-fn setup_tmpdir(cli: &Cli) -> Option<PathBuf> {
-    if let Some(dir) = &cli.tmpdir {
-        std::fs::create_dir_all(dir).ok()?;
-        tracing::info!("temp dir: {}", dir.display());
-        return Some(dir.clone());
-    }
-    if let Ok(dir) = std::env::var("TMPDIR") {
-        let p = PathBuf::from(dir);
-        std::fs::create_dir_all(&p).ok();
-        return Some(p);
-    }
-    None
 }
 
 /// Estimate the total number of chopped fragments from the input file size.
@@ -877,89 +850,13 @@ fn write_outputs(
     prefix: &str,
     result: &mut nlr_cli::RunResult,
 ) -> std::io::Result<Vec<PathBuf>> {
-    // 先读一次基因组：既用于 HMM 补充 N 端结构域，也用于位点序列提取（避免重复读取）。
-    let contigs = nlr_seq::fasta::read_all(&cli.input).map_err(|e| {
-        std::io::Error::other(format!(
-            "cannot read genome {} for HMM/loci output: {}",
-            cli.input.display(),
-            e
-        ))
-    })?;
-
-    // HMM 补充 N 端结构域：DNA 模式的 N 端域原本只能靠 PWM，内置库对 CC 覆盖有限。
-    // 必须在写任何输出之前完成，因为 .nlr.txt/.gff/.bed 都会用到域串。
-    let library = nlr_domain::HmmLibrary::from_embedded();
-    let annotated = nlr_cli::annotate_hmm_nterm(&mut result.nlrs, &contigs, &result.def, &library);
-    tracing::info!(
-        "HMM N-terminal domain annotation: {} / {} loci updated",
-        annotated,
-        result.nlrs.len()
-    );
-
-    let def = &result.def;
-    let nlrs = &result.nlrs;
-    let motifs = all_motifs(result);
-    let mut written: Vec<PathBuf> = Vec::new();
-
-    // 打开输出文件的小工具（统一错误信息）。
-    let create = |suffix: &str| -> std::io::Result<(PathBuf, std::fs::File)> {
-        let p = output_path(&cli.output_dir, prefix, suffix);
-        let f = std::fs::File::create(&p)
-            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-        Ok((p, f))
-    };
-
-    // 位点报告 txt
-    let (p, mut f) = create(".nlr.txt")?;
-    nlr_output::write_report_txt(&mut f, nlrs, def)
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    // 位点 GFF
-    let (p, mut f) = create(".nlr.gff")?;
-    let gff_date = result.gff_date.clone().unwrap_or_else(now_date_string);
-    nlr_output::write_nlr_gff(&mut f, nlrs, def, &gff_date, false)
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    // 位点 BED
-    let (p, mut f) = create(".nlr.bed")?;
-    nlr_output::write_nlr_bed(&mut f, nlrs, def)
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    // motif BED
-    let (p, mut f) = create(".motifs.bed")?;
-    nlr_output::write_motif_bed(&mut f, &motifs, def, false)
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    // NB-ARC 比对 fasta
-    let (p, mut f) = create(".nbarc.fasta")?;
-    nlr_output::write_nbarc_alignment_fasta(&mut f, nlrs, def, true)
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    // 位点序列 fasta（复用前面读取的基因组，flank 由 --flank 控制）
-    let pairs: Vec<(&str, &str)> = contigs
-        .iter()
-        .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
-        .collect();
-    let p = output_path(&cli.output_dir, prefix, ".loci.fasta");
-    let mut f = std::fs::File::create(&p)
-        .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
-    nlr_output::write_nlr_loci_all(&mut f, nlrs, &pairs, cli.flank.unwrap_or(DEFAULT_FLANK))
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    // 统计 TSV
-    let stats = nlr_report::collect(&result.motifs_by_seq, nlrs, def);
-    let (p, mut f) = create(".stats.tsv")?;
-    nlr_report::write_tsv(&mut f, &stats)
-        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
-    written.push(p);
-
-    Ok(written)
+    nlr_cli::write_genome_outputs(
+        &cli.input,
+        &cli.output_dir,
+        prefix,
+        cli.flank.unwrap_or(DEFAULT_FLANK),
+        result,
+    )
 }
 
 #[cfg(test)]

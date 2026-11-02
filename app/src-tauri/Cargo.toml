@@ -1,0 +1,13 @@
+[package]
+name = "fastnlr-app"
+version = "1.6.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+nlr-service = { path = "../../crates/nlr-service" }
+fastnlr = { path = "../../crates/nlr-cli" }
+serde = { version = "1", features = ["derive"] }

@@ -118,6 +118,44 @@ fn outputs_have_no_duplicate_bed_blocks() {
 }
 
 #[test]
+fn loci_fasta_streams_every_contig() {
+    let def = AnnotatorSignatureDefinition::new();
+    let protein: String = [1u8, 6, 4, 5, 10, 3, 12, 2]
+        .iter()
+        .map(|&id| def.consensus(id))
+        .collect();
+    let dna: String = protein.chars().map(codon).collect();
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let fasta = tmp.path().join("multi.fasta");
+    std::fs::write(&fasta, format!(">chr1\n{dna}\n>chr2\n{dna}\n")).unwrap();
+    let out_dir = tmp.path().join("out");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_fastnlr"))
+        .args([
+            "-i",
+            fasta.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+            "-t",
+            "2",
+            "--progress",
+            "off",
+            "--log-level",
+            "warn",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "fastnlr 运行失败: {status}");
+
+    let loci = std::fs::read_to_string(out_dir.join("multi.loci.fasta")).unwrap();
+    let headers: Vec<&str> = loci.lines().filter(|l| l.starts_with('>')).collect();
+    assert_eq!(headers.len(), 2, "两个 contig 各应产出一个位点");
+    assert!(headers.iter().any(|h| h.starts_with(">chr1_nlr1")));
+    assert!(headers.iter().any(|h| h.starts_with(">chr2_nlr1")));
+}
+
+#[test]
 fn checkpoint_resume_is_byte_identical() {
     let def = AnnotatorSignatureDefinition::new();
     let protein: String = [1u8, 4, 10]
@@ -211,4 +249,45 @@ fn png_plots_are_not_generated() {
     let summary = std::fs::read_to_string(out_dir.join("no_plots.summary.txt")).unwrap();
     assert!(!summary.contains(".plots"));
     assert!(!summary.contains(".png"));
+}
+
+#[test]
+fn summary_json_is_written_and_parseable() {
+    let def = AnnotatorSignatureDefinition::new();
+    // 使用经典精确种子 [1,6,4]，保证至少形成一条候选位点。
+    let protein: String = [1u8, 6, 4].iter().map(|&id| def.consensus(id)).collect();
+    let dna: String = protein.chars().map(codon).collect();
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let fasta = tmp.path().join("summary_fixture.fasta");
+    std::fs::write(&fasta, format!(">chr1\n{dna}\n")).unwrap();
+    let out_dir = tmp.path().join("out");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_fastnlr"))
+        .args([
+            "-i",
+            fasta.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+            "-t",
+            "1",
+            "--progress",
+            "off",
+            "--log-level",
+            "warn",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "fastnlr 运行失败");
+
+    let summary_path = out_dir.join("summary_fixture.summary.json");
+    assert!(summary_path.is_file(), "summary.json 未生成");
+    let value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&summary_path).unwrap()).unwrap();
+    assert!(value.get("nlr_total").is_some(), "缺少 nlr_total 字段");
+    assert!(value.get("loci").is_some(), "缺少 loci 字段");
+    assert!(
+        value.get("loci").and_then(|v| v.as_array()).is_some(),
+        "loci 应为数组"
+    );
 }

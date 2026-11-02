@@ -72,22 +72,37 @@ const HMM_NTERM_DOWNSTREAM_NT: u64 = 300;
 /// （金标准实测：DNA 架构一致率 90.48% → 95.74%，修好 21 例、零回退）。
 ///
 /// 返回被补充的位点数。
+///
+/// 该函数是「一次性载入所有 contig」的便捷封装；主流程应改用逐 contig 的
+/// [`annotate_hmm_nterm_contig`]，避免把整条基因组读入内存。
 pub fn annotate_hmm_nterm(
     nlrs: &mut [nlr_core::motif_list::MotifList],
     contigs: &[nlr_seq::translate::BioSequence],
     def: &AnnotatorSignatureDefinition,
     library: &nlr_domain::HmmLibrary,
 ) -> usize {
-    use std::collections::HashMap;
-
-    let by_id: HashMap<&str, &str> = contigs
-        .iter()
-        .map(|c| (c.identifier.as_str(), c.sequence.as_str()))
-        .collect();
     let mut scanner = library.scanner();
     let mut annotated = 0usize;
+    for contig in contigs {
+        annotated += annotate_hmm_nterm_contig(&mut scanner, nlrs, contig, def);
+    }
+    annotated
+}
 
+/// 对单个 contig 上的位点补充 HMM N 端结构域（主流程的流式入口）。
+///
+/// `scanner` 由调用方在线程内构造并复用，避免每读一条 contig 都重新解析 HMM。
+pub fn annotate_hmm_nterm_contig(
+    scanner: &mut nlr_domain::Scanner,
+    nlrs: &mut [nlr_core::motif_list::MotifList],
+    contig: &nlr_seq::translate::BioSequence,
+    def: &AnnotatorSignatureDefinition,
+) -> usize {
+    let mut annotated = 0usize;
     for list in nlrs.iter_mut() {
+        if list.sequence_name() != contig.identifier.as_str() {
+            continue;
+        }
         // PWM 已经给出 N 端域（CC/TIR）时不介入，避免动到既有判定。
         if list
             .motifs
@@ -96,9 +111,7 @@ pub fn annotate_hmm_nterm(
         {
             continue;
         }
-        let Some(seq) = by_id.get(list.sequence_name()) else {
-            continue;
-        };
+        let seq = contig.sequence.as_str();
         let (span_start, span_end) = list.span();
         let ws = span_start.saturating_sub(HMM_NTERM_UPSTREAM_NT) as usize;
         let we = ((span_end + HMM_NTERM_DOWNSTREAM_NT) as usize).min(seq.len());
@@ -167,6 +180,7 @@ pub const EMBEDDED_MOT: &str = include_str!("../data/mot.txt");
 pub const EMBEDDED_STORE: &str = include_str!("../data/store.txt");
 
 /// Run configuration (derived from parsed CLI args).
+#[derive(Debug, Clone)]
 pub struct RunConfig {
     pub input_fasta: PathBuf,
     /// mot.txt path; `None` -> use built-in embedded mot.
@@ -445,10 +459,40 @@ pub fn run(config: &RunConfig) -> std::io::Result<RunResult> {
     run_with_progress(config, None)
 }
 
+/// 运行过程中的进度快照（供 GUI/Web/MCP 复用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunProgress {
+    /// 已完成扫描的片段数。
+    pub scanned_fragments: u64,
+}
+
+/// 进度回调返回的控制信号。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunControl {
+    Continue,
+    Break,
+}
+
 /// Core orchestration with a progress bar.
 pub fn run_with_progress(
     config: &RunConfig,
     progress: Option<&indicatif::ProgressBar>,
+) -> std::io::Result<RunResult> {
+    run_tracked(config, |p| {
+        if let Some(pb) = progress {
+            pb.set_position(p.scanned_fragments);
+        }
+        RunControl::Continue
+    })
+}
+
+/// Core orchestration with a fine-grained progress/cancel callback.
+///
+/// 每处理完一个片段批次回调一次；返回 [`RunControl::Break`] 时在当前批次后停止扫描，
+/// 并像 SIGINT 中断一样保留已完成的批次结果。
+pub fn run_tracked(
+    config: &RunConfig,
+    mut on_progress: impl FnMut(RunProgress) -> RunControl,
 ) -> std::io::Result<RunResult> {
     config.validate()?;
     // Interrupt flag (SIGINT graceful shutdown).
@@ -581,10 +625,12 @@ pub fn run_with_progress(
         }
 
         scanned += chunk_len;
-        if let Some(pb) = progress {
-            pb.set_position(scanned);
-        }
-        if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
+        let control = on_progress(RunProgress {
+            scanned_fragments: scanned,
+        });
+        if matches!(control, RunControl::Break)
+            || interrupted.load(std::sync::atomic::Ordering::SeqCst)
+        {
             break;
         }
     }
@@ -834,6 +880,122 @@ pub fn all_motifs(result: &RunResult) -> Vec<Motif> {
     out
 }
 
+/// 写出 DNA 模式的全部输出文件（含 summary.json），返回成功写入的路径列表。
+///
+/// 该函数是 CLI、Web 服务与桌面端共用的输出入口：先流式逐 contig 做 HMM N 端补充并写
+/// loci FASTA，再写 txt/GFF/BED/motif BED/NB-ARC FASTA/stats TSV/summary.json。
+pub fn write_genome_outputs(
+    input_fasta: &std::path::Path,
+    output_dir: &std::path::Path,
+    prefix: &str,
+    flank: u64,
+    result: &mut RunResult,
+) -> std::io::Result<Vec<PathBuf>> {
+    std::fs::create_dir_all(output_dir)?;
+
+    // 打开输出文件的小工具（统一错误信息）。
+    let create = |suffix: &str| -> std::io::Result<(PathBuf, std::fs::File)> {
+        let p = output_dir.join(format!("{prefix}{suffix}"));
+        let f = std::fs::File::create(&p)
+            .map_err(|e| std::io::Error::other(format!("cannot create {}: {}", p.display(), e)))?;
+        Ok((p, f))
+    };
+
+    // 先创建 loci FASTA，流式读取 genome 时按 contig 追加，避免把整条基因组读入内存。
+    let (loci_path, mut loci_file) = create(".loci.fasta")?;
+
+    // HMM 补充 N 端结构域必须在写 .nlr.txt/.gff/.bed 之前完成，因为这些文件都用到域串。
+    // 这里与位点序列提取合并成同一次流式读取：逐 contig 注释其位点，并立即写出该 contig 的
+    // 位点 FASTA 记录。
+    let library = nlr_domain::HmmLibrary::from_embedded();
+    let mut scanner = library.scanner();
+    let mut annotated = 0usize;
+    let mut reader = nlr_seq::fasta::FastaReader::from_file(input_fasta).map_err(|e| {
+        std::io::Error::other(format!(
+            "cannot open genome {} for loci/HMM output: {}",
+            input_fasta.display(),
+            e
+        ))
+    })?;
+    while let Some(contig) = reader.read_entry()? {
+        annotated +=
+            annotate_hmm_nterm_contig(&mut scanner, &mut result.nlrs, &contig, &result.def);
+        nlr_output::write_nlr_loci_all(
+            &mut loci_file,
+            &result.nlrs,
+            &[(contig.identifier.as_str(), contig.sequence.as_str())],
+            flank,
+        )
+        .map_err(|e| {
+            std::io::Error::other(format!("write {} failed: {}", loci_path.display(), e))
+        })?;
+    }
+    drop(loci_file);
+    tracing::info!(
+        "HMM N-terminal domain annotation: {} / {} loci updated",
+        annotated,
+        result.nlrs.len()
+    );
+
+    let def = &result.def;
+    let nlrs = &result.nlrs;
+    let motifs = all_motifs(result);
+    let mut written: Vec<PathBuf> = Vec::new();
+
+    // 位点报告 txt
+    let (p, mut f) = create(".nlr.txt")?;
+    nlr_output::write_report_txt(&mut f, nlrs, def)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    // 位点 GFF
+    let (p, mut f) = create(".nlr.gff")?;
+    let gff_date = result
+        .gff_date
+        .clone()
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+    nlr_output::write_nlr_gff(&mut f, nlrs, def, &gff_date, false)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    // 位点 BED
+    let (p, mut f) = create(".nlr.bed")?;
+    nlr_output::write_nlr_bed(&mut f, nlrs, def)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    // motif BED
+    let (p, mut f) = create(".motifs.bed")?;
+    nlr_output::write_motif_bed(&mut f, &motifs, def, false)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    // NB-ARC 比对 fasta
+    let (p, mut f) = create(".nbarc.fasta")?;
+    nlr_output::write_nbarc_alignment_fasta(&mut f, nlrs, def, true)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    // 位点序列 fasta 已在上面的流式读取阶段写入。
+    written.push(loci_path);
+
+    // 统计 TSV
+    let stats = nlr_report::collect(&result.motifs_by_seq, nlrs, def);
+    let (p, mut f) = create(".stats.tsv")?;
+    nlr_report::write_tsv(&mut f, &stats)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    // 机器可读汇总 summary.json（GUI/Web/MCP/R 的统一数据源）。
+    let report = nlr_report::build_summary_report(&result.motifs_by_seq, nlrs, def);
+    let (p, mut f) = create(".summary.json")?;
+    nlr_report::write_summary_json(&mut f, &report)
+        .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
+    written.push(p);
+
+    Ok(written)
+}
+
 /// Save checkpoint: write motif results in `-c` TSV format into the checkpoint directory.
 fn save_checkpoint(
     dir: &std::path::Path,
@@ -957,6 +1119,7 @@ fn load_checkpoint(
 // =====================================================================================
 
 /// 蛋白模式运行配置。
+#[derive(Debug, Clone)]
 pub struct ProteinConfig {
     pub input_fasta: PathBuf,
     /// 用户追加/覆盖的 HMM 文件（可含多个模型）。
@@ -1055,6 +1218,19 @@ pub fn run_protein(
     config: &ProteinConfig,
     progress: Option<&indicatif::ProgressBar>,
 ) -> std::io::Result<ProteinResult> {
+    run_protein_tracked(config, |p| {
+        if let Some(pb) = progress {
+            pb.set_position(p.scanned_fragments);
+        }
+        RunControl::Continue
+    })
+}
+
+/// 蛋白模式主流程（带进度/取消回调）。
+pub fn run_protein_tracked(
+    config: &ProteinConfig,
+    mut on_progress: impl FnMut(RunProgress) -> RunControl,
+) -> std::io::Result<ProteinResult> {
     config.validate()?;
     // 1) 模型库：内置 4 个精选 Pfam 模型 + 用户 --hmm 覆盖/追加。
     let mut library = nlr_domain::HmmLibrary::from_embedded();
@@ -1112,8 +1288,13 @@ pub fn run_protein(
         });
         scanned += batch_records.len() as u64;
         records.extend(batch_records);
-        if let Some(pb) = progress {
-            pb.set_position(scanned);
+        if matches!(
+            on_progress(RunProgress {
+                scanned_fragments: scanned,
+            }),
+            RunControl::Break
+        ) {
+            break;
         }
     }
 

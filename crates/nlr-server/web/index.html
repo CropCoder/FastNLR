@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FastNLR Web</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 20px; color: #1f2937; }
+    h1 { margin-bottom: 4px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input, button { font-size: 14px; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; }
+    button { margin-top: 16px; padding: 10px 18px; cursor: pointer; }
+    #status { margin-top: 16px; white-space: pre-wrap; font-family: monospace; }
+    ul { padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <h1>FastNLR Web</h1>
+  <p>Local annotation service for NLR loci.</p>
+
+  <label>Genome FASTA path</label>
+  <input id="input" placeholder="/path/to/genome.fasta" />
+  <label>Output directory (optional)</label>
+  <input id="outdir" placeholder="/path/to/output" />
+  <label>Threads</label>
+  <input id="threads" type="number" value="4" />
+  <button onclick="run()">Run genome annotation</button>
+
+  <div id="status"></div>
+
+  <script>
+    async function api(path, options = {}) {
+      const res = await fetch(path, options);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    async function run() {
+      const status = document.getElementById("status");
+      status.textContent = "submitting...";
+      try {
+        const body = {
+          input_path: document.getElementById("input").value.trim(),
+          output_dir: document.getElementById("outdir").value.trim() || null,
+          threads: Number(document.getElementById("threads").value) || null
+        };
+        const created = await api("/api/jobs/genome", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        poll(created.job_id, status);
+      } catch (e) {
+        status.textContent = "error: " + e;
+      }
+    }
+
+    async function poll(id, status) {
+      const snap = await api("/api/jobs/" + id);
+      status.textContent = "job " + id + ": " + snap.status +
+        " (" + snap.scanned + " fragments)";
+      if (snap.status === "Running" || snap.status === "Pending") {
+        setTimeout(() => poll(id, status), 1500);
+      } else {
+        const outs = await api("/api/jobs/" + id + "/outputs");
+        status.textContent = "job " + id + ": " + snap.status + "\n";
+        if (snap.error) status.textContent += "error: " + snap.error + "\n";
+        for (const p of (outs.outputs || [])) {
+          const name = p.split("/").pop();
+          status.textContent += name + "\n";
+        }
+      }
+    }
+  </script>
+</body>
+</html>

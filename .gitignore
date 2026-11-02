@@ -3,6 +3,10 @@
 **/target
 Cargo.lock.bak
 
+# Frontend / desktop build artifacts
+node_modules/
+/app/dist
+
 AGENTS.md
 Runlog.md
 

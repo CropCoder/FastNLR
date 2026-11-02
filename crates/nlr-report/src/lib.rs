@@ -5,6 +5,7 @@
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -99,4 +100,106 @@ pub fn write_tsv<W: Write>(w: &mut W, stats: &RunStats) -> std::io::Result<()> {
         writeln!(w, "family\t{}\t{}", family, count)?;
     }
     Ok(())
+}
+
+/// 单条染色体的统计信息（summary.json 用）。
+#[derive(Debug, Clone, Serialize)]
+pub struct ChromosomeStats {
+    pub motifs: usize,
+    pub nlrs: usize,
+    pub complete_nlrs: usize,
+}
+
+/// 单个 NLR 位点的结构化记录（summary.json 用）。
+#[derive(Debug, Clone, Serialize)]
+pub struct LocusRecord {
+    pub name: String,
+    pub seq: String,
+    pub start: u64,
+    pub end: u64,
+    pub strand: char,
+    pub class: String,
+    pub family: String,
+    pub complete: bool,
+    pub has_stop: bool,
+    pub motif_count: usize,
+}
+
+/// 面向 GUI/Web/MCP/R 的机器可读汇总（summary.json）。
+///
+/// 由 [`build_summary_report`] 从一次运行的 motif 与位点结果直接构造，
+/// 字段顺序与值均确定，便于下游做 diff 与解析。
+#[derive(Debug, Clone, Serialize)]
+pub struct SummaryReport {
+    pub sequence_count: usize,
+    pub motif_total: usize,
+    pub nlr_total: usize,
+    pub nlr_complete: usize,
+    pub per_chromosome: BTreeMap<String, ChromosomeStats>,
+    pub motif_counts: BTreeMap<u8, usize>,
+    pub nlr_type_counts: BTreeMap<String, usize>,
+    pub nlr_family_counts: BTreeMap<String, usize>,
+    pub loci: Vec<LocusRecord>,
+}
+
+/// 从运行结果构造 summary.json 的内容。
+pub fn build_summary_report(
+    motifs_by_seq: &std::collections::HashMap<String, Vec<Motif>>,
+    nlrs: &[MotifList],
+    def: &AnnotatorSignatureDefinition,
+) -> SummaryReport {
+    let stats = collect(motifs_by_seq, nlrs, def);
+
+    let per_chromosome = stats
+        .per_chromosome
+        .iter()
+        .map(|(seq, (motifs, nlrs, complete))| {
+            (
+                seq.clone(),
+                ChromosomeStats {
+                    motifs: *motifs,
+                    nlrs: *nlrs,
+                    complete_nlrs: *complete,
+                },
+            )
+        })
+        .collect();
+
+    let loci = nlrs
+        .iter()
+        .map(|list| {
+            let (start, end) = list.span();
+            LocusRecord {
+                name: list.name.clone(),
+                seq: list.sequence_name().to_string(),
+                start,
+                end,
+                strand: list.strand().symbol(),
+                class: list.domain_string(def),
+                family: list.family(def).to_string(),
+                complete: list.is_complete_nlr(def),
+                has_stop: list.has_stop_codon(),
+                motif_count: list.motifs.len(),
+            }
+        })
+        .collect();
+
+    SummaryReport {
+        sequence_count: stats.seq_count,
+        motif_total: stats.motif_total,
+        nlr_total: stats.nlr_total,
+        nlr_complete: stats.nlr_complete,
+        per_chromosome,
+        motif_counts: stats.motif_counts,
+        nlr_type_counts: stats.nlr_type_counts,
+        nlr_family_counts: stats.nlr_family_counts,
+        loci,
+    }
+}
+
+/// 把 summary.json 内容序列化为 JSON 并写入目标 writer。
+pub fn write_summary_json<W: Write>(w: &mut W, report: &SummaryReport) -> std::io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(report)
+        .map_err(|e| std::io::Error::other(format!("serialize summary.json: {e}")))?;
+    w.write_all(&bytes)
 }
