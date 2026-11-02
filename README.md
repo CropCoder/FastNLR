@@ -9,7 +9,7 @@
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.6.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Citation](#citation)
 
@@ -39,7 +39,7 @@ conda install bioconda::fastnlr
 
 ```bash
 curl -L -o fastnlr.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.6.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/CropCoder/FastNLR/releases/download/v2.0.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 ```
@@ -128,11 +128,24 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
 `Structure` and `Subclass` columns contradict each other are excluded. Per-domain F1 is
 1.000 (NB-ARC), 0.999 (LRR), 0.995 (TIR) and 0.989 (CC).
 
+## Other interfaces
+
+- **Web server** — `fastnlr-server` is a self-contained axum service with an embedded UI and a
+  job-oriented REST API. Build with `cargo build --release -p nlr-server`, then run
+  `fastnlr-server --port 8787`. It is also packaged as a local TBtools web plugin via
+  `packaging/Build-TBtools-Plugin-V1.sh`.
+- **Desktop app** — a Tauri 2 scaffold lives in `app/` and reuses the `nlr-service` layer.
+- **AI agents** — `fastnlr-mcp` exposes genome annotation, protein annotation and plotting as an
+  MCP stdio server; the `skills/fastnlr/` directory provides a portable Agent Skill for Codex and
+  Claude Code.
+- **Publication plots** — the `visualization/` R scripts turn `summary.json` into chromosome maps
+  and statistics PDFs plus an HTML report.
+
 ## Development
 
 ```bash
 cargo build --release                              # optimized build
-cargo test --workspace                             # 95 tests
+cargo test --workspace                             # 98 tests
 cargo fmt --all -- --check                         # formatting
 cargo clippy --workspace --all-targets -- -D warnings
 ```

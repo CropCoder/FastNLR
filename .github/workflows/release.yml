@@ -39,7 +39,10 @@ jobs:
 
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: fastnlr
+          bin: |
+            fastnlr
+            fastnlr-server
+            fastnlr-mcp
           target: ${{ matrix.target }}
           tar: unix
           zip: windows
