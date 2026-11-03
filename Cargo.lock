@@ -859,16 +859,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nlr-mcp"
-version = "1.7.0"
-dependencies = [
- "fastnlr",
- "nlr-service",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "nlr-output"
 version = "1.7.0"
 dependencies = [

@@ -1,4 +1,4 @@
-//! nlr-service — 供桌面版 / Web 服务 / MCP 复用的作业执行层。
+//! nlr-service — 供桌面版 / Web 服务复用的作业执行层。
 //!
 //! 提供统一的作业生命周期：提交、查询进度、取消与结果收集。内部在独立线程中调用
 //! `nlr_cli` 的 `run_tracked` / `run_protein_tracked`，不复制扫描与组装逻辑。
@@ -194,12 +194,12 @@ impl Default for Service {
     }
 }
 
-/// 同步执行基因组作业（MCP 等阻塞调用用）；返回输出文件路径。
+/// 同步执行基因组作业（阻塞调用用）；返回输出文件路径。
 pub fn run_genome_blocking(job: &GenomeJob) -> Result<Vec<PathBuf>, String> {
     execute_genome(job, |_| false)
 }
 
-/// 同步执行蛋白作业（MCP 等阻塞调用用）；返回输出文件路径。
+/// 同步执行蛋白作业（阻塞调用用）；返回输出文件路径。
 pub fn run_protein_blocking(job: &ProteinJob) -> Result<Vec<PathBuf>, String> {
     execute_protein(job, |_| false)
 }

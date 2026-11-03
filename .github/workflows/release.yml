@@ -41,22 +41,14 @@ jobs:
         with:
           bin: fastnlr
           target: ${{ matrix.target }}
+          archive: $bin-$tag-$target
           tar: unix
           zip: windows
-          checksum: sha256
 
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: fastnlr-server
           target: ${{ matrix.target }}
+          archive: $bin-$tag-$target
           tar: unix
           zip: windows
-          checksum: sha256
-
-      - uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: fastnlr-mcp
-          target: ${{ matrix.target }}
-          tar: unix
-          zip: windows
-          checksum: sha256

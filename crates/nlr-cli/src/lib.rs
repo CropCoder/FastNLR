@@ -459,7 +459,7 @@ pub fn run(config: &RunConfig) -> std::io::Result<RunResult> {
     run_with_progress(config, None)
 }
 
-/// 运行过程中的进度快照（供 GUI/Web/MCP 复用）。
+/// 运行过程中的进度快照（供 GUI/Web 复用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunProgress {
     /// 已完成扫描的片段数。
@@ -986,7 +986,7 @@ pub fn write_genome_outputs(
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
     written.push(p);
 
-    // 机器可读汇总 summary.json（GUI/Web/MCP/R 的统一数据源）。
+    // 机器可读汇总 summary.json（GUI/Web/R 的统一数据源）。
     let report = nlr_report::build_summary_report(&result.motifs_by_seq, nlrs, def);
     let (p, mut f) = create(".summary.json")?;
     nlr_report::write_summary_json(&mut f, &report)

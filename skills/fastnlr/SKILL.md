@@ -72,13 +72,3 @@ Rscript visualization/R0-Run-FastNLR-Visualization-V1.R \
 
 生成染色体全景图、数量/组成/长度/motif 等 PDF 与 HTML 报告。着丝粒/缺口来自可选 BED。
 
-## MCP 接口
-
-编译 `crates/nlr-mcp` 得到 `fastnlr-mcp` stdio 服务，暴露：
-
-- `fastnlr_annotate_genome`
-- `fastnlr_annotate_proteins`
-- `fastnlr_plot`
-
-把 `fastnlr-mcp` 注册到 Codex / Claude Code 的 MCP 客户端即可让智能体通过工具调用执行分析。
-各工具的输入输出 schema 见 [references/mcp-tools.md](references/mcp-tools.md)。

@@ -135,8 +135,7 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
   `fastnlr-server --port 8787`. It is also packaged as a local TBtools web plugin via
   `packaging/Build-TBtools-Plugin-V1.sh`.
 - **Desktop app** — a Tauri 2 scaffold lives in `app/` and reuses the `nlr-service` layer.
-- **AI agents** — `fastnlr-mcp` exposes genome annotation, protein annotation and plotting as an
-  MCP stdio server; the `skills/fastnlr/` directory provides a portable Agent Skill for Codex and
+- **AI agents** — the `skills/fastnlr/` directory provides a portable Agent Skill for Codex and
   Claude Code.
 - **Publication plots** — the `visualization/` R scripts turn `summary.json` into chromosome maps
   and statistics PDFs plus an HTML report.

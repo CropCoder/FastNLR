@@ -125,7 +125,7 @@ pub struct LocusRecord {
     pub motif_count: usize,
 }
 
-/// 面向 GUI/Web/MCP/R 的机器可读汇总（summary.json）。
+/// 面向 GUI/Web/R 的机器可读汇总（summary.json）。
 ///
 /// 由 [`build_summary_report`] 从一次运行的 motif 与位点结果直接构造，
 /// 字段顺序与值均确定，便于下游做 diff 与解析。

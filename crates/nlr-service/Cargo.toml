@@ -1,6 +1,6 @@
 [package]
 name = "nlr-service"
-description = "Job lifecycle and shared execution service for FastNLR GUIs, web server and MCP"
+description = "Job lifecycle and shared execution service for FastNLR GUIs and web server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
