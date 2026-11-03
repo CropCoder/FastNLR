@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/CropCoder/FastNLR/archive/refs/tags/v{{ version }}.tar.gz
-  sha256: 5eeab8c73a5af565b14215c6f0c5672c91386f48fe182cfc6c39ea8caf3e9364
+  sha256: 0d14a26185f7239ff1656269fbcf3bdfa1b97e303688c8db8dae549ce9689587
 
 build:
   number: 0
