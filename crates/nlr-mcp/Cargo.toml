@@ -13,7 +13,7 @@ name = "fastnlr-mcp"
 path = "src/main.rs"
 
 [dependencies]
-nlr-service = { path = "../nlr-service", version = "2.0.0" }
-fastnlr = { path = "../nlr-cli", version = "2.0.0" }
+nlr-service = { path = "../nlr-service", version = "1.7.0" }
+fastnlr = { path = "../nlr-cli", version = "1.7.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -4,7 +4,7 @@
 #
 # 用法：bash packaging/Build-TBtools-Plugin-V1.sh <target> [version]
 #   target  linux | macos | windows
-#   version 默认 v2.0.0
+#   version 默认 v1.7.0
 #
 # 说明：
 #   - 需在目标操作系统上运行（macOS/Windows 分别打包）。
@@ -16,7 +16,7 @@
 set -euo pipefail
 
 target="${1:?用法: Build-TBtools-Plugin-V1.sh <linux|macos|windows> [version]}"
-version="${2:-v2.0.0}"
+version="${2:-v1.7.0}"
 
 case "$target" in
   linux)   rust_target="x86_64-unknown-linux-gnu"; ext="" ;;
