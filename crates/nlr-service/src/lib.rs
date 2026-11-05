@@ -223,6 +223,7 @@ fn execute_genome(
         &job.prefix,
         job.flank,
         &mut result,
+        job.config.locus_filter.as_ref(),
     )
     .map_err(|e| e.to_string())
 }

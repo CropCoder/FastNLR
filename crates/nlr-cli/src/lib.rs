@@ -7,11 +7,14 @@ use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
 use std::path::PathBuf;
 
+use nlr_core::locus_filter::filter_loci;
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory, FlexibleSeedConfig};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+pub use nlr_core::locus_filter::LocusFilterConfig;
 
 /// 柔性播种的默认 NB-ARC motif 门槛（`--flexible-seed` 未显式给值时生效）。
 pub const DEFAULT_FLEXIBLE_SEED_MIN_NBARC: usize = 3;
@@ -212,6 +215,8 @@ pub struct RunConfig {
     pub extra_signatures: Vec<String>,
     /// Flexible seeding config (category + rank based); `None` keeps exact-match seeding.
     pub flexible_seed: Option<FlexibleSeedConfig>,
+    /// High-precision locus filter config; `None` keeps every partial locus (legacy behavior).
+    pub locus_filter: Option<LocusFilterConfig>,
 }
 
 impl RunConfig {
@@ -384,6 +389,7 @@ impl RunConfig {
             extra_seeds: Vec::new(),
             extra_signatures: Vec::new(),
             flexible_seed: None,
+            locus_filter: Some(LocusFilterConfig::high_precision_default()),
         }
     }
 }
@@ -880,6 +886,17 @@ pub fn all_motifs(result: &RunResult) -> Vec<Motif> {
     out
 }
 
+/// 按 contig 重新编号位点（过滤后编号保持连续且与既有输出顺序一致）。
+fn renumber_loci(nlrs: &mut [MotifList]) {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for list in nlrs.iter_mut() {
+        let seq = list.sequence_name().to_string();
+        let next = counts.entry(seq.clone()).or_insert(0);
+        *next += 1;
+        list.name = format!("{}_nlr{}", seq, *next);
+    }
+}
+
 /// 写出 DNA 模式的全部输出文件（含 summary.json），返回成功写入的路径列表。
 ///
 /// 该函数是 CLI、Web 服务与桌面端共用的输出入口：先流式逐 contig 做 HMM N 端补充并写
@@ -890,6 +907,7 @@ pub fn write_genome_outputs(
     prefix: &str,
     flank: u64,
     result: &mut RunResult,
+    locus_filter: Option<&LocusFilterConfig>,
 ) -> std::io::Result<Vec<PathBuf>> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -901,12 +919,8 @@ pub fn write_genome_outputs(
         Ok((p, f))
     };
 
-    // 先创建 loci FASTA，流式读取 genome 时按 contig 追加，避免把整条基因组读入内存。
-    let (loci_path, mut loci_file) = create(".loci.fasta")?;
-
-    // HMM 补充 N 端结构域必须在写 .nlr.txt/.gff/.bed 之前完成，因为这些文件都用到域串。
-    // 这里与位点序列提取合并成同一次流式读取：逐 contig 注释其位点，并立即写出该 contig 的
-    // 位点 FASTA 记录。
+    // 第一步：逐 contig 做 HMM N 端补充。必须先完成全部 contig 的注释，再执行高精度过滤，
+    // 保证过滤基于最终域串，而不是未补全的 PWM 域串。
     let library = nlr_domain::HmmLibrary::from_embedded();
     let mut scanner = library.scanner();
     let mut annotated = 0usize;
@@ -920,6 +934,29 @@ pub fn write_genome_outputs(
     while let Some(contig) = reader.read_entry()? {
         annotated +=
             annotate_hmm_nterm_contig(&mut scanner, &mut result.nlrs, &contig, &result.def);
+    }
+    tracing::info!(
+        "HMM N-terminal domain annotation: {} / {} loci updated",
+        annotated,
+        result.nlrs.len()
+    );
+
+    // 第二步：应用高精度过滤，再对保留位点重新命名（过滤后编号保持连续）。
+    if let Some(cfg) = locus_filter {
+        filter_loci(&mut result.nlrs, &result.def, cfg);
+    }
+    renumber_loci(&mut result.nlrs);
+
+    // 第三步：写出位点 FASTA（过滤后的位点）。
+    let (loci_path, mut loci_file) = create(".loci.fasta")?;
+    let mut reader = nlr_seq::fasta::FastaReader::from_file(input_fasta).map_err(|e| {
+        std::io::Error::other(format!(
+            "cannot open genome {} for loci output: {}",
+            input_fasta.display(),
+            e
+        ))
+    })?;
+    while let Some(contig) = reader.read_entry()? {
         nlr_output::write_nlr_loci_all(
             &mut loci_file,
             &result.nlrs,
@@ -931,11 +968,6 @@ pub fn write_genome_outputs(
         })?;
     }
     drop(loci_file);
-    tracing::info!(
-        "HMM N-terminal domain annotation: {} / {} loci updated",
-        annotated,
-        result.nlrs.len()
-    );
 
     let def = &result.def;
     let nlrs = &result.nlrs;

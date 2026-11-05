@@ -206,6 +206,10 @@ struct Cli {
     #[arg(long, help_heading = "NLR recall enhancements")]
     require_ploop: bool,
 
+    /// Disable high-precision locus filtering and keep all partial loci (legacy behavior).
+    #[arg(long, help_heading = "NLR recall enhancements")]
+    keep_partial_loci: bool,
+
     /// Declare domain category for motif IDs outside the built-in tables
     /// (for external mot.txt with extra motifs).
     /// Usage: --motif-category 21=CC,22=CC,25=TIR (repeatable or comma-separated)
@@ -256,6 +260,11 @@ fn main() {
     // 柔性播种默认开启（min_nbarc = 3）；--no-flexible-seed 可关闭，--flexible-seed N 可调阈值。
     config.flexible_seed =
         nlr_cli::resolve_flexible_seed(cli.flexible_seed, cli.no_flexible_seed, cli.require_ploop);
+    config.locus_filter = if cli.keep_partial_loci {
+        None
+    } else {
+        Some(nlr_cli::LocusFilterConfig::high_precision_default())
+    };
     config.motif_categories = cli.motif_categories.clone();
     config.extra_seeds = cli.extra_seeds.clone();
     config.extra_signatures = cli.extra_signatures.clone();
@@ -285,13 +294,14 @@ fn main() {
             );
 
             // 默认输出全部结果（序列 / 表格 / 图 / 摘要）。
-            let written = match write_outputs(&cli, &prefix, &mut result) {
-                Ok(w) => w,
-                Err(e) => {
-                    print_cli_error(&format!("output write failed: {}", e));
-                    std::process::exit(3);
-                }
-            };
+            let written =
+                match write_outputs(&cli, &prefix, &mut result, config.locus_filter.as_ref()) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        print_cli_error(&format!("output write failed: {}", e));
+                        std::process::exit(3);
+                    }
+                };
 
             // End-of-run summary.
             let peak_rss_mb = read_peak_rss_mb();
@@ -849,6 +859,7 @@ fn write_outputs(
     cli: &Cli,
     prefix: &str,
     result: &mut nlr_cli::RunResult,
+    locus_filter: Option<&nlr_cli::LocusFilterConfig>,
 ) -> std::io::Result<Vec<PathBuf>> {
     nlr_cli::write_genome_outputs(
         &cli.input,
@@ -856,6 +867,7 @@ fn write_outputs(
         prefix,
         cli.flank.unwrap_or(DEFAULT_FLANK),
         result,
+        locus_filter,
     )
 }
 
