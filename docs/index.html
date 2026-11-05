@@ -198,6 +198,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   font-weight: 850; letter-spacing: -.035em; line-height: 1.04;
   margin: 22px 0 20px; color: var(--ink);
 }
+.hero-logo { display: block; width: min(460px, 100%); height: auto; }
 .grad { background: linear-gradient(100deg, var(--accent-from), var(--accent-to)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 .hero-sub { font-size: 18px; color: var(--ink-2); max-width: 520px; margin-bottom: 34px; }
@@ -479,9 +480,6 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 <nav class="nav" id="nav">
   <div class="wrap nav-inner">
     <a href="#top" class="logo">
-      <span class="logo-mark">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0 1 8-8M4 12a8 8 0 0 0 8 8M12 4a8 8 0 0 1 8 8m0 0a8 8 0 0 1-8 8m8-8a8 8 0 0 0-8-8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="2.4" fill="currentColor"/></svg>
-      </span>
       FastNLR
       <span class="ver">v1.7.0</span>
     </a>
@@ -523,8 +521,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="hero-grid"></div>
   <div class="wrap hero-inner">
     <div>
-      <span class="badge"><span class="dot"></span> High-speed, accurate NLR annotation in Rust</span>
-      <h1><span class="grad">FastNLR</span></h1>
+      <h1><img class="hero-logo" src="data/motif_library_rnl_tir/logo.png" alt="FastNLR"></h1>
       <p class="hero-sub">
         FastNLR scans the <strong>six reading frames</strong> of a genome assembly for amino-acid
         motifs and assembles them into complete and partial <strong>NLR loci</strong> with
