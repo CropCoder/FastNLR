@@ -481,7 +481,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="wrap nav-inner">
     <a href="#top" class="logo">
       FastNLR
-      <span class="ver">v1.7.0</span>
+      <span class="ver">v1.7.1</span>
     </a>
     <div class="nav-links">
       <a href="#install">Install</a>
@@ -521,7 +521,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="hero-grid"></div>
   <div class="wrap hero-inner">
     <div>
-      <h1><img class="hero-logo" src="data/motif_library_rnl_tir/logo.png" alt="FastNLR"></h1>
+      <h1><img class="hero-logo" src="logo.png" alt="FastNLR"></h1>
       <p class="hero-sub">
         FastNLR scans the <strong>six reading frames</strong> of a genome assembly for amino-acid
         motifs and assembles them into complete and partial <strong>NLR loci</strong> with
@@ -610,7 +610,7 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <div class="code-head"><span class="fn">shell</span><button class="copy-btn" data-copy="binary">Copy</button></div>
         <pre id="code-binary"><span class="c"># Download from Releases, then:</span>
 curl -L -o fastnlr.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.7.0/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.7.1/fastnlr-x86_64-unknown-linux-gnu.tar.gz</span>
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 
@@ -774,7 +774,7 @@ cargo build --release
     <div class="code reveal" style="margin-top: 22px;">
       <div class="code-head"><span class="fn">&lt;prefix&gt;.nlr.gff — header</span></div>
       <pre><span class="c">##gff-version 2</span>
-<span class="c">##source-version FastNLR V1.7.0</span>
+<span class="c">##source-version FastNLR V1.7.1</span>
 <span class="c">##date 2026-10-12 15:23:36</span>
 <span class="c">##Type DNA</span></pre>
     </div>
@@ -1077,6 +1077,14 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <p class="lead">Release timeline of FastNLR with a short summary of what changed in each version.</p>
     </div>
     <div class="timeline">
+      <div class="tl-item major reveal">
+        <span class="tl-dot"></span>
+        <div class="tl-head">
+          <span class="tl-version">v1.7.1</span>
+          <span class="tl-date">2026-11-08</span>
+        </div>
+        <p class="tl-desc">TIR-specific significance threshold, evidence-weighted N-terminal arbitration, and completeness reporting temporarily disabled.</p>
+      </div>
       <div class="tl-item major reveal">
         <span class="tl-dot"></span>
         <div class="tl-head">
