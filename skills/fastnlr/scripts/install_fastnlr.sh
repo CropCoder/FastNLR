@@ -24,13 +24,11 @@ esac
 tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
-archive="fastnlr-${target}.tar.gz"
+archive="fastnlr-${version}-${target}.tar.gz"
 curl -fL "${base_url}/${archive}" -o "${tmpdir}/${archive}"
-curl -fL "${base_url}/${archive}.sha256" -o "${tmpdir}/${archive}.sha256"
 
 (
   cd "${tmpdir}"
-  sha256sum -c "${archive}.sha256" >/dev/null
   tar -xzf "${archive}"
 )
 

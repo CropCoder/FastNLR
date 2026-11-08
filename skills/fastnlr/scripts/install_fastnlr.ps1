@@ -9,7 +9,7 @@ param([string]$Version = "v1.7.2")
 $ErrorActionPreference = "Stop"
 $base = "https://github.com/CropCoder/FastNLR/releases/download/$Version"
 $target = "x86_64-pc-windows-msvc"
-$zip = "fastnlr-$target.zip"
+$zip = "fastnlr-$Version-$target.zip"
 $tmp = Join-Path $env:TEMP "fastnlr-$Version.zip"
 
 Invoke-WebRequest -Uri "$base/$zip" -OutFile $tmp
