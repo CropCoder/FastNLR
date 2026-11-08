@@ -39,15 +39,15 @@ conda install bioconda::fastnlr
 
 ```bash
 curl -L -o fastnlr.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.7.2/fastnlr-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/CropCoder/FastNLR/releases/download/v1.7.2/fastnlr-v1.7.2-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 ```
 
-Release assets follow the `fastnlr-<target>.tar.gz` naming scheme (Windows builds use `.zip`,
-macOS assets are also `.tar.gz`) and ship with a SHA-256 checksum file. Linux x86_64 binaries
-target glibc 2.17, so they run on CentOS 7, RHEL 8, Debian 11, Ubuntu 20.04 and newer; on older
-systems use the bioconda package or build from source.
+Release assets follow the `fastnlr-<tag>-<target>.tar.gz` naming scheme (Windows builds use
+`.zip`, macOS assets are also `.tar.gz`). Linux x86_64 binaries target glibc 2.17, so they run
+on CentOS 7, RHEL 8, Debian 11, Ubuntu 20.04 and newer; on older systems use the bioconda
+package or build from source.
 
 ### From source
 
