@@ -9,7 +9,7 @@
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.7.1-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.7.2-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Citation](#citation)
 
@@ -39,13 +39,15 @@ conda install bioconda::fastnlr
 
 ```bash
 curl -L -o fastnlr.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.7.1/fastnlr-x86_64-unknown-linux-gnu.tar.gz
+  https://github.com/CropCoder/FastNLR/releases/download/v1.7.2/fastnlr-x86_64-unknown-linux-gnu.tar.gz
 tar -xzf fastnlr.tar.gz
 ./fastnlr --version
 ```
 
 Release assets follow the `fastnlr-<target>.tar.gz` naming scheme (Windows builds use `.zip`,
-macOS assets are also `.tar.gz`) and ship with a SHA-256 checksum file.
+macOS assets are also `.tar.gz`) and ship with a SHA-256 checksum file. Linux x86_64 binaries
+target glibc 2.17, so they run on CentOS 7, RHEL 8, Debian 11, Ubuntu 20.04 and newer; on older
+systems use the bioconda package or build from source.
 
 ### From source
 
