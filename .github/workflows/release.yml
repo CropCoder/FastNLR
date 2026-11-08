@@ -49,14 +49,15 @@ jobs:
           tar: unix
           zip: windows
           build-tool: ${{ matrix.build-tool }}
-          checksum: sha256
+          # checksum: sha256
 
-      - uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          bin: fastnlr-server
-          target: ${{ matrix.target }}
-          archive: $bin-$tag-$target
-          tar: unix
-          zip: windows
-          build-tool: ${{ matrix.build-tool }}
-          checksum: sha256
+      # 暂停发布 fastnlr-server（需要时取消注释即可恢复）
+      # - uses: taiki-e/upload-rust-binary-action@v1
+      #   with:
+      #     bin: fastnlr-server
+      #     target: ${{ matrix.target }}
+      #     archive: $bin-$tag-$target
+      #     tar: unix
+      #     zip: windows
+      #     build-tool: ${{ matrix.build-tool }}
+      #     checksum: sha256
