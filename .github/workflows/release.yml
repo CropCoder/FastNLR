@@ -27,12 +27,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          # 以 glibc 2.17 为基线构建，兼容 CentOS 7 / RHEL 8 / Debian 11 / Ubuntu 20.04 等旧发行版
+          - target: x86_64-unknown-linux-gnu.2.17
             os: ubuntu-latest
+            build-tool: cargo-zigbuild
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            build-tool: cargo
           - target: x86_64-apple-darwin
             os: macos-latest
+            build-tool: cargo
 
     steps:
       - uses: actions/checkout@v4
@@ -44,6 +48,8 @@ jobs:
           archive: $bin-$tag-$target
           tar: unix
           zip: windows
+          build-tool: ${{ matrix.build-tool }}
+          checksum: sha256
 
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
@@ -52,3 +58,5 @@ jobs:
           archive: $bin-$tag-$target
           tar: unix
           zip: windows
+          build-tool: ${{ matrix.build-tool }}
+          checksum: sha256
