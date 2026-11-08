@@ -1,6 +1,6 @@
 # FastNLR 扩展 motif 库：RNL/helper CC 与 TIR 家族
 
-本目录提供一套可选的外部 28-motif 库。FastNLR 1.7.0 默认库已包含经典 20 个 motif
+本目录提供一套可选的外部 28-motif 库。FastNLR 1.7.1 默认库已包含经典 20 个 motif
 以及保守 RNL/helper CC motif 21、23；本完整库进一步包含 motif 22、24 和 TIR motif 25–28，
 并在使用时以库文件中的 21、23 PWM/CDF 为准。
 
