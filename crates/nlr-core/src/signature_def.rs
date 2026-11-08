@@ -507,15 +507,40 @@ pub fn canonical_domain_string(
     cats: &[DomainCategory],
     repeat_min_block: usize,
 ) -> (Option<DomainCategory>, String) {
-    // 1. 折叠成域块（丢掉分隔类），并记录块规模
-    let mut blocks: Vec<(DomainCategory, usize)> = Vec::new();
-    for &c in cats {
+    canonical_domain_string_with_scores(cats, None, repeat_min_block)
+}
+
+/// 带证据权重的结构域串折叠（`scores` 与 `cats` 等长，数值越大表示证据越强）。
+///
+/// DNA 模式传入 `-log10(pvalue)`，蛋白模式传入 HMM bitscore。`scores` 为 `None` 时
+/// 保持原有行为：CC/TIR 同时出现且块大小相同时，取最靠近 NB-ARC 的块。
+pub fn canonical_domain_string_with_scores(
+    cats: &[DomainCategory],
+    scores: Option<&[f64]>,
+    repeat_min_block: usize,
+) -> (Option<DomainCategory>, String) {
+    let score_at = |i: usize| {
+        scores
+            .and_then(|s| s.get(i))
+            .copied()
+            .unwrap_or(f64::NEG_INFINITY)
+    };
+
+    // 1. 折叠成域块（丢掉分隔类），并记录块规模与块内最强证据。
+    let mut blocks: Vec<(DomainCategory, usize, f64)> = Vec::new();
+    for (i, &c) in cats.iter().enumerate() {
         if c == DomainCategory::Na || c == DomainCategory::Linker {
             continue;
         }
+        let sc = score_at(i);
         match blocks.last_mut() {
-            Some(last) if last.0 == c => last.1 += 1,
-            _ => blocks.push((c, 1)),
+            Some(last) if last.0 == c => {
+                last.1 += 1;
+                if sc > last.2 {
+                    last.2 = sc;
+                }
+            }
+            _ => blocks.push((c, 1, sc)),
         }
     }
     if blocks.is_empty() {
@@ -535,29 +560,34 @@ pub fn canonical_domain_string(
         return (nterm, s);
     };
     // 2. N 端域：若 CC/TIR 同时出现在首个 NB-ARC 之前，生物学上 N 端只能有一个；
-    //    此时优先规模更大的连续结构块，规模相同再取最靠近 NB-ARC 者。
-    //    该规则修复 TIR 基因内部落入单条 RNL-CC 交叉命中的误判（如 DSC1：
-    //    TIR×3 -> CC×1 -> NB-ARC 应判为 TIR，而不是 CC）。
-    let nterm_candidates: Vec<(usize, DomainCategory, usize)> = blocks
+    //    优先规模更大的连续结构块，规模相同再比较块内最强证据，证据仍相同才取更靠近
+    //    NB-ARC 者。该规则修复 TIR 基因内部落入单条 RNL-CC 交叉命中的误判（如 DSC1：
+    //    TIR×3 -> CC×1 -> NB-ARC 应判为 TIR，而不是 CC），同时避免等大小的弱 TIR
+    //    命中压过真实 CC。
+    let nterm_candidates: Vec<(usize, DomainCategory, usize, f64)> = blocks
         .iter()
         .take(first_nbarc)
         .enumerate()
-        .filter(|(_, (cat, _))| is_nterm(*cat))
-        .map(|(idx, (cat, size))| (idx, *cat, *size))
+        .filter(|(_, (cat, _, _))| is_nterm(*cat))
+        .map(|(idx, &(cat, size, sc))| (idx, cat, size, sc))
         .collect();
     let mixed_nterm = nterm_candidates
         .iter()
-        .any(|(_, cat, _)| *cat == DomainCategory::Cc)
+        .any(|(_, cat, _, _)| *cat == DomainCategory::Cc)
         && nterm_candidates
             .iter()
-            .any(|(_, cat, _)| *cat == DomainCategory::Tir);
+            .any(|(_, cat, _, _)| *cat == DomainCategory::Tir);
     let nterm = if mixed_nterm {
         nterm_candidates
             .iter()
-            .max_by_key(|(idx, _, size)| (*size, *idx))
-            .map(|(_, cat, _)| *cat)
+            .max_by(|a, b| {
+                a.2.cmp(&b.2)
+                    .then_with(|| a.3.total_cmp(&b.3))
+                    .then_with(|| a.0.cmp(&b.0))
+            })
+            .map(|(_, cat, _, _)| *cat)
     } else {
-        nterm_candidates.last().map(|(_, cat, _)| *cat)
+        nterm_candidates.last().map(|(_, cat, _, _)| *cat)
     };
 
     let mut parts: Vec<&'static str> = Vec::new();
@@ -568,10 +598,10 @@ pub fn canonical_domain_string(
     //      「后面还跟着 NB-ARC 块」（构成重复单元，如 RPP2A 的 TIR-NBARC-TIR-NBARC-LRR）
     //      且「块规模 ≥ repeat_min_block」时才认定为真实串联重复，否则按噪声丢弃。
     //      末尾孤立的单 motif CC（NB-ARC 之后再无 NB-ARC）会被这一条挡掉。
-    for (k, (cat, size)) in blocks.iter().enumerate().skip(first_nbarc) {
-        if is_nterm(*cat) {
+    for (k, &(cat, size, _)) in blocks.iter().enumerate().skip(first_nbarc) {
+        if is_nterm(cat) {
             let followed_by_nbarc = blocks[k + 1..].iter().any(|b| b.0 == DomainCategory::Nbarc);
-            if !followed_by_nbarc || *size < repeat_min_block {
+            if !followed_by_nbarc || size < repeat_min_block {
                 continue;
             }
         }

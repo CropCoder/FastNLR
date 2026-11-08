@@ -95,7 +95,7 @@ fn embedded_models_find_expected_domain_architecture() {
                 assert_eq!(arch.nterm, "CC");
                 assert_eq!(arch.class, "CC-NBARC");
                 assert_eq!(arch.family, "CNL");
-                assert!(arch.has_nbarc && !arch.has_lrr && !arch.complete);
+                assert!(arch.has_nbarc && !arch.has_lrr);
             }
             "RPS4L_ARATH" => {
                 let tir = passed
@@ -109,7 +109,7 @@ fn embedded_models_find_expected_domain_architecture() {
                 );
                 assert_eq!(arch.nterm, "TIR");
                 assert_eq!(arch.class, "TIR-NBARC");
-                assert!(arch.has_tir && arch.has_nbarc && !arch.complete);
+                assert!(arch.has_tir && arch.has_nbarc);
             }
             "ADR1_ARATH" => {
                 let rpw8 = passed
@@ -183,7 +183,7 @@ fn classification_rules() {
     assert_eq!(a.class, "CC-NBARC-LRR");
     assert_eq!(a.family, "CNL");
     assert_eq!(a.nterm, "CC");
-    assert!(a.is_nlr && a.complete);
+    assert!(a.is_nlr);
 
     // A downstream RPW8 cross-hit must not turn an Rx_N-driven CNL into RNL.
     let with_acc = |acc: &str, cat: DomainCategory, start: usize, end: usize| DomainHit {
@@ -215,21 +215,21 @@ fn classification_rules() {
     assert_eq!(a.class, "TIR-NBARC");
     assert_eq!(a.family, "TNL");
     assert_eq!(a.nterm, "TIR");
-    assert!(!a.complete && a.is_nlr);
+    assert!(a.is_nlr);
 
     // NBARC-LRR（无 N 端结构域）
     let a = classify(&[mk(DomainCategory::Nbarc, 100, 300, true)], 2);
     assert_eq!(a.class, "NBARC-LRR");
     assert_eq!(a.family, "NB-only");
     assert_eq!(a.nterm, "NB-only");
-    assert!(a.complete && a.is_nlr);
+    assert!(a.is_nlr);
 
     // TIR-only + LRR 也算候选（TIR-only NLR）
     let a = classify(&[mk(DomainCategory::Tir, 30, 200, true)], 1);
     assert_eq!(a.class, "TIR-LRR");
     assert_eq!(a.family, "TIR-only");
     assert_eq!(a.nterm, "TIR");
-    assert!(a.is_nlr && !a.complete);
+    assert!(a.is_nlr);
 
     // 无域
     let a = classify(&[], 0);

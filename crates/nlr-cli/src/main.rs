@@ -184,6 +184,10 @@ struct Cli {
     #[arg(long, default_value_t = 1e-4, help_heading = "NLR recall enhancements")]
     motif_prelim_p: f64,
 
+    /// TIR 专属显著性阈值（默认 1e-7，基因组模式）：剔除 p >= 该值的 TIR 类 motif。
+    #[arg(long, value_name = "P", help_heading = "NLR recall enhancements")]
+    tir_accept_p: Option<f64>,
+
     /// Relaxed seeding: treat a consecutive motif run with at least N NB-ARC motifs
     /// as a seed (disabled by default). Recovers NLR/RNL loci whose motif combinations
     /// are not among the built-in exact seed combinations. Mutually exclusive with the
@@ -256,6 +260,9 @@ fn main() {
     config.checkpoint_dir = cli.checkpoint.clone();
     config.motif_accept_p = cli.motif_accept_p;
     config.motif_prelim_p = cli.motif_prelim_p;
+    if let Some(p) = cli.tir_accept_p {
+        config.tir_accept_p = p;
+    }
     config.assemble.relaxed_seed_min_nbarc = cli.relaxed_seed;
     // 柔性播种默认开启（min_nbarc = 3）；--no-flexible-seed 可关闭，--flexible-seed N 可调阈值。
     config.flexible_seed =
@@ -547,6 +554,11 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
             cli.motif_prelim_p, cli.motif_accept_p
         ));
     }
+    if let Some(p) = cli.tir_accept_p {
+        if !p.is_finite() || p <= 0.0 || p > 1.0 {
+            return Err("--tir-accept-p must be finite and within (0,1]".to_string());
+        }
+    }
     if matches!(cli.flexible_seed, Some(0)) || matches!(cli.relaxed_seed, Some(0)) {
         return Err("seed min_nbarc values must be >= 1".to_string());
     }
@@ -616,6 +628,9 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         }
         if cli.require_ploop {
             conflicts.push("--require-ploop");
+        }
+        if cli.tir_accept_p.is_some() {
+            conflicts.push("--tir-accept-p");
         }
         if !cli.extra_seeds.is_empty() {
             conflicts.push("--seed-combination");
@@ -705,6 +720,7 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
         config.threads,
         config.seqs_per_thread
     );
+    tracing::info!("tir_accept_p: {}", config.tir_accept_p);
 
     // 播种模式（柔性播种默认开启，便于从日志确认实际生效档位）。
     let seeding = match config.flexible_seed {
@@ -800,11 +816,6 @@ fn build_summary(
 ) -> String {
     use std::fmt::Write as _;
     let def = &result.def;
-    let complete = result
-        .nlrs
-        .iter()
-        .filter(|l| l.is_complete_nlr(def))
-        .count();
     let mut type_counts: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut family_counts: std::collections::BTreeMap<String, usize> =
@@ -834,7 +845,6 @@ fn build_summary(
     let _ = writeln!(s, "# peak memory\t{}", format_peak_rss(peak_rss_mb));
     let _ = writeln!(s, "# elapsed\t{:.2}s", elapsed.as_secs_f64());
     let _ = writeln!(s, "# NLR loci\t{}", result.nlrs.len());
-    let _ = writeln!(s, "# complete NLR\t{}", complete);
     let _ = writeln!(s, "# NLR types (count desc):");
     for (class, count) in type_counts {
         let _ = writeln!(s, "# {}\t{}", count, class);

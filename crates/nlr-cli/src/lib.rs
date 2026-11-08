@@ -30,6 +30,7 @@ struct CheckpointManifest {
     profile_sha256: String,
     motif_accept_p: f64,
     motif_prelim_p: f64,
+    tir_accept_p: f64,
     fragment_length: usize,
     overlap: usize,
     distance_within_motif_combination: u64,
@@ -206,6 +207,8 @@ pub struct RunConfig {
     pub motif_accept_p: f64,
     /// Motif prefilter threshold (default 1e-4).
     pub motif_prelim_p: f64,
+    /// TIR 专属显著性阈值（默认 1e-7）：TIR 类 motif 额外要求 p < 该值。
+    pub tir_accept_p: f64,
     /// Domain-category declarations for motif IDs outside the built-in tables (e.g. "21=CC"),
     /// used by external motif libraries.
     pub motif_categories: Vec<String>,
@@ -251,6 +254,11 @@ impl RunConfig {
                 "motif_prelim_p ({}) must be >= motif_accept_p ({})",
                 self.motif_prelim_p, self.motif_accept_p
             )));
+        }
+        if !self.tir_accept_p.is_finite() || self.tir_accept_p <= 0.0 || self.tir_accept_p > 1.0 {
+            return Err(invalid(
+                "tir_accept_p must be finite and within (0,1]".into(),
+            ));
         }
         if let Some(cfg) = self.flexible_seed {
             if cfg.min_nbarc == 0 {
@@ -385,6 +393,7 @@ impl RunConfig {
             assemble: nlr_assemble::AssembleParams::default(),
             motif_accept_p: 1e-5,
             motif_prelim_p: 1e-4,
+            tir_accept_p: 1e-7,
             motif_categories: Vec::new(),
             extra_seeds: Vec::new(),
             extra_signatures: Vec::new(),
@@ -433,6 +442,7 @@ fn build_checkpoint_manifest(
         profile_sha256: format!("{:x}", profile_hasher.finalize()),
         motif_accept_p: config.motif_accept_p,
         motif_prelim_p: config.motif_prelim_p,
+        tir_accept_p: config.tir_accept_p,
         fragment_length: config.fragment_length,
         overlap: config.overlap,
         distance_within_motif_combination: config.assemble.distance_within_motif_combination,
@@ -652,6 +662,9 @@ pub fn run_tracked(
         dedup_adjacent(v);
     }
 
+    // 3.1 TIR 专属显著性过滤：剔除弱 TIR 命中，避免假 TIR/TNL。
+    filter_weak_tir_motifs(&mut motifs_by_seq, &signature_def, config.tir_accept_p);
+
     // 3.5. Signature 预过滤：按 (contig, strand, frame) 的局部 motif 簇判定，与切片边界无关。
     //      簇间距取 fragment_length（20 kb），与旧实现单个 fragment 的判定尺度对齐，
     //      但改由 motif 自身坐标定义簇，故不受切片相位影响。
@@ -802,6 +815,21 @@ fn dedup_adjacent(motifs: &mut Vec<Motif>) {
         } else {
             i += 1;
         }
+    }
+}
+
+/// 过滤显著性不足的 TIR 类 motif。
+///
+/// TIR 结构域的证据比 NB-ARC/LRR 更容易被随机弱命中污染；统一 1e-5 阈值会把 p 在
+/// 1e-6 量级的假 TIR 也当成有效域证据，进而把 CNL 误判为 TNL。这里对
+/// `category == Tir` 的 motif 施加更严格的额外阈值（默认 1e-7）。
+fn filter_weak_tir_motifs(
+    motifs_by_seq: &mut HashMap<String, Vec<Motif>>,
+    def: &AnnotatorSignatureDefinition,
+    tir_accept_p: f64,
+) {
+    for motifs in motifs_by_seq.values_mut() {
+        motifs.retain(|m| def.category(m.id) != DomainCategory::Tir || m.pvalue < tir_accept_p);
     }
 }
 
@@ -1426,21 +1454,17 @@ pub fn write_protein_outputs(
     let mut f = std::fs::File::create(&p)?;
     writeln!(
         f,
-        "#protein_id\tlength\tclass\tnterm\thas_nbarc\thas_tir\thas_lrr\tcomplete\tn_domains\tdomains\tfamily"
+        "#protein_id\tlength\tclass\tnterm\thas_nbarc\thas_tir\thas_lrr\tn_domains\tdomains\tfamily"
     )?;
     let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut family_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut nlr_total = 0usize;
-    let mut complete_total = 0usize;
     for r in &result.records {
         let passed = r.passed_domains();
         if !r.arch.is_nlr {
             continue;
         }
         nlr_total += 1;
-        if r.arch.complete {
-            complete_total += 1;
-        }
         *type_counts.entry(r.arch.class.clone()).or_default() += 1;
         *family_counts.entry(r.arch.family.clone()).or_default() += 1;
 
@@ -1462,7 +1486,7 @@ pub fn write_protein_outputs(
             .join(";");
         writeln!(
             f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             r.id,
             r.length,
             r.arch.class,
@@ -1470,7 +1494,6 @@ pub fn write_protein_outputs(
             r.arch.has_nbarc,
             r.arch.has_tir,
             r.arch.has_lrr,
-            r.arch.complete,
             items.len(),
             domains,
             r.arch.family
@@ -1496,7 +1519,6 @@ pub fn write_protein_outputs(
     );
     let _ = writeln!(s, "# proteins scanned\t{}", result.records.len());
     let _ = writeln!(s, "# NLR candidates\t{}", nlr_total);
-    let _ = writeln!(s, "# complete (NB-ARC + LRR)\t{}", complete_total);
     let _ = writeln!(s, "# NLR types (count desc):");
     let mut types: Vec<(&String, &usize)> = type_counts.iter().collect();
     types.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
@@ -1527,6 +1549,12 @@ mod tests {
 
     fn dna_motif(id: u8, start: u64) -> Motif {
         let mut m = Motif::new_protein(id, "chr1".to_string(), 1, "AAA".to_string(), 1e-6);
+        m.set_dna("chr1".to_string(), start, 20_000, 0, Strand::Forward);
+        m
+    }
+
+    fn dna_motif_p(id: u8, start: u64, pvalue: f64) -> Motif {
+        let mut m = Motif::new_protein(id, "chr1".to_string(), 1, "AAA".to_string(), pvalue);
         m.set_dna("chr1".to_string(), start, 20_000, 0, Strand::Forward);
         m
     }
@@ -1578,6 +1606,27 @@ mod tests {
         let mut config = RunConfig::new(PathBuf::from("input.fa"), None, None);
         config.threads = 0;
         assert!(config.validate().is_err());
+
+        let mut config = RunConfig::new(PathBuf::from("input.fa"), None, None);
+        config.tir_accept_p = 0.0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn filter_weak_tir_motifs_keeps_strong_tir_only() {
+        let def = AnnotatorSignatureDefinition::new();
+        let mut by_seq: HashMap<String, Vec<Motif>> = HashMap::new();
+        by_seq.insert(
+            "chr1".to_string(),
+            vec![
+                dna_motif_p(13, 100, 1e-6), // weak TIR
+                dna_motif_p(15, 200, 1e-8), // strong TIR
+                dna_motif_p(1, 300, 1e-6),  // NB-ARC 不受影响
+            ],
+        );
+        filter_weak_tir_motifs(&mut by_seq, &def, 1e-7);
+        let ids: Vec<u8> = by_seq["chr1"].iter().map(|m| m.id).collect();
+        assert_eq!(ids, vec![15, 1]);
     }
 
     fn checkpoint_motif(id: u8, start: u64) -> Motif {

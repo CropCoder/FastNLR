@@ -62,7 +62,7 @@ fn protein_mode_writes_its_own_output_set() {
         .collect();
     assert_eq!(rows.len(), 4, "fixture 应产生 4 条 NLR 候选");
     for r in &rows {
-        assert_eq!(r.len(), 11, "nlr.tsv 应为 11 列: {r:?}");
+        assert_eq!(r.len(), 10, "nlr.tsv 应为 10 列: {r:?}");
     }
     let class_of = |needle: &str| {
         rows.iter()
@@ -78,7 +78,7 @@ fn protein_mode_writes_its_own_output_set() {
     let family_of = |needle: &str| {
         rows.iter()
             .find(|r| r[0].contains(needle))
-            .map(|r| r[10])
+            .map(|r| r[9])
             .unwrap_or_else(|| panic!("nlr.tsv 中找不到 {needle}"))
     };
     assert_eq!(family_of("RPM1_ARATH"), "CNL");

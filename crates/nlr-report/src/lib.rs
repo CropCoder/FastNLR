@@ -17,8 +17,6 @@ pub struct RunStats {
     pub motif_total: usize,
     /// Total NLR loci count.
     pub nlr_total: usize,
-    /// Complete NLR count.
-    pub nlr_complete: usize,
     /// Per-chromosome statistics: seq -> (motif count, NLR count, complete NLR count).
     pub per_chromosome: BTreeMap<String, (usize, usize, usize)>,
     /// Hit count per motif id.
@@ -38,19 +36,14 @@ pub fn collect(
     let seq_count = motifs_by_seq.len();
     let motif_total: usize = motifs_by_seq.values().map(|v| v.len()).sum();
     let nlr_total = nlrs.len();
-    let nlr_complete = nlrs.iter().filter(|l| l.is_complete_nlr(def)).count();
-
     let mut per_chromosome: BTreeMap<String, (usize, usize, usize)> = BTreeMap::new();
     for (seq, motifs) in motifs_by_seq {
         let nlr_for_seq = nlrs
             .iter()
             .filter(|l| l.sequence_name() == seq.as_str())
             .count();
-        let complete_for_seq = nlrs
-            .iter()
-            .filter(|l| l.sequence_name() == seq.as_str() && l.is_complete_nlr(def))
-            .count();
-        per_chromosome.insert(seq.clone(), (motifs.len(), nlr_for_seq, complete_for_seq));
+        // 完整性判定暂时禁用：第三项 complete 计数固定为 0 占位。
+        per_chromosome.insert(seq.clone(), (motifs.len(), nlr_for_seq, 0));
     }
 
     let mut motif_counts: BTreeMap<u8, usize> = BTreeMap::new();
@@ -73,7 +66,6 @@ pub fn collect(
         seq_count,
         motif_total,
         nlr_total,
-        nlr_complete,
         per_chromosome,
         motif_counts,
         nlr_type_counts,
@@ -87,10 +79,8 @@ pub fn write_tsv<W: Write>(w: &mut W, stats: &RunStats) -> std::io::Result<()> {
     writeln!(w, "global\tsequence_count\t{}", stats.seq_count)?;
     writeln!(w, "global\tmotif_total\t{}", stats.motif_total)?;
     writeln!(w, "global\tnlr_total\t{}", stats.nlr_total)?;
-    writeln!(w, "global\tnlr_complete\t{}", stats.nlr_complete)?;
-
-    for (seq, (motifs, nlrs, complete)) in &stats.per_chromosome {
-        writeln!(w, "chromosome\t{}\t{}\t{}\t{}", seq, motifs, nlrs, complete)?;
+    for (seq, (motifs, nlrs, _complete)) in &stats.per_chromosome {
+        writeln!(w, "chromosome\t{}\t{}\t{}", seq, motifs, nlrs)?;
     }
 
     for (id, count) in &stats.motif_counts {
@@ -107,7 +97,6 @@ pub fn write_tsv<W: Write>(w: &mut W, stats: &RunStats) -> std::io::Result<()> {
 pub struct ChromosomeStats {
     pub motifs: usize,
     pub nlrs: usize,
-    pub complete_nlrs: usize,
 }
 
 /// 单个 NLR 位点的结构化记录（summary.json 用）。
@@ -120,7 +109,6 @@ pub struct LocusRecord {
     pub strand: char,
     pub class: String,
     pub family: String,
-    pub complete: bool,
     pub has_stop: bool,
     pub motif_count: usize,
 }
@@ -134,7 +122,6 @@ pub struct SummaryReport {
     pub sequence_count: usize,
     pub motif_total: usize,
     pub nlr_total: usize,
-    pub nlr_complete: usize,
     pub per_chromosome: BTreeMap<String, ChromosomeStats>,
     pub motif_counts: BTreeMap<u8, usize>,
     pub nlr_type_counts: BTreeMap<String, usize>,
@@ -153,13 +140,12 @@ pub fn build_summary_report(
     let per_chromosome = stats
         .per_chromosome
         .iter()
-        .map(|(seq, (motifs, nlrs, complete))| {
+        .map(|(seq, (motifs, nlrs, _complete))| {
             (
                 seq.clone(),
                 ChromosomeStats {
                     motifs: *motifs,
                     nlrs: *nlrs,
-                    complete_nlrs: *complete,
                 },
             )
         })
@@ -177,7 +163,6 @@ pub fn build_summary_report(
                 strand: list.strand().symbol(),
                 class: list.domain_string(def),
                 family: list.family(def).to_string(),
-                complete: list.is_complete_nlr(def),
                 has_stop: list.has_stop_codon(),
                 motif_count: list.motifs.len(),
             }
@@ -188,7 +173,6 @@ pub fn build_summary_report(
         sequence_count: stats.seq_count,
         motif_total: stats.motif_total,
         nlr_total: stats.nlr_total,
-        nlr_complete: stats.nlr_complete,
         per_chromosome,
         motif_counts: stats.motif_counts,
         nlr_type_counts: stats.nlr_type_counts,

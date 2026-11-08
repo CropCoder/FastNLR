@@ -114,8 +114,8 @@ pub struct NlrArchitecture {
     pub has_nbarc: bool,
     pub has_tir: bool,
     pub has_lrr: bool,
-    /// NB-ARC + LRR 视为完整（蛋白模式没有 P-loop motif 锚点）。
-    pub complete: bool,
+    // 完整性判定暂时禁用：不再输出蛋白模式的 complete 字段。
+    // pub complete: bool,
     /// 是否算 NLR 候选：含 NB-ARC，或含 TIR 且含 LRR。
     pub is_nlr: bool,
 }
@@ -333,11 +333,15 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
 
     // 按位置构造类别序列；LRR 来自 PWM（无位置信息），按 C 端证据追加。
     let mut cats: Vec<DomainCategory> = passed.iter().map(|h| h.category).collect();
+    let mut scores: Vec<f64> = passed.iter().map(|h| h.bitscore as f64).collect();
     if has_lrr {
         cats.push(DomainCategory::Lrr);
+        // LRR 证据位于 C 端，不参与 N 端仲裁，权重用 -inf 占位。
+        scores.push(f64::NEG_INFINITY);
     }
-    let (nterm_cat, class) = nlr_core::signature_def::canonical_domain_string(
+    let (nterm_cat, class) = nlr_core::signature_def::canonical_domain_string_with_scores(
         &cats,
+        Some(&scores),
         nlr_core::signature_def::PROTEIN_REPEAT_MIN_BLOCK,
     );
     // N 端结构域对外仍是字符串：CC / TIR / NB-only / None。
@@ -367,7 +371,7 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
         has_nbarc,
         has_tir,
         has_lrr,
-        complete: has_nbarc && has_lrr,
+        // complete: has_nbarc && has_lrr,
         is_nlr: has_nbarc || (has_tir && has_lrr),
     }
 }

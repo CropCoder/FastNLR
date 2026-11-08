@@ -5,7 +5,8 @@ mod tests {
     use nlr_core::motif::Motif;
     use nlr_core::motif_list::MotifList;
     use nlr_core::signature_def::{
-        AnnotatorSignatureDefinition, DomainCategory, FlexibleSeedConfig,
+        canonical_domain_string_with_scores, AnnotatorSignatureDefinition, DomainCategory,
+        FlexibleSeedConfig,
     };
     use nlr_core::strand::Strand;
 
@@ -139,20 +140,43 @@ mod tests {
     }
 
     #[test]
-    fn is_complete_nlr() {
-        let d = def();
-        let complete = MotifList::new(
-            "x".into(),
-            vec![
-                protein_motif(1, 1, "P", 1e-6),  // P-loop
-                protein_motif(9, 20, "L", 1e-6), // LRR
-            ],
-        );
-        assert!(complete.is_complete_nlr(&d));
+    fn weighted_domain_string_picks_stronger_equal_size_nterm() {
+        // CC 与 TIR 在首个 NB-ARC 前各只有 1 个块时，应选证据更强的一侧，而不是简单取靠近 NB-ARC 者。
+        let cats = [
+            DomainCategory::Cc,
+            DomainCategory::Tir,
+            DomainCategory::Nbarc,
+        ];
 
-        let incomplete = MotifList::new("x".into(), vec![protein_motif(1, 1, "P", 1e-6)]);
-        assert!(!incomplete.is_complete_nlr(&d));
+        // CC 证据更强 -> CC-NBARC
+        let (nterm, class) =
+            canonical_domain_string_with_scores(&cats, Some(&[10.0, 5.0, f64::NEG_INFINITY]), 2);
+        assert_eq!(nterm, Some(DomainCategory::Cc));
+        assert_eq!(class, "CC-NBARC");
+
+        // TIR 证据更强 -> TIR-NBARC
+        let (nterm, class) =
+            canonical_domain_string_with_scores(&cats, Some(&[5.0, 10.0, f64::NEG_INFINITY]), 2);
+        assert_eq!(nterm, Some(DomainCategory::Tir));
+        assert_eq!(class, "TIR-NBARC");
     }
+
+    // 完整性判定暂时禁用，对应测试暂时注释掉。
+    // #[test]
+    // fn is_complete_nlr() {
+    //     let d = def();
+    //     let complete = MotifList::new(
+    //         "x".into(),
+    //         vec![
+    //             protein_motif(1, 1, "P", 1e-6),  // P-loop
+    //             protein_motif(9, 20, "L", 1e-6), // LRR
+    //         ],
+    //     );
+    //     assert!(complete.is_complete_nlr(&d));
+
+    //     let incomplete = MotifList::new("x".into(), vec![protein_motif(1, 1, "P", 1e-6)]);
+    //     assert!(!incomplete.is_complete_nlr(&d));
+    // }
 
     #[test]
     fn can_be_merged_with_rank_consistency() {

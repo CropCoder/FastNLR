@@ -100,12 +100,13 @@ impl MotifList {
         self.sort();
     }
 
-    /// Whether it is a complete NLR: contains P-loop and LRR.
-    pub fn is_complete_nlr(&self, def: &AnnotatorSignatureDefinition) -> bool {
-        let has_ploop = self.motifs.iter().any(|m| def.is_ploop(m.id));
-        let has_lrr = self.motifs.iter().any(|m| def.is_lrr(m.id));
-        has_ploop && has_lrr
-    }
+    // 完整性判定暂时禁用：不再输出“完整 NLR”结论。
+    // 原逻辑为「同时含 P-loop（motif_1）与 LRR 类 motif」，后续需要恢复时取消注释即可。
+    // pub fn is_complete_nlr(&self, def: &AnnotatorSignatureDefinition) -> bool {
+    //     let has_ploop = self.motifs.iter().any(|m| def.is_ploop(m.id));
+    //     let has_lrr = self.motifs.iter().any(|m| def.is_lrr(m.id));
+    //     has_ploop && has_lrr
+    // }
 
     /// Whether it contains a stop codon.
     pub fn has_stop_codon(&self) -> bool {
@@ -189,11 +190,29 @@ impl MotifList {
     pub fn domain_string(&self, def: &AnnotatorSignatureDefinition) -> String {
         let mut cats: Vec<DomainCategory> =
             self.motifs.iter().map(|m| def.category(m.id)).collect();
+        // 证据权重用 -log10(pvalue)：数值越大越显著，供 N 端 CC/TIR 等大小时仲裁。
+        let mut scores: Vec<f64> = self
+            .motifs
+            .iter()
+            .map(|m| {
+                if m.pvalue > 0.0 {
+                    -m.pvalue.log10()
+                } else {
+                    f64::INFINITY
+                }
+            })
+            .collect();
         // HMM 补充的 N 端域位于域串最前（仅当 PWM 通路未能给出 N 端域时才会被设置）。
         if let Some(c) = self.hmm_nterm {
             cats.insert(0, c);
+            scores.insert(0, f64::INFINITY);
         }
-        crate::signature_def::canonical_domain_string(&cats, DNA_REPEAT_MIN_BLOCK).1
+        crate::signature_def::canonical_domain_string_with_scores(
+            &cats,
+            Some(&scores),
+            DNA_REPEAT_MIN_BLOCK,
+        )
+        .1
     }
 
     /// Biological family, separating RNL from CNL when they share `CC-NBARC-LRR`.

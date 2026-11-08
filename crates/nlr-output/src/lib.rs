@@ -45,7 +45,7 @@ pub fn write_nlr_gff<W: Write>(
     nlrs: &[MotifList],
     def: &AnnotatorSignatureDefinition,
     date: &str,
-    complete_only: bool,
+    _complete_only: bool,
 ) -> std::io::Result<()> {
     writeln!(w, "##gff-version 2")?;
     // 版本号直接取自包版本，随 workspace 版本自动更新
@@ -58,9 +58,10 @@ pub fn write_nlr_gff<W: Write>(
     )?;
 
     for list in nlrs {
-        if complete_only && !list.is_complete_nlr(def) {
-            continue;
-        }
+        // 完整性判定暂时禁用：不再按 complete 过滤 GFF 位点。
+        // if complete_only && !list.is_complete_nlr(def) {
+        //     continue;
+        // }
         let (start, end) = list.span();
         let strand = list.first_motif().strand.symbol();
         let domains = list.domain_string(def);
@@ -82,7 +83,7 @@ pub fn write_nlr_gff<W: Write>(
 pub fn write_nlr_bed<W: Write>(
     w: &mut W,
     nlrs: &[MotifList],
-    def: &AnnotatorSignatureDefinition,
+    _def: &AnnotatorSignatureDefinition,
 ) -> std::io::Result<()> {
     writeln!(w, "#track name=\"NLR_Loci\"")?;
     writeln!(w, "#itemRgb=\"On\"")?;
@@ -106,10 +107,9 @@ pub fn write_nlr_bed<W: Write>(
             }
         }
 
+        // 完整性判定暂时禁用：不再输出绿色“完整”块，非终止子位点统一为橙色。
         let color = if list.has_stop_codon() {
             "255,0,0" // red (stop codon takes priority)
-        } else if list.is_complete_nlr(def) {
-            "0,255,0" // green (complete)
         } else {
             "255,128,0" // orange (partial)
         };
@@ -205,9 +205,7 @@ pub fn write_nbarc_alignment_fasta<W: Write>(
     }
 
     for list in nlrs {
-        if !list.is_complete_nlr(def) {
-            continue;
-        }
+        // 完整性判定暂时禁用：不再过滤非完整位点，仅由后续 P-loop 检查决定是否写入。
 
         // Locate the P-loop using the corrected `while(!is_ploop)` condition.
         let ploop_idx = match list.motifs.iter().position(|m| def.is_ploop(m.id)) {
