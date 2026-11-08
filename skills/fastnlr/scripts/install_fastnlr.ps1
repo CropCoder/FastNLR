@@ -1,10 +1,10 @@
 # 下载并安装 FastNLR 最新版预编译二进制到当前用户目录。
 #
-# 用法：powershell -ExecutionPolicy Bypass -File install_fastnlr.ps1 [-Version v1.7.1]
+# 用法：powershell -ExecutionPolicy Bypass -File install_fastnlr.ps1 [-Version v1.7.2]
 #
 # Author: Jiwen Zhao (https://github.com/CropCoder)
 
-param([string]$Version = "v1.7.1")
+param([string]$Version = "v1.7.2")
 
 $ErrorActionPreference = "Stop"
 $base = "https://github.com/CropCoder/FastNLR/releases/download/$Version"

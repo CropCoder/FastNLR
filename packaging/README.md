@@ -6,8 +6,8 @@
 用法：
 
 ```bash
-bash packaging/Build-TBtools-Plugin-V1.sh macos v1.7.1
-bash packaging/Build-TBtools-Plugin-V1.sh windows v1.7.1
+bash packaging/Build-TBtools-Plugin-V1.sh macos v1.7.2
+bash packaging/Build-TBtools-Plugin-V1.sh windows v1.7.2
 ```
 
 产物为 `dist/fastnlr-server-tbtools-<target>.plugin.zip`。正式提交 TBtools 插件商店的
