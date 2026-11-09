@@ -178,9 +178,16 @@ jobs:
         run: npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
       - name: Verify ARM64 application
         run: |
-          app_binary=$(find app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -type f -path "*/Contents/MacOS/*" | head -1)
+          dmg=$(find app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name "*.dmg" | head -1)
+          test -n "$dmg"
+          mount_dir=$(mktemp -d /tmp/fastnlr-dmg.XXXXXX)
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir" >/dev/null
+          trap 'hdiutil detach "$mount_dir" >/dev/null 2>&1 || true' EXIT
+          app_binary=$(find "$mount_dir" -type f -path "*/Contents/MacOS/*" | head -1)
           test -f "$app_binary"
           lipo -info "$app_binary"
+          hdiutil detach "$mount_dir" >/dev/null
+          trap - EXIT
       - name: Generate checksum
         run: |
           cd app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
