@@ -9,9 +9,10 @@
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.7.2-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.8.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
-[Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) · [Citation](#citation)
+[Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) ·
+[Interfaces](#other-interfaces) · [Website](https://cropcoder.github.io/FastNLR/) · [Citation](#citation)
 
 </div>
 
@@ -38,9 +39,9 @@ conda install bioconda::fastnlr
 ### Prebuilt binary
 
 ```bash
-curl -L -o fastnlr.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.7.2/fastnlr-v1.7.2-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf fastnlr.tar.gz
+curl -L -o fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz \
+  https://github.com/CropCoder/FastNLR/releases/download/v1.8.0/fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 ```
 
@@ -49,13 +50,28 @@ Release assets follow the `fastnlr-<tag>-<target>.tar.gz` naming scheme (Windows
 on CentOS 7, RHEL 8, Debian 11, Ubuntu 20.04 and newer; on older systems use the bioconda
 package or build from source.
 
+### Desktop application — Windows and macOS
+
+FastNLR desktop builds provide the genome and protein workflows in a native application. Download
+them from the latest [GitHub Release](https://github.com/CropCoder/FastNLR/releases/latest).
+
+| Platform | Download | Requirements |
+|---|---|---|
+| Windows GUI | NSIS `.exe` installer | Windows 10/11 x64, WebView2 |
+| macOS GUI | `.dmg` installer | macOS 12+, Apple Silicon |
+| Linux CLI | x86_64 `.tar.gz` | glibc 2.17+ |
+
+The initial desktop builds are not yet signed with a commercial Windows certificate or notarized
+with an Apple Developer ID. Windows SmartScreen and macOS Gatekeeper may therefore show a warning;
+these packages are suitable for evaluation while signing credentials are being prepared.
+
 ### From source
 
 ```bash
 # Requires Rust 1.85+
 git clone https://github.com/CropCoder/FastNLR.git
 cd FastNLR
-cargo build --release
+cargo build --release --locked
 # binary: target/release/fastnlr
 ```
 
@@ -66,7 +82,7 @@ Package page: <https://anaconda.org/bioconda/fastnlr> · Packaging recipe: [`con
 ```bash
 # 1. Genome (DNA) mode — built-in motif library, 8 threads
 #    -> results/<genome>.nlr.txt, .nlr.gff, .nlr.bed, .motifs.bed, .nbarc.fasta,
-#       .loci.fasta, .stats.tsv, .summary.txt
+#       .loci.fasta, .stats.tsv, .summary.txt, .summary.json
 fastnlr -i genome.fasta -o results -t 8
 
 # 2. Protein mode — HMMER domain scan on a protein FASTA (no genome coordinates)
@@ -95,6 +111,9 @@ details and benchmark results.
   that missing N-terminal domain instead of leaving a bare `NBARC-LRR`.
 - **Tandem-repeat aware assembly** — repeated or duplicated domain units and trailing NB-ARC
   segments are merged back into their parent locus, so one gene is not reported as several loci.
+- **High-precision defaults** — TIR motifs use a stricter acceptance threshold
+  (`--tir-accept-p`, default `1e-7`), and post-assembly filtering removes unsupported partial
+  loci. Use `--keep-partial-loci` to restore legacy behaviour.
 - **RNL-aware default library** — the default profile includes the classic 20 motifs plus
   RNL/helper-CC profiles 21 and 23 and conservative `CC,1` seeds. This recovers ADR1-L1
   without relaxing the global PWM p-value threshold. An optional 28-motif RNL/TIR library
@@ -106,7 +125,7 @@ details and benchmark results.
   mislabeled as CNL merely because they share the same CC-NBARC-LRR architecture.
 - **Strict resumable runs** — checkpoints include input/profile/configuration fingerprints and are
   reused only when the current run is compatible. Incomplete or stale checkpoints fail explicitly;
-  every run writes a human-readable summary and per-chromosome/per-motif TSV statistics.
+  every run writes human-readable and JSON summaries plus per-chromosome/per-motif TSV statistics.
 
 ## Performance
 
@@ -125,6 +144,11 @@ keep `-t` at or below the physical core count. The `sensitive` recall preset
 (`--motif-accept-p`/`--motif-prelim-p` relaxed) is diagnostic only: it inflates runtime by
 roughly 40× and is not intended for production runs.
 
+**TAIR12 reference validation:** FastNLR 1.7.2 completed the standard DNA-mode workflow on
+*Arabidopsis thaliana* TAIR12 (`GCA_978657495.1`, 142.5 Mb) with the built-in motif profiles
+and 8 threads. It scanned 7,918 fragments, assembled 4,929 motif hits into 210 NLR loci, and
+finished in 43.6 s with 162 MB peak RSS.
+
 **Accuracy** (RefPlantNLR, 400 curated NLR CDS): **99.75%** gene recall and **96.49%**
 domain-architecture agreement — rising to **98.19%** when the 12 reference entries whose
 `Structure` and `Subclass` columns contradict each other are excluded. Per-domain F1 is
@@ -136,7 +160,9 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
   job-oriented REST API. Build with `cargo build --release -p nlr-server`, then run
   `fastnlr-server --port 8787`. It is also packaged as a local TBtools web plugin via
   `packaging/Build-TBtools-Plugin-V1.sh`.
-- **Desktop app** — a Tauri 2 scaffold lives in `app/` and reuses the `nlr-service` layer.
+- **Desktop app** — the Tauri 2 application in `app/` provides native Windows and macOS workflows,
+  live progress and cancellation, persistent run history, result tables, and summary charts while
+  reusing the same `nlr-service` execution layer.
 - **AI agents** — the `skills/fastnlr/` directory provides a portable Agent Skill for Codex and
   Claude Code.
 - **Publication plots** — the `visualization/` R scripts turn `summary.json` into chromosome maps
@@ -145,15 +171,26 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
 ## Development
 
 ```bash
-cargo build --release                              # optimized build
-cargo test --workspace                             # 98 tests
+cargo build --release --locked                     # optimized build
+cargo test --workspace --locked                    # 104 tests
 cargo fmt --all -- --check                         # formatting
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+Desktop development requires Node.js 22+ and Rust 1.90+:
+
+```bash
+cd app
+npm ci
+npm run typecheck
+npm test
+npm run tauri build
+```
+
 The release profile uses `opt-level=3`, `lto="fat"`, `codegen-units=1` and `panic="abort"`.
 CI (`.github/workflows/rust.yml`) builds and tests pushes to `main` and pull requests; pushing a
-`vX.Y.Z` tag builds Linux/Windows/macOS binaries and uploads them to GitHub Releases.
+`vX.Y.Z` tag builds the Linux CLI plus Windows/macOS GUI installers and uploads them to GitHub
+Releases.
 
 ## Citation
 

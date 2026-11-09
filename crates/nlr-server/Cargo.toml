@@ -13,8 +13,8 @@ name = "fastnlr-server"
 path = "src/main.rs"
 
 [dependencies]
-nlr-service = { path = "../nlr-service", version = "1.7.2" }
-fastnlr = { path = "../nlr-cli", version = "1.7.2" }
+nlr-service = { path = "../nlr-service", version = "1.8.0" }
+fastnlr = { path = "../nlr-cli", version = "1.8.0" }
 axum = { version = "0.8", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 clap = { workspace = true }

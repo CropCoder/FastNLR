@@ -6,6 +6,8 @@
 
 [workspace]
 resolver = "2"
+# 桌面端拥有独立的 Node/Cargo 构建链，避免 Tauri 系统依赖进入 CLI workspace。
+exclude = ["app/src-tauri"]
 members = [
     "crates/nlr-core",
     "crates/nlr-config",
@@ -22,7 +24,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.7.2"
+version = "1.8.0"
 edition = "2021"
 authors = ["Jiwen Zhao (https://github.com/CropCoder)"]
 license = "GPL-3.0-only"

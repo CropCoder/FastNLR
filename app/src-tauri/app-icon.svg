@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>FastNLR desktop application icon</title>
+  <desc>Author: Jiwen Zhao (https://github.com/CropCoder)</desc>
+  <defs>
+    <linearGradient id="background" x1="120" y1="80" x2="900" y2="940" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7fdfc"/>
+      <stop offset="1" stop-color="#dff4f7"/>
+    </linearGradient>
+    <clipPath id="wheel">
+      <circle cx="512" cy="665" r="246"/>
+    </clipPath>
+  </defs>
+
+  <rect x="32" y="32" width="960" height="960" rx="218" fill="url(#background)" stroke="#10243a" stroke-width="22"/>
+
+  <!-- DNA helix -->
+  <path d="M188 190 C270 82 384 82 466 190 C548 298 662 298 744 190" fill="none" stroke="#20a795" stroke-width="42" stroke-linecap="round"/>
+  <path d="M188 286 C270 394 384 394 466 286 C548 178 662 178 744 286" fill="none" stroke="#10243a" stroke-width="42" stroke-linecap="round"/>
+  <g stroke="#20a795" stroke-width="23" stroke-linecap="round">
+    <path d="M284 130 L284 248"/>
+    <path d="M380 100 L380 278"/>
+    <path d="M476 128 L476 250"/>
+    <path d="M572 278 L572 100"/>
+    <path d="M668 248 L668 130"/>
+  </g>
+
+  <!-- Chromosome domain bar -->
+  <path d="M174 420 H850" stroke="#10243a" stroke-width="32" stroke-linecap="round"/>
+  <path d="M270 420 H470" stroke="#1b4f9c" stroke-width="62" stroke-linecap="round"/>
+  <path d="M540 420 H750" stroke="#1b4f9c" stroke-width="62" stroke-linecap="round"/>
+  <path d="M510 420 H546" stroke="#f3ad2e" stroke-width="62" stroke-linecap="round"/>
+  <path d="M528 448 L512 545" stroke="#f3ad2e" stroke-width="26" stroke-linecap="round"/>
+
+  <!-- NLR protein wheel -->
+  <circle cx="512" cy="665" r="260" fill="#ffffff" stroke="#10243a" stroke-width="25"/>
+  <g clip-path="url(#wheel)">
+    <path d="M512 665 L300 520 A246 246 0 0 1 420 438 Z" fill="#58c4b3"/>
+    <path d="M512 665 L420 438 A246 246 0 0 1 575 410 Z" fill="#eccc68"/>
+    <path d="M512 665 L575 410 A246 246 0 0 1 720 500 Z" fill="#ff6b6b"/>
+    <path d="M512 665 L720 500 A246 246 0 0 1 758 665 Z" fill="#9c88ff"/>
+    <path d="M512 665 L758 665 A246 246 0 0 1 670 830 Z" fill="#3e89d4"/>
+    <path d="M512 665 L670 830 A246 246 0 0 1 512 911 Z" fill="#7dbb6b"/>
+    <path d="M512 665 L512 911 A246 246 0 0 1 342 830 Z" fill="#20a795"/>
+    <path d="M512 665 L342 830 A246 246 0 0 1 266 665 Z" fill="#f0aa32"/>
+    <path d="M512 665 L266 665 A246 246 0 0 1 300 520 Z" fill="#bc4a79"/>
+  </g>
+  <g stroke="#ffffff" stroke-width="17" stroke-linecap="round">
+    <path d="M512 665 L348 546"/>
+    <path d="M512 665 L500 419"/>
+    <path d="M512 665 L682 548"/>
+    <path d="M512 665 L748 665"/>
+    <path d="M512 665 L646 816"/>
+    <path d="M512 665 L512 899"/>
+    <path d="M512 665 L378 816"/>
+    <path d="M512 665 L278 665"/>
+  </g>
+  <circle cx="512" cy="665" r="47" fill="#ffffff" stroke="#10243a" stroke-width="16"/>
+</svg>

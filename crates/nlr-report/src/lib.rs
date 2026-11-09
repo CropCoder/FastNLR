@@ -1,11 +1,12 @@
 //! nlr-report — run statistics report (`--stats`).
 //!
 //! Emits global + per-chromosome + motif dimension statistics, in TSV format (deterministic order).
+//! Author: Jiwen Zhao (https://github.com/CropCoder)
 
 use nlr_core::motif::Motif;
 use nlr_core::motif_list::MotifList;
 use nlr_core::signature_def::AnnotatorSignatureDefinition;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -93,14 +94,14 @@ pub fn write_tsv<W: Write>(w: &mut W, stats: &RunStats) -> std::io::Result<()> {
 }
 
 /// 单条染色体的统计信息（summary.json 用）。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChromosomeStats {
     pub motifs: usize,
     pub nlrs: usize,
 }
 
 /// 单个 NLR 位点的结构化记录（summary.json 用）。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocusRecord {
     pub name: String,
     pub seq: String,
@@ -117,7 +118,7 @@ pub struct LocusRecord {
 ///
 /// 由 [`build_summary_report`] 从一次运行的 motif 与位点结果直接构造，
 /// 字段顺序与值均确定，便于下游做 diff 与解析。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummaryReport {
     pub sequence_count: usize,
     pub motif_total: usize,

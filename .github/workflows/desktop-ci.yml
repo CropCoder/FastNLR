@@ -1,0 +1,194 @@
+name: Desktop CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "app/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/desktop-ci.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "app/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/desktop-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Check versions
+        working-directory: app
+        run: npm run check:versions
+      - name: Type check
+        working-directory: app
+        run: npm run typecheck
+      - name: Unit tests
+        working-directory: app
+        run: npm test
+      - name: Production build
+        working-directory: app
+        run: npm run build
+
+  native-tests:
+    name: Native tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libdbus-1-dev pkg-config
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build frontend
+        working-directory: app
+        run: npm run build
+      - name: Rust formatting
+        run: cargo fmt --manifest-path app/src-tauri/Cargo.toml --all -- --check
+      - name: Desktop backend tests
+        run: cargo test --manifest-path app/src-tauri/Cargo.toml --locked
+      - name: Desktop backend lint
+        run: cargo clippy --manifest-path app/src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+
+  linux-build:
+    name: Linux desktop compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libdbus-1-dev pkg-config
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+      - name: Compile Linux desktop application
+        working-directory: app
+        run: npm run tauri build -- --no-bundle
+
+  windows-package:
+    name: Windows x64 NSIS
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build Windows installer
+        working-directory: app
+        run: npm run tauri build -- --bundles nsis
+      - name: Generate checksum
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "app/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer not found" }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($installer.Name)" | Set-Content "app/src-tauri/target/release/bundle/nsis/SHA256SUMS-windows.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fastnlr-windows-x64
+          path: |
+            app/src-tauri/target/release/bundle/nsis/*.exe
+            app/src-tauri/target/release/bundle/nsis/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  macos-package:
+    name: macOS ARM64 DMG
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+      - name: Build macOS installer
+        working-directory: app
+        env:
+          # 无 Developer ID 时使用 ad-hoc 签名，保证 Apple Silicon 包可启动但不做公证。
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
+      - name: Verify ARM64 application
+        run: |
+          app_binary=$(find app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -type f -path "*/Contents/MacOS/*" | head -1)
+          test -f "$app_binary"
+          lipo -info "$app_binary"
+      - name: Generate checksum
+        run: |
+          cd app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
+          shasum -a 256 ./*.dmg > SHA256SUMS-macos-arm64.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fastnlr-macos-arm64
+          path: |
+            app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/SHA256SUMS-macos-arm64.txt
+          if-no-files-found: error

@@ -6,6 +6,8 @@ Cargo.lock.bak
 # Frontend / desktop build artifacts
 node_modules/
 /app/dist
+/app/src-tauri/gen/
+*.tsbuildinfo
 
 AGENTS.md
 Runlog.md

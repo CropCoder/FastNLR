@@ -2,6 +2,7 @@
 //!
 //! 提供统一的作业生命周期：提交、查询进度、取消与结果收集。内部在独立线程中调用
 //! `nlr_cli` 的 `run_tracked` / `run_protein_tracked`，不复制扫描与组装逻辑。
+//! Author: Jiwen Zhao (https://github.com/CropCoder)
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -30,12 +31,24 @@ pub enum JobStatus {
     Canceled,
 }
 
+/// 作业执行阶段，用于 GUI 展示比 Running 更具体的工作状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum JobPhase {
+    Pending,
+    Scanning,
+    Writing,
+    Completed,
+    Failed,
+    Canceled,
+}
+
 /// 作业状态快照（可序列化给前端）。
 #[derive(Debug, Clone, Serialize)]
 pub struct JobSnapshot {
     pub id: u64,
     pub kind: JobKind,
     pub status: JobStatus,
+    pub phase: JobPhase,
     pub scanned: u64,
     pub estimated_total: u64,
     pub error: Option<String>,
@@ -61,6 +74,7 @@ pub struct ProteinJob {
 struct JobState {
     kind: JobKind,
     status: Mutex<JobStatus>,
+    phase: Mutex<JobPhase>,
     scanned: AtomicU64,
     estimated_total: AtomicU64,
     error: Mutex<Option<String>>,
@@ -89,6 +103,7 @@ impl Service {
         let state = Arc::new(JobState {
             kind: JobKind::Genome,
             status: Mutex::new(JobStatus::Pending),
+            phase: Mutex::new(JobPhase::Pending),
             scanned: AtomicU64::new(0),
             estimated_total: AtomicU64::new(estimate_total_fragments(
                 &job.config.input_fasta,
@@ -111,6 +126,7 @@ impl Service {
         let state = Arc::new(JobState {
             kind: JobKind::Protein,
             status: Mutex::new(JobStatus::Pending),
+            phase: Mutex::new(JobPhase::Pending),
             scanned: AtomicU64::new(0),
             estimated_total: AtomicU64::new(0),
             error: Mutex::new(None),
@@ -142,11 +158,13 @@ impl Service {
             jobs.get(&id)?.clone()
         };
         let status = *state.status.lock().unwrap();
+        let phase = *state.phase.lock().unwrap();
         let error = state.error.lock().unwrap().clone();
         Some(JobSnapshot {
             id,
             kind: state.kind,
             status,
+            phase,
             scanned: state.scanned.load(Ordering::SeqCst),
             estimated_total: state.estimated_total.load(Ordering::SeqCst),
             error,
@@ -165,24 +183,36 @@ impl Service {
 
     fn run_genome_job(&self, id: u64, state: Arc<JobState>, job: GenomeJob) {
         *state.status.lock().unwrap() = JobStatus::Running;
+        *state.phase.lock().unwrap() = JobPhase::Scanning;
         let state_for_progress = state.clone();
-        let outcome = execute_genome(&job, move |fragments| {
-            state_for_progress
-                .scanned
-                .store(fragments, Ordering::SeqCst);
-            state_for_progress.cancel.load(Ordering::SeqCst)
-        });
+        let state_for_phase = state.clone();
+        let outcome = execute_genome(
+            &job,
+            move |fragments| {
+                state_for_progress
+                    .scanned
+                    .store(fragments, Ordering::SeqCst);
+                state_for_progress.cancel.load(Ordering::SeqCst)
+            },
+            move |phase| *state_for_phase.phase.lock().unwrap() = phase,
+        );
         finalize(state, outcome);
         let _ = id;
     }
 
     fn run_protein_job(&self, id: u64, state: Arc<JobState>, job: ProteinJob) {
         *state.status.lock().unwrap() = JobStatus::Running;
+        *state.phase.lock().unwrap() = JobPhase::Scanning;
         let state_for_progress = state.clone();
-        let outcome = execute_protein(&job, move |proteins| {
-            state_for_progress.scanned.store(proteins, Ordering::SeqCst);
-            state_for_progress.cancel.load(Ordering::SeqCst)
-        });
+        let state_for_phase = state.clone();
+        let outcome = execute_protein(
+            &job,
+            move |proteins| {
+                state_for_progress.scanned.store(proteins, Ordering::SeqCst);
+                state_for_progress.cancel.load(Ordering::SeqCst)
+            },
+            move |phase| *state_for_phase.phase.lock().unwrap() = phase,
+        );
         finalize(state, outcome);
         let _ = id;
     }
@@ -196,27 +226,49 @@ impl Default for Service {
 
 /// 同步执行基因组作业（阻塞调用用）；返回输出文件路径。
 pub fn run_genome_blocking(job: &GenomeJob) -> Result<Vec<PathBuf>, String> {
-    execute_genome(job, |_| false)
+    match execute_genome(job, |_| false, |_| {}) {
+        Ok(paths) => Ok(paths),
+        Err(ExecutionError::Canceled) => Err("job canceled".to_string()),
+        Err(ExecutionError::Failed(message)) => Err(message),
+    }
 }
 
 /// 同步执行蛋白作业（阻塞调用用）；返回输出文件路径。
 pub fn run_protein_blocking(job: &ProteinJob) -> Result<Vec<PathBuf>, String> {
-    execute_protein(job, |_| false)
+    match execute_protein(job, |_| false, |_| {}) {
+        Ok(paths) => Ok(paths),
+        Err(ExecutionError::Canceled) => Err("job canceled".to_string()),
+        Err(ExecutionError::Failed(message)) => Err(message),
+    }
+}
+
+enum ExecutionError {
+    Canceled,
+    Failed(String),
 }
 
 fn execute_genome(
     job: &GenomeJob,
     mut progress: impl FnMut(u64) -> bool,
-) -> Result<Vec<PathBuf>, String> {
+    mut phase: impl FnMut(JobPhase),
+) -> Result<Vec<PathBuf>, ExecutionError> {
+    let mut canceled = false;
     let mut result = nlr_cli::run_tracked(&job.config, |p| {
         if progress(p.scanned_fragments) {
+            canceled = true;
             nlr_cli::RunControl::Break
         } else {
             nlr_cli::RunControl::Continue
         }
     })
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| ExecutionError::Failed(e.to_string()))?;
 
+    // 用户在扫描阶段取消时直接结束，避免把部分扫描结果写成“完成输出”。
+    if canceled {
+        return Err(ExecutionError::Canceled);
+    }
+
+    phase(JobPhase::Writing);
     nlr_cli::write_genome_outputs(
         &job.config.input_fasta,
         &job.output_dir,
@@ -225,22 +277,29 @@ fn execute_genome(
         &mut result,
         job.config.locus_filter.as_ref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| ExecutionError::Failed(e.to_string()))
 }
 
 fn execute_protein(
     job: &ProteinJob,
     mut progress: impl FnMut(u64) -> bool,
-) -> Result<Vec<PathBuf>, String> {
+    mut phase: impl FnMut(JobPhase),
+) -> Result<Vec<PathBuf>, ExecutionError> {
     let started = Instant::now();
+    let mut canceled = false;
     let result = nlr_cli::run_protein_tracked(&job.config, |p| {
         if progress(p.scanned_fragments) {
+            canceled = true;
             nlr_cli::RunControl::Break
         } else {
             nlr_cli::RunControl::Continue
         }
     })
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| ExecutionError::Failed(e.to_string()))?;
+
+    if canceled {
+        return Err(ExecutionError::Canceled);
+    }
 
     let meta = nlr_cli::ProteinRunMeta {
         input_name: job
@@ -260,24 +319,27 @@ fn execute_protein(
             .map(|p| p.display().to_string())
             .collect(),
     };
+    phase(JobPhase::Writing);
     nlr_cli::write_protein_outputs(&job.output_dir, &job.prefix, &result, &meta)
-        .map_err(|e| e.to_string())
+        .map_err(|e| ExecutionError::Failed(e.to_string()))
 }
 
-fn finalize(state: Arc<JobState>, outcome: Result<Vec<PathBuf>, String>) {
-    let canceled = state.cancel.load(Ordering::SeqCst);
+fn finalize(state: Arc<JobState>, outcome: Result<Vec<PathBuf>, ExecutionError>) {
     match outcome {
         Ok(paths) => {
             *state.outputs.lock().unwrap() = Some(paths);
-            *state.status.lock().unwrap() = if canceled {
-                JobStatus::Canceled
-            } else {
-                JobStatus::Completed
-            };
+            *state.status.lock().unwrap() = JobStatus::Completed;
+            *state.phase.lock().unwrap() = JobPhase::Completed;
         }
-        Err(message) => {
+        Err(ExecutionError::Canceled) => {
+            *state.outputs.lock().unwrap() = None;
+            *state.status.lock().unwrap() = JobStatus::Canceled;
+            *state.phase.lock().unwrap() = JobPhase::Canceled;
+        }
+        Err(ExecutionError::Failed(message)) => {
             *state.error.lock().unwrap() = Some(message);
             *state.status.lock().unwrap() = JobStatus::Failed;
+            *state.phase.lock().unwrap() = JobPhase::Failed;
         }
     }
 }
@@ -312,5 +374,25 @@ mod tests {
     fn service_cancel_returns_false_for_unknown_job() {
         let service = Service::new();
         assert!(!service.cancel(999));
+    }
+
+    #[test]
+    fn canceled_job_never_exposes_completed_outputs() {
+        let state = Arc::new(JobState {
+            kind: JobKind::Genome,
+            status: Mutex::new(JobStatus::Running),
+            phase: Mutex::new(JobPhase::Scanning),
+            scanned: AtomicU64::new(10),
+            estimated_total: AtomicU64::new(20),
+            error: Mutex::new(None),
+            outputs: Mutex::new(None),
+            cancel: AtomicBool::new(true),
+        });
+
+        finalize(state.clone(), Err(ExecutionError::Canceled));
+
+        assert_eq!(*state.status.lock().unwrap(), JobStatus::Canceled);
+        assert_eq!(*state.phase.lock().unwrap(), JobPhase::Canceled);
+        assert!(state.outputs.lock().unwrap().is_none());
     }
 }
