@@ -9,7 +9,7 @@
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.8.0-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.9.1-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) ·
 [Interfaces](#other-interfaces) · [Website](https://cropcoder.github.io/FastNLR/) · [Citation](#citation)
@@ -25,7 +25,7 @@ checkpoint resume, and coordinate-consistent multi-format outputs.
 
 NLR genes encode a major class of plant intracellular immune receptors and are a key target of
 disease-resistance breeding. FastNLR identifies complete and partial NLR loci directly from an
-assembled genome, or classifies NLR domains from a protein FASTA. It is distributed through
+assembled genome, or uses an optional GFF3 annotation to translate and classify gene proteins. It is distributed through
 [bioconda](https://anaconda.org/bioconda/fastnlr) as well as prebuilt release binaries and source.
 
 ## Install
@@ -39,9 +39,9 @@ conda install bioconda::fastnlr
 ### Prebuilt binary
 
 ```bash
-curl -L -o fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.8.0/fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz
+curl -L -o fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz \
+  https://github.com/CropCoder/FastNLR/releases/download/v1.9.1/fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 ```
 
@@ -52,7 +52,7 @@ package or build from source.
 
 ### Desktop application — Windows and macOS
 
-FastNLR desktop builds provide the genome and protein workflows in a native application. Download
+FastNLR desktop builds provide genome-only and GFF3-guided workflows in a native application. Download
 them from the latest [GitHub Release](https://github.com/CropCoder/FastNLR/releases/latest).
 
 | Platform | Download | Requirements |
@@ -85,9 +85,11 @@ Package page: <https://anaconda.org/bioconda/fastnlr> · Packaging recipe: [`con
 #       .loci.fasta, .stats.tsv, .summary.txt, .summary.json
 fastnlr -i genome.fasta -o results -t 8
 
-# 2. Protein mode — HMMER domain scan on a protein FASTA (no genome coordinates)
-#    -> protein_results/<prefix>.domains.tsv, .nlr.tsv, .summary.txt
-fastnlr --protein -i proteins.fa -o protein_results
+# 2. GFF3 mode — translate the longest CDS transcript per annotated gene,
+#    then classify the proteins with ordered HMM evidence only.
+#    -> annotation_results/<genome>.gff.{cds.fasta,proteins.fasta,domains.tsv,
+#       genes.tsv,nlr.tsv,nlr.gff3,skipped.tsv,summary.txt,summary.json}
+fastnlr -i genome.fasta --gff annotation.gff3 -o annotation_results
 
 # 3. Resume a run (skips the expensive scan)
 fastnlr -i genome.fasta -o results --checkpoint ckpt/
@@ -107,7 +109,7 @@ details and benchmark results.
   recovers divergent NLR/RNL loci. It is **additive**: it never drops a locus that the exact
   motif-id combinations would have found (`--no-flexible-seed` restores the strict behaviour).
 - **HMM-assisted N-terminal domains** — when the PWM library does not identify a CC/TIR domain,
-  the locus is checked with the same bundled HMMER profiles used in protein mode. HMM hits fill
+  the locus is checked with the same bundled HMMER profiles used in GFF3-guided protein mode. HMM hits fill
   that missing N-terminal domain instead of leaving a bare `NBARC-LRR`.
 - **Tandem-repeat aware assembly** — repeated or duplicated domain units and trailing NB-ARC
   segments are merged back into their parent locus, so one gene is not reported as several loci.
@@ -118,11 +120,14 @@ details and benchmark results.
   RNL/helper-CC profiles 21 and 23 and conservative `CC,1` seeds. This recovers ADR1-L1
   without relaxing the global PWM p-value threshold. An optional 28-motif RNL/TIR library
   remains available for broader exploratory scans.
-- **Protein input mode** — `--protein` classifies domain architecture with a bundled HMMER 3.4
-  port (Pfam NB-ARC / TIR / Rx_N / RPW8 / R1-type at gathering thresholds) plus the PWM LRR motifs.
-  The output reports both structural class (for example `CC-NBARC-LRR`) and biological family
-  (`TNL` / `RNL` / `CNL` / `NB-only` / `TIR-only`), so RPW8-type ADR1/NRG1 proteins are not
-  mislabeled as CNL merely because they share the same CC-NBARC-LRR architecture.
+- **GFF3-guided protein mode** — with `--gff`, FastNLR selects the longest CDS transcript per
+  annotated gene, streams the genome to extract and translate CDS, then classifies the proteins
+  with 23 bundled Pfam HMMs. The 18 LRR models are scanned only for NB-ARC/TIR candidates.
+  LRR must lie after NB-ARC to count as C-terminal evidence. The output reports
+  gene/transcript coordinates, protein/CDS/genomic domain coordinates, structural class,
+  completeness and biological family (`TNL` / `RNL` / `CNL` / `NB-only` / `TIR-only`).
+- **Genome-only remainder** — direct protein FASTA input is no longer supported. Without GFF3,
+  FastNLR runs the original six-frame motif assembly pipeline.
 - **Strict resumable runs** — checkpoints include input/profile/configuration fingerprints and are
   reused only when the current run is compatible. Incomplete or stale checkpoints fail explicitly;
   every run writes human-readable and JSON summaries plus per-chromosome/per-motif TSV statistics.
@@ -161,8 +166,9 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
   `fastnlr-server --port 8787`. It is also packaged as a local TBtools web plugin via
   `packaging/Build-TBtools-Plugin-V1.sh`.
 - **Desktop app** — the Tauri 2 application in `app/` provides native Windows and macOS workflows,
-  live progress and cancellation, persistent run history, result tables, and summary charts while
-  reusing the same `nlr-service` execution layer.
+  live progress and cancellation, persistent run history, result tables, summary charts, and an
+  interactive chromosome panorama with locus filtering and density curves while reusing the same
+  `nlr-service` execution layer.
 - **AI agents** — the `skills/fastnlr/` directory provides a portable Agent Skill for Codex and
   Claude Code.
 - **Publication plots** — the `visualization/` R scripts turn `summary.json` into chromosome maps
@@ -172,7 +178,7 @@ domain-architecture agreement — rising to **98.19%** when the 12 reference ent
 
 ```bash
 cargo build --release --locked                     # optimized build
-cargo test --workspace --locked                    # 104 tests
+cargo test --workspace --locked                    # run all Rust tests
 cargo fmt --all -- --check                         # formatting
 cargo clippy --workspace --all-targets -- -D warnings
 ```

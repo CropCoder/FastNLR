@@ -20,10 +20,11 @@ import { cancelJob } from "../lib/bridge";
 import { formatElapsed } from "../lib/format";
 import { useAppStore } from "../store/appStore";
 
-const phaseOrder = ["Pending", "Scanning", "Writing", "Completed"] as const;
+const phaseOrder = ["Pending", "ParsingAnnotation", "Scanning", "Writing", "Completed"] as const;
 
 const phaseCopy: Record<string, string> = {
   Pending: "Waiting for the execution thread",
+  ParsingAnnotation: "Parsing GFF3 and selecting the longest CDS transcript per gene",
   Scanning: "Scanning sequence fragments and assembling loci",
   Writing: "Writing output tables, sequences, and summaries",
   Completed: "All output files are ready",
@@ -95,7 +96,7 @@ export function RunMonitorPage() {
       <PageHeader
         eyebrow="Run monitor"
         title={entry.inputName}
-        description={`${activeRun.mode === "genome" ? "Genome annotation" : "Protein classification"} writing to ${activeRun.outputDir}`}
+        description={`${activeRun.mode === "genome" ? "Genome annotation" : "GFF3 protein annotation"} writing to ${activeRun.outputDir}`}
         actions={<StatusBadge status={status} phase={phase} />}
       />
 
@@ -126,7 +127,7 @@ export function RunMonitorPage() {
           <div>
             <h2>Pipeline progress</h2>
             <p>
-              {scanned.toLocaleString()} {entry.mode === "genome" ? "fragments" : "proteins"} processed
+              {scanned.toLocaleString()} {entry.mode === "genome" ? "fragments" : "genes"} processed
               {total > 0 ? ` of approximately ${total.toLocaleString()}` : ""}
             </p>
           </div>

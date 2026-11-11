@@ -76,7 +76,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     ]);
     const interruptedAt = new Date().toISOString();
     let historyChanged = false;
-    const history = (persisted?.history ?? []).map((entry) => {
+    const compatibleHistory = (persisted?.history ?? []).filter(
+      (entry) => entry.mode === "genome" || entry.mode === "annotation",
+    );
+    const history = compatibleHistory.map((entry) => {
       if (entry.status !== "Running" && entry.status !== "Pending") return entry;
       historyChanged = true;
       return {
@@ -87,6 +90,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         error: "The application closed before this run completed.",
       };
     });
+    if (compatibleHistory.length !== (persisted?.history ?? []).length) {
+      historyChanged = true;
+    }
     const fallbackThreads = persisted?.settings.defaultThreads || runtime.logicalCpus || 1;
     const settings = {
       defaultThreads: fallbackThreads,

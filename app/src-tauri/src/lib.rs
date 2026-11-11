@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use nlr_report::SummaryReport;
-use nlr_service::{GenomeJob, JobSnapshot, ProteinJob, RunConfig, Service};
+use nlr_service::{AnnotationJob, GenomeJob, JobSnapshot, RunConfig, Service};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -34,7 +34,7 @@ struct RuntimeInfo {
 #[serde(rename_all = "lowercase")]
 enum InputMode {
     Genome,
-    Protein,
+    Annotation,
 }
 
 /// 通过文件选择器选中后的输入文件信息。
@@ -101,13 +101,15 @@ struct GenomeJobRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ProteinJobRequest {
+struct AnnotationJobRequest {
     input_path: String,
+    gff_path: String,
     output_dir: String,
     #[serde(default)]
     threads: Option<usize>,
     #[serde(default)]
     batch: Option<usize>,
+    // Retained only to reject pre-1.9.1 PWM fields explicitly.
     #[serde(default)]
     motif_accept_p: Option<f64>,
     #[serde(default)]
@@ -130,29 +132,54 @@ struct ResultRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProteinRecordView {
-    protein_id: String,
-    length: usize,
+struct AnnotationRecordView {
+    gene_id: String,
+    gene_name: String,
+    gene_biotype: String,
+    transcript_id: String,
+    transcript_name: String,
+    seqid: String,
+    gene_start: u64,
+    gene_end: u64,
+    strand: String,
+    cds_count: usize,
+    cds_length_bp: u64,
+    protein_length: usize,
     class: String,
     nterm: String,
     has_nbarc: bool,
     has_tir: bool,
-    has_lrr: bool,
+    has_lrr_any: bool,
+    has_cterm_lrr: bool,
+    complete: bool,
+    is_nlr: bool,
     domain_count: usize,
     domains: String,
     family: String,
+    internal_stop_count: usize,
+    has_internal_stop: bool,
+    trailing_partial_bases: u8,
+    phase_consistent: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProteinDomainView {
-    protein_id: String,
+struct AnnotationDomainView {
+    gene_id: String,
+    transcript_id: String,
+    seqid: String,
+    strand: String,
     source: String,
     model: String,
     model_name: String,
     category: String,
-    start: usize,
-    end: usize,
+    protein_start: usize,
+    protein_end: usize,
+    cds_start: usize,
+    cds_end: usize,
+    genomic_start: u64,
+    genomic_end: u64,
+    genomic_segments: String,
     bitscore: Option<f32>,
     pvalue: Option<f64>,
     passed: bool,
@@ -160,15 +187,21 @@ struct ProteinDomainView {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ProteinResults {
+struct AnnotationResults {
     proteins_scanned: usize,
     nlr_total: usize,
+    complete_nlr_total: usize,
+    genes_with_cds: usize,
+    skipped_genes: usize,
     elapsed: Option<String>,
     model_labels: Vec<String>,
+    model_library_version: String,
+    model_count: usize,
     type_counts: BTreeMap<String, usize>,
+    complete_type_counts: BTreeMap<String, usize>,
     family_counts: BTreeMap<String, usize>,
-    records: Vec<ProteinRecordView>,
-    domains: Vec<ProteinDomainView>,
+    records: Vec<AnnotationRecordView>,
+    domains: Vec<AnnotationDomainView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -179,7 +212,7 @@ struct RunResults {
     output_dir: String,
     outputs: Vec<OutputFile>,
     genome: Option<SummaryReport>,
-    protein: Option<ProteinResults>,
+    annotation: Option<AnnotationResults>,
 }
 
 /// 返回桌面端版本、目标和可用逻辑 CPU，供设置页与默认线程数使用。
@@ -222,14 +255,14 @@ fn start_genome_job(state: State<'_, AppState>, request: GenomeJobRequest) -> Re
     Ok(state.service.submit_genome(job))
 }
 
-/// 提交蛋白结构域注释作业。
+/// 提交 GFF3 驱动蛋白注释作业。
 #[tauri::command]
-fn start_protein_job(
+fn start_annotation_job(
     state: State<'_, AppState>,
-    request: ProteinJobRequest,
+    request: AnnotationJobRequest,
 ) -> Result<u64, String> {
-    let job = build_protein_job(request)?;
-    Ok(state.service.submit_protein(job))
+    let job = build_annotation_job(request)?;
+    Ok(state.service.submit_annotation(job))
 }
 
 /// 读取作业快照；前端用约 500 ms 的间隔轮询，避免引入额外事件桥接复杂度。
@@ -252,7 +285,7 @@ fn has_existing_results(output_dir: String, prefix: String, mode: InputMode) -> 
     let output_dir = Path::new(&output_dir);
     let filename = match mode {
         InputMode::Genome => format!("{prefix}.summary.json"),
-        InputMode::Protein => format!("{prefix}.nlr.tsv"),
+        InputMode::Annotation => format!("{prefix}.gff.summary.json"),
     };
     output_dir.join(filename).is_file()
 }
@@ -323,32 +356,36 @@ fn build_genome_job(request: GenomeJobRequest) -> Result<GenomeJob, String> {
     })
 }
 
-fn build_protein_job(request: ProteinJobRequest) -> Result<ProteinJob, String> {
+fn build_annotation_job(request: AnnotationJobRequest) -> Result<AnnotationJob, String> {
+    if request.motif_accept_p.is_some()
+        || request.motif_prelim_p.is_some()
+        || request.mot_file.is_some()
+        || request.store_file.is_some()
+    {
+        return Err(
+            "GFF3 annotation mode uses HMM-only classification; PWM fields are not supported"
+                .to_string(),
+        );
+    }
     let input_path = PathBuf::from(&request.input_path);
-    validate_input(&input_path, InputMode::Protein)?;
-    let mut config = nlr_cli::ProteinConfig::new(input_path);
+    validate_input(&input_path, InputMode::Annotation)?;
+    let gff_path = PathBuf::from(&request.gff_path);
+    validate_gff(&gff_path)?;
+    let mut config = nlr_cli::AnnotationConfig::new(input_path, gff_path);
     if let Some(threads) = request.threads {
         config.threads = threads;
     }
     if let Some(batch) = request.batch {
         config.batch = batch;
     }
-    if let Some(value) = request.motif_accept_p {
-        config.motif_accept_p = value;
-    }
-    if let Some(value) = request.motif_prelim_p {
-        config.motif_prelim_p = value;
-    }
     config.hmm_files = request.hmm_files.into_iter().map(PathBuf::from).collect();
-    config.mot_file = optional_path(request.mot_file);
-    config.store_file = optional_path(request.store_file);
     config
         .validate()
-        .map_err(|e| format!("invalid protein parameters: {e}"))?;
+        .map_err(|e| format!("invalid GFF3 annotation parameters: {e}"))?;
     let output_dir = PathBuf::from(&request.output_dir);
     fs::create_dir_all(&output_dir).map_err(|e| format!("cannot create output directory: {e}"))?;
 
-    Ok(ProteinJob {
+    Ok(AnnotationJob {
         prefix: derive_prefix(&request.input_path),
         config,
         output_dir,
@@ -372,14 +409,14 @@ fn load_results_blocking(request: &ResultRequest) -> Result<RunResults, String> 
         ));
     }
 
-    let (genome, protein) = match request.mode {
+    let (genome, annotation) = match request.mode {
         InputMode::Genome => (
             Some(read_genome_results(&output_dir, &request.prefix)?),
             None,
         ),
-        InputMode::Protein => (
+        InputMode::Annotation => (
             None,
-            Some(read_protein_results(&output_dir, &request.prefix)?),
+            Some(read_annotation_results(&output_dir, &request.prefix)?),
         ),
     };
 
@@ -389,7 +426,7 @@ fn load_results_blocking(request: &ResultRequest) -> Result<RunResults, String> 
         output_dir: request.output_dir.clone(),
         outputs: list_outputs(&output_dir, &request.prefix)?,
         genome,
-        protein,
+        annotation,
     })
 }
 
@@ -401,129 +438,187 @@ fn read_genome_results(output_dir: &Path, prefix: &str) -> Result<SummaryReport,
         .map_err(|e| format!("cannot parse genome summary {}: {e}", path.display()))
 }
 
-fn read_protein_results(output_dir: &Path, prefix: &str) -> Result<ProteinResults, String> {
-    let nlr_path = output_dir.join(format!("{prefix}.nlr.tsv"));
-    let domain_path = output_dir.join(format!("{prefix}.domains.tsv"));
-    let summary_path = output_dir.join(format!("{prefix}.summary.txt"));
+#[derive(Debug, Deserialize)]
+struct AnnotationSummaryFile {
+    genes_with_cds: usize,
+    genes_scanned: usize,
+    skipped_genes: usize,
+    nlr_genes: usize,
+    #[serde(default)]
+    complete_nlr_genes: usize,
+    elapsed_s: f64,
+    domain_models: Vec<String>,
+    #[serde(default)]
+    model_library_version: String,
+    #[serde(default)]
+    model_count: usize,
+    type_counts: BTreeMap<String, usize>,
+    #[serde(default)]
+    complete_type_counts: BTreeMap<String, usize>,
+    family_counts: BTreeMap<String, usize>,
+}
 
-    let records = parse_protein_records(&nlr_path)?;
-    let domains = parse_protein_domains(&domain_path)?;
-    let (proteins_scanned, elapsed, model_labels) = parse_protein_summary(&summary_path)?;
+fn read_annotation_results(output_dir: &Path, prefix: &str) -> Result<AnnotationResults, String> {
+    let genes_path = output_dir.join(format!("{prefix}.gff.genes.tsv"));
+    let domain_path = output_dir.join(format!("{prefix}.gff.domains.tsv"));
+    let summary_path = output_dir.join(format!("{prefix}.gff.summary.json"));
 
-    let mut type_counts = BTreeMap::new();
-    let mut family_counts = BTreeMap::new();
-    for record in &records {
-        *type_counts.entry(record.class.clone()).or_insert(0) += 1;
-        *family_counts.entry(record.family.clone()).or_insert(0) += 1;
-    }
+    let mut records = parse_annotation_records(&genes_path)?;
+    records.retain(|record| record.is_nlr);
+    let domains = parse_annotation_domains(&domain_path)?;
+    let summary_file = fs::File::open(&summary_path).map_err(|e| {
+        format!(
+            "cannot read annotation summary {}: {e}",
+            summary_path.display()
+        )
+    })?;
+    let summary: AnnotationSummaryFile = serde_json::from_reader(BufReader::new(summary_file))
+        .map_err(|e| {
+            format!(
+                "cannot parse annotation summary {}: {e}",
+                summary_path.display()
+            )
+        })?;
 
-    Ok(ProteinResults {
-        proteins_scanned,
-        nlr_total: records.len(),
-        elapsed,
-        model_labels,
-        type_counts,
-        family_counts,
+    Ok(AnnotationResults {
+        proteins_scanned: summary.genes_scanned,
+        nlr_total: summary.nlr_genes,
+        complete_nlr_total: summary.complete_nlr_genes,
+        genes_with_cds: summary.genes_with_cds,
+        skipped_genes: summary.skipped_genes,
+        elapsed: Some(format!("{:.2}s", summary.elapsed_s)),
+        model_labels: summary.domain_models,
+        model_library_version: summary.model_library_version,
+        model_count: summary.model_count,
+        type_counts: summary.type_counts,
+        complete_type_counts: summary.complete_type_counts,
+        family_counts: summary.family_counts,
         records,
         domains,
     })
 }
 
-fn parse_protein_records(path: &Path) -> Result<Vec<ProteinRecordView>, String> {
+fn parse_annotation_records(path: &Path) -> Result<Vec<AnnotationRecordView>, String> {
     let file = fs::File::open(path)
-        .map_err(|e| format!("cannot read protein results {}: {e}", path.display()))?;
+        .map_err(|e| format!("cannot read annotation records {}: {e}", path.display()))?;
     let mut records = Vec::new();
     for (line_number, line) in BufReader::new(file).lines().enumerate() {
         let line = line.map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let columns: Vec<&str> = line.splitn(10, '\t').collect();
-        if columns.len() != 10 {
+        let columns: Vec<&str> = line.split('\t').collect();
+        if !matches!(columns.len(), 24 | 26) {
             return Err(format!(
-                "{}:{} expected 10 columns, found {}",
+                "{}:{} expected 24 or 26 columns, found {}",
                 path.display(),
                 line_number + 1,
                 columns.len()
             ));
         }
-        records.push(ProteinRecordView {
-            protein_id: columns[0].to_string(),
-            length: parse_usize(columns[1], path, line_number)?,
-            class: columns[2].to_string(),
-            nterm: columns[3].to_string(),
-            has_nbarc: parse_bool(columns[4]),
-            has_tir: parse_bool(columns[5]),
-            has_lrr: parse_bool(columns[6]),
-            domain_count: parse_usize(columns[7], path, line_number)?,
-            domains: columns[8].to_string(),
-            family: columns[9].to_string(),
+        let has_nbarc = parse_bool(columns[15]);
+        let has_tir = parse_bool(columns[16]);
+        let has_lrr_any = parse_bool(columns[17]);
+        let has_cterm_lrr = if columns.len() == 26 {
+            parse_bool(columns[18])
+        } else {
+            false
+        };
+        let complete = if columns.len() == 26 {
+            parse_bool(columns[19])
+        } else {
+            false
+        };
+        records.push(AnnotationRecordView {
+            gene_id: columns[0].to_string(),
+            gene_name: columns[1].to_string(),
+            gene_biotype: columns[2].to_string(),
+            transcript_id: columns[3].to_string(),
+            transcript_name: columns[4].to_string(),
+            seqid: columns[5].to_string(),
+            gene_start: parse_u64(columns[6], path, line_number)?,
+            gene_end: parse_u64(columns[7], path, line_number)?,
+            strand: columns[8].to_string(),
+            cds_count: parse_usize(columns[9], path, line_number)?,
+            cds_length_bp: parse_u64(columns[10], path, line_number)?,
+            protein_length: parse_usize(columns[11], path, line_number)?,
+            class: columns[12].to_string(),
+            family: columns[13].to_string(),
+            nterm: columns[14].to_string(),
+            has_nbarc,
+            has_tir,
+            has_lrr_any,
+            has_cterm_lrr,
+            complete,
+            is_nlr: has_nbarc || (has_tir && has_cterm_lrr),
+            domain_count: parse_usize(
+                columns[if columns.len() == 26 { 20 } else { 18 }],
+                path,
+                line_number,
+            )?,
+            domains: columns[if columns.len() == 26 { 21 } else { 19 }].to_string(),
+            internal_stop_count: parse_usize(
+                columns[if columns.len() == 26 { 22 } else { 20 }],
+                path,
+                line_number,
+            )?,
+            has_internal_stop: parse_bool(columns[if columns.len() == 26 { 23 } else { 21 }]),
+            trailing_partial_bases: columns[if columns.len() == 26 { 24 } else { 22 }]
+                .parse()
+                .map_err(|_| {
+                    format!(
+                        "{}:{} invalid integer '{}'",
+                        path.display(),
+                        line_number + 1,
+                        columns[if columns.len() == 26 { 24 } else { 22 }]
+                    )
+                })?,
+            phase_consistent: parse_bool(columns[if columns.len() == 26 { 25 } else { 23 }]),
         });
     }
     Ok(records)
 }
 
-fn parse_protein_domains(path: &Path) -> Result<Vec<ProteinDomainView>, String> {
+fn parse_annotation_domains(path: &Path) -> Result<Vec<AnnotationDomainView>, String> {
     let file = fs::File::open(path)
-        .map_err(|e| format!("cannot read domain results {}: {e}", path.display()))?;
+        .map_err(|e| format!("cannot read annotation domains {}: {e}", path.display()))?;
     let mut domains = Vec::new();
     for (line_number, line) in BufReader::new(file).lines().enumerate() {
         let line = line.map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let columns: Vec<&str> = line.splitn(10, '\t').collect();
-        if columns.len() != 10 {
+        let columns: Vec<&str> = line.split('\t').collect();
+        if columns.len() != 18 {
             return Err(format!(
-                "{}:{} expected 10 columns, found {}",
+                "{}:{} expected 18 columns, found {}",
                 path.display(),
                 line_number + 1,
                 columns.len()
             ));
         }
-        domains.push(ProteinDomainView {
-            protein_id: columns[0].to_string(),
-            source: columns[1].to_string(),
-            model: columns[2].to_string(),
-            model_name: columns[3].to_string(),
-            category: columns[4].to_string(),
-            start: parse_usize(columns[5], path, line_number)?,
-            end: parse_usize(columns[6], path, line_number)?,
-            bitscore: columns[7].parse().ok(),
-            pvalue: columns[8].parse().ok(),
-            passed: parse_bool(columns[9]),
+        domains.push(AnnotationDomainView {
+            gene_id: columns[0].to_string(),
+            transcript_id: columns[1].to_string(),
+            seqid: columns[2].to_string(),
+            strand: columns[3].to_string(),
+            source: columns[4].to_string(),
+            model: columns[5].to_string(),
+            model_name: columns[6].to_string(),
+            category: columns[7].to_string(),
+            protein_start: parse_usize(columns[8], path, line_number)?,
+            protein_end: parse_usize(columns[9], path, line_number)?,
+            cds_start: parse_usize(columns[10], path, line_number)?,
+            cds_end: parse_usize(columns[11], path, line_number)?,
+            genomic_start: parse_u64(columns[12], path, line_number)?,
+            genomic_end: parse_u64(columns[13], path, line_number)?,
+            genomic_segments: columns[14].to_string(),
+            bitscore: columns[15].parse().ok(),
+            pvalue: columns[16].parse().ok(),
+            passed: parse_bool(columns[17]),
         });
     }
     Ok(domains)
-}
-
-fn parse_protein_summary(path: &Path) -> Result<(usize, Option<String>, Vec<String>), String> {
-    let text = fs::read_to_string(path)
-        .map_err(|e| format!("cannot read protein summary {}: {e}", path.display()))?;
-    let mut proteins_scanned = 0usize;
-    let mut elapsed = None;
-    let mut models = Vec::new();
-    for line in text.lines() {
-        let Some(content) = line.strip_prefix("# ") else {
-            continue;
-        };
-        let Some((key, value)) = content.split_once('\t') else {
-            continue;
-        };
-        match key {
-            "proteins scanned" => proteins_scanned = value.parse().unwrap_or(0),
-            "elapsed" => elapsed = Some(value.to_string()),
-            "domain models" => {
-                models = value
-                    .split(", ")
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-                    .collect()
-            }
-            _ => {}
-        }
-    }
-    Ok((proteins_scanned, elapsed, models))
 }
 
 fn list_outputs(output_dir: &Path, prefix: &str) -> Result<Vec<OutputFile>, String> {
@@ -569,9 +664,31 @@ fn validate_input(path: &Path, _mode: InputMode) -> Result<(), String> {
         .extension()
         .and_then(|extension| extension.to_str())
         .unwrap_or_default();
-    if !matches!(extension, "fa" | "fasta" | "fna" | "fas" | "ffn" | "faa") {
+    if !matches!(extension, "fa" | "fasta" | "fna" | "fas" | "ffn") {
         return Err(format!(
-            "unsupported FASTA extension '.{extension}'; expected .fa, .fasta, .fna, .fas, .ffn, .faa, or .gz"
+            "unsupported genome FASTA extension '.{extension}'; expected .fa, .fasta, .fna, .fas, .ffn, or .gz"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_gff(path: &Path) -> Result<(), String> {
+    if !path.is_file() {
+        return Err(format!("GFF3 file does not exist: {}", path.display()));
+    }
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "GFF3 filename is not valid UTF-8".to_string())?
+        .to_ascii_lowercase();
+    let uncompressed = name.strip_suffix(".gz").unwrap_or(&name);
+    let extension = Path::new(uncompressed)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    if !matches!(extension, "gff" | "gff3") {
+        return Err(format!(
+            "unsupported GFF3 extension '.{extension}'; expected .gff, .gff3, or .gz"
         ));
     }
     Ok(())
@@ -594,10 +711,7 @@ fn derive_prefix(input: &str) -> String {
         .and_then(|extension| extension.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if matches!(
-        extension.as_str(),
-        "fa" | "fasta" | "fna" | "fas" | "ffn" | "faa"
-    ) {
+    if matches!(extension.as_str(), "fa" | "fasta" | "fna" | "fas" | "ffn") {
         path.file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or("genome")
@@ -624,6 +738,16 @@ fn parse_usize(value: &str, path: &Path, line_number: usize) -> Result<usize, St
     })
 }
 
+fn parse_u64(value: &str, path: &Path, line_number: usize) -> Result<u64, String> {
+    value.parse().map_err(|_| {
+        format!(
+            "{}:{} invalid integer '{value}'",
+            path.display(),
+            line_number + 1
+        )
+    })
+}
+
 fn parse_bool(value: &str) -> bool {
     matches!(value.trim(), "true" | "TRUE" | "1")
 }
@@ -641,7 +765,7 @@ pub fn run() {
             get_runtime_info,
             inspect_input,
             start_genome_job,
-            start_protein_job,
+            start_annotation_job,
             get_job,
             cancel_job,
             has_existing_results,
@@ -654,12 +778,7 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nlr_service::ProteinConfig;
-
-    fn fixture_protein() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/nlr-domain/tests/data/nlr_proteins.fa")
-    }
+    use nlr_service::AnnotationConfig;
 
     fn genome_request(input: &Path, output: &Path) -> GenomeJobRequest {
         GenomeJobRequest {
@@ -689,7 +808,7 @@ mod tests {
     fn derives_prefix_for_plain_and_gzip_fasta() {
         assert_eq!(derive_prefix("/tmp/genome.fa"), "genome");
         assert_eq!(derive_prefix("/tmp/genome.fasta.gz"), "genome");
-        assert_eq!(derive_prefix("C:\\data\\proteins.faa"), "proteins");
+        assert_eq!(derive_prefix("C:\\data\\genome.ffn"), "genome");
     }
 
     #[test]
@@ -712,31 +831,85 @@ mod tests {
     }
 
     #[test]
-    fn protein_pipeline_output_is_loaded_into_desktop_results() {
+    fn rejects_pwm_fields_in_annotation_mode() {
+        let request = AnnotationJobRequest {
+            input_path: "/tmp/genome.fa".to_string(),
+            gff_path: "/tmp/annotation.gff3".to_string(),
+            output_dir: "/tmp/fastnlr-annotation".to_string(),
+            threads: Some(1),
+            batch: Some(10),
+            motif_accept_p: Some(0.001),
+            motif_prelim_p: None,
+            hmm_files: Vec::new(),
+            mot_file: None,
+            store_file: None,
+        };
+        let error = build_annotation_job(request).unwrap_err();
+        assert!(error.contains("HMM-only"));
+    }
+
+    #[test]
+    fn annotation_pipeline_output_is_loaded_into_desktop_results() {
         let tmp = tempfile::TempDir::new().unwrap();
+        let genome = tmp.path().join("genome.fa");
+        fs::write(&genome, ">chr1\nATGAAAACCGGGTTTAAATAA\n").unwrap();
+        let gff = tmp.path().join("annotation.gff3");
+        fs::write(
+            &gff,
+            concat!(
+                "##gff-version 3\n",
+                "chr1\ttest\tgene\t1\t21\t.\t+\t.\tID=g1;Name=test;gene_biotype=protein_coding\n",
+                "chr1\ttest\tmRNA\t1\t21\t.\t+\t.\tID=t1;Parent=g1\n",
+                "chr1\ttest\tCDS\t1\t21\t.\t+\t0\tParent=t1\n"
+            ),
+        )
+        .unwrap();
         let output_dir = tmp.path().join("results");
-        let mut config = ProteinConfig::new(fixture_protein());
+        let mut config = AnnotationConfig::new(genome, gff);
         config.threads = 1;
-        config.batch = 8;
-        let job = ProteinJob {
+        config.batch = 1;
+        let job = AnnotationJob {
             config,
             output_dir: output_dir.clone(),
-            prefix: "nlr_proteins".to_string(),
+            prefix: "genome".to_string(),
         };
-        nlr_service::run_protein_blocking(&job).unwrap();
+        nlr_service::run_annotation_blocking(&job).unwrap();
 
         let results = load_results_blocking(&ResultRequest {
             output_dir: output_dir.display().to_string(),
-            prefix: "nlr_proteins".to_string(),
-            mode: InputMode::Protein,
+            prefix: "genome".to_string(),
+            mode: InputMode::Annotation,
         })
         .unwrap();
-        let protein = results.protein.unwrap();
-        assert_eq!(protein.nlr_total, 4);
-        assert!(!protein.domains.is_empty());
+        let annotation = results.annotation.unwrap();
+        assert_eq!(annotation.proteins_scanned, 1);
+        assert!(annotation.records.is_empty());
         assert!(results
             .outputs
             .iter()
-            .any(|file| file.name.ends_with(".nlr.tsv")));
+            .any(|file| file.name.ends_with(".gff.summary.json")));
+    }
+
+    #[test]
+    fn annotation_record_view_derives_nlr_candidate_status() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("genes.tsv");
+        fs::write(
+            &path,
+            concat!(
+                "#header\n",
+                "g1\tname\tprotein_coding\tt1\t\tchr1\t1\t100\t+\t1\t90\t30\t",
+                "CC-NBARC-LRR\tCNL\tCC\ttrue\tfalse\ttrue\ttrue\ttrue\t3\t",
+                "PF00931:5-20\t0\tfalse\t0\ttrue\n",
+                "g2\tname\tprotein_coding\tt2\t\tchr1\t200\t300\t+\t1\t90\t30\t",
+                "Other\tOther\tNone\tfalse\tfalse\tfalse\tfalse\tfalse\t0\t\t",
+                "0\tfalse\t0\ttrue\n"
+            ),
+        )
+        .unwrap();
+        let records = parse_annotation_records(&path).unwrap();
+        assert_eq!(records.len(), 2);
+        assert!(records[0].is_nlr);
+        assert!(!records[1].is_nlr);
     }
 }

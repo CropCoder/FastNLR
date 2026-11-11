@@ -1,6 +1,6 @@
 # nlr-seq
 
-> FASTA ingestion, sequence chopping, six-frame translation and reverse complement.
+> FASTA/GFF3 ingestion, sequence chopping, translation and reverse complement.
 
 `nlr-seq` is the sequence layer of FastNLR. It streams a genome FASTA in overlapping fragments,
 translates every fragment in all six reading frames, and exposes the small helpers (codon
@@ -25,6 +25,7 @@ motifs or NLRs.
 | `codon` | The 64-entry standard genetic code and `translate_triplet` |
 | `translate` | `BioSequence` with six-frame translation and reverse complement |
 | `fasta` | `FastaReader` (streaming, gzip-aware) and `read_all` |
+| `gff3` | Streaming GFF3 `gene → mRNA/transcript → CDS` parser and longest-transcript selection |
 | `chopper` | `SequenceChopper` — overlapping fragment stream |
 
 ## Public API
@@ -72,6 +73,18 @@ The overlap exists to guarantee that every motif is fully contained in at least 
 including motifs that straddle a fragment boundary; it is deliberately independent of how loci
 are assembled later.
 
+### `gff3`
+
+| Item | Description |
+|---|---|
+| `read_gff3(path)` | Parses plain or gzipped GFF3 and returns one `TranscriptModel` per gene with CDS |
+| `TranscriptModel::extract_cds(contig)` | Concatenates CDS in transcript order and reverse-complements each exon on the negative strand |
+| `CdsSegment` | Internal 0-based half-open CDS interval with optional GFF3 phase |
+
+The parser supports multi-value `Parent`, percent-decoded attributes, `mRNA` or `transcript`
+records, and reports phase inconsistency without discarding the transcript. The longest transcript
+is selected by total CDS length, with transcript ID as the stable tie-breaker.
+
 ## Example
 
 ```rust
@@ -101,8 +114,8 @@ assert!(frames[0].sequence.starts_with("MK"));
 cargo test -p nlr-seq
 ```
 
-Unit tests in `src/codon.rs`, `src/translate.rs` and `src/chopper.rs` cover the codon table,
-reverse complement, six-frame offsets and fragment stepping; `tests/mmap.rs` and
+Unit tests in `src/codon.rs`, `src/translate.rs`, `src/gff3.rs` and `src/chopper.rs` cover the
+codon table, reverse complement, six-frame offsets, GFF3 parsing and fragment stepping; `tests/mmap.rs` and
 `tests/mmap_edge.rs` cover the memory-mapped path, including malformed headers and EOF handling.
 
 ## License

@@ -161,22 +161,30 @@ mod tests {
         assert_eq!(class, "TIR-NBARC");
     }
 
-    // 完整性判定暂时禁用，对应测试暂时注释掉。
-    // #[test]
-    // fn is_complete_nlr() {
-    //     let d = def();
-    //     let complete = MotifList::new(
-    //         "x".into(),
-    //         vec![
-    //             protein_motif(1, 1, "P", 1e-6),  // P-loop
-    //             protein_motif(9, 20, "L", 1e-6), // LRR
-    //         ],
-    //     );
-    //     assert!(complete.is_complete_nlr(&d));
+    #[test]
+    fn is_complete_nlr() {
+        let d = def();
+        let complete = MotifList::new(
+            "x".into(),
+            vec![
+                protein_motif(1, 1, "P", 1e-6),  // P-loop
+                protein_motif(9, 20, "L", 1e-6), // LRR
+            ],
+        );
+        assert!(complete.is_complete_nlr(&d));
 
-    //     let incomplete = MotifList::new("x".into(), vec![protein_motif(1, 1, "P", 1e-6)]);
-    //     assert!(!incomplete.is_complete_nlr(&d));
-    // }
+        let no_ploop = MotifList::new(
+            "x".into(),
+            vec![
+                protein_motif(6, 1, "N", 1e-6),
+                protein_motif(9, 20, "L", 1e-6),
+            ],
+        );
+        assert!(!no_ploop.is_complete_nlr(&d));
+
+        let no_lrr = MotifList::new("x".into(), vec![protein_motif(1, 1, "P", 1e-6)]);
+        assert!(!no_lrr.is_complete_nlr(&d));
+    }
 
     #[test]
     fn can_be_merged_with_rank_consistency() {

@@ -58,7 +58,7 @@ export function HistoryPage() {
           <EmptyState
             icon={<History size={32} />}
             title="No annotation runs yet"
-            description="Start a genome or protein analysis and its local summary will appear here."
+            description="Start a genome or GFF3-guided analysis and its local summary will appear here."
             action={
               <button className="btn primary" onClick={() => navigate("/new")}>
                 <Play size={16} />
@@ -91,7 +91,7 @@ export function HistoryPage() {
                       <Clock3 size={14} />
                       {formatDate(entry.startedAt)}
                     </span>
-                    <span>{entry.mode === "genome" ? "Genome mode" : "Protein mode"}</span>
+                    <span>{entry.mode === "genome" ? "Genome mode" : "GFF3 mode"}</span>
                     <span>
                       {entry.resultCount == null
                         ? `${entry.scanned.toLocaleString()} processed`

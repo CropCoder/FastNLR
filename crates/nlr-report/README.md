@@ -84,8 +84,8 @@ write_tsv(&mut buf, &stats).unwrap();
 cargo test -p nlr-report
 ```
 
-The crate currently has no dedicated test suite; it is exercised indirectly through the
-`nlr-cli` pipeline tests.
+The crate has dedicated tests for complete counts, legacy summary compatibility, per-chromosome
+statistics and TSV/JSON consistency, in addition to `nlr-cli` pipeline coverage.
 
 ## License
 

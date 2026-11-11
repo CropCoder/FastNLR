@@ -24,7 +24,7 @@ fn motif_cmp_groups_by_dna_sequence_id() {
     let m2 = dna_motif(6, "chr1", "chr1_0_frame+0", 500, Strand::Forward);
     // Different protein_sequence_id (different fragments) but same dna_sequence_id (same chromosome).
     // Correct order: m2(500) < m1(1000), because sorted by dna_start.
-    let mut v = vec![m1.clone(), m2.clone()];
+    let mut v = [m1.clone(), m2.clone()];
     v.sort();
     assert_eq!(
         v[0].dna_start,

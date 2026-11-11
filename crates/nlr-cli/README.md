@@ -24,47 +24,56 @@ that in-tree imports and integration tests stay stable.
 fastnlr -i genome.fasta -o results
 fastnlr -i genome.fasta -o results -t 8
 fastnlr -i genome.fasta -o results --checkpoint ckpt/ --flexible-seed 3
-fastnlr --protein -i proteins.fa -o protein_results
+fastnlr -i genome.fasta --gff annotation.gff3 -o annotation_results
 ```
 
 `-i` and `-o` are required; the built-in motif profiles are used unless `-x` / `-y` are given.
-With `--protein`, `-i` is read as a protein FASTA (see [Protein mode](#protein-mode)).
+With `--gff`, `-i` remains a genome FASTA and the annotation is used to translate CDS.
+Text protein FASTA input is not supported.
+Direct protein FASTA input is not supported.
 
 ### Flag groups
 
 | Group | Flags |
 |---|---|
 | Input | `-i <INPUT>` |
-| Motif config | `-x <mot.txt>`, `-y <store.txt>` |
+| Motif config (genome mode only) | `-x <mot.txt>`, `-y <store.txt>` |
 | Output | `-o <DIR>`, `--flank <bp>` (default 2000) |
 | Performance | `-t <threads>`, `-n <fragments per chunk>` (default 1000) |
 | Run control | `--checkpoint <DIR>` |
 | Observability | `--progress <auto\|bar\|simple\|off>`, `--log-level <level>` |
-| Recall | `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed <n>`, `--flexible-seed <n>`, `--require-ploop` |
+| Recall (genome mode only) | `--motif-accept-p`, `--motif-prelim-p`, `--relaxed-seed <n>`, `--flexible-seed <n>`, `--require-ploop` |
 | Motif library metadata | `--motif-category <ID=CAT>`, `--seed-combination <IDS>`, `--signature <IDS>` |
-| Protein mode | `--protein`, `--hmm <FILE>` (repeatable) |
+| GFF3 mode | `--gff <GFF3>`, `--hmm <FILE>` (repeatable) |
 
-## Protein mode
+## GFF3 mode
 
-`--protein` switches the input from a genome to a protein FASTA and replaces six-frame motif
-scanning with HMMER domain scanning:
+`--gff` replaces six-frame motif scanning with GFF3-guided CDS translation:
 
-- **Domains** — five curated Pfam models are embedded and scored with their gathering thresholds:
-  NB-ARC (`PF00931`), TIR (`PF01582`), Rx_N (`PF18052`, CNL-type CC), RPW8 (`PF05659`,
-  RNL/helper CC) and R1-type (`PF12061`, NRC-clade CC). `--hmm <FILE>` adds user models; a model
-  with the same accession replaces the built-in one.
-- **LRR** — called with the existing PWM motifs (`motif_9` / `motif_11`) rather than Pfam LRR
-  models, which are far less sensitive on NLRs.
+- **Transcript selection** — genes are parsed from `gene → mRNA/transcript → CDS`; the transcript
+  with the largest total CDS length is selected for each gene. Gzipped GFF3 is accepted.
+- **Translation** — CDS segments are concatenated in transcript order and reverse-complemented on
+  the negative strand. The first CDS phase is applied as a 5' translation offset while the raw
+  CDS FASTA is preserved. Trailing partial codons are trimmed and recorded. A terminal stop is
+  removed; internal stops become `X` and are counted.
+- **Domains** — 23 Pfam models are embedded and scored with their gathering thresholds. Five
+  models identify NB-ARC, TIR and N-terminal CC families; 18 models cover generic, plant-specific
+  and terminal LRR regions. LRR scanning runs only after NB-ARC or TIR passes GA.
 - **Classification** — `nterm` is the N-terminal-most TIR/CC domain before the NB-ARC domain;
-  `class` collapses adjacent equal categories (`CC-NBARC-LRR`); `complete` means NB-ARC + LRR;
+  `class` collapses adjacent equal categories using their real protein coordinates. LRR before
+  NB-ARC remains diagnostic evidence but is not C-terminal LRR;
+  `has_lrr_any` reports all passed LRR, `has_cterm_lrr` requires LRR after NB-ARC, and
+  `complete` means NB-ARC + C-terminal LRR;
   `family` distinguishes TNL / RNL / CNL / NB-only / TIR-only (RPW8 CC is RNL, non-RPW8 CC is
-  CNL); a protein is an NLR candidate when it has NB-ARC, or TIR together with LRR.
-- **Genome-only flags are rejected** in this mode: `--flank`, `--relaxed-seed`,
-  `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`.
+  CNL); a protein is an NLR candidate when it has NB-ARC, or TIR together with C-terminal LRR.
+- **PWM and DNA-only flags are rejected** in this mode: `-x`, `-y`, `--motif-accept-p`,
+  `--motif-prelim-p`, `--flank`, `--relaxed-seed`,
+  `--flexible-seed`, `--require-ploop`, `--signature`, `--seed-combination`, `--checkpoint`,
+  `--tir-accept-p` and partial-locus filtering.
 
-Outputs: `<prefix>.domains.tsv`, `<prefix>.nlr.tsv` and `<prefix>.summary.txt`.
-The genome-coordinate outputs (GFF/BED/motifs BED/loci FASTA/NB-ARC alignment) are
-intentionally not produced.
+Outputs: `<prefix>.gff.cds.fasta`, `.gff.proteins.fasta`, `.gff.domains.tsv`,
+`.gff.genes.tsv`, `.gff.nlr.tsv`, `.gff.nlr.gff3`, `.gff.skipped.tsv`,
+`.gff.summary.txt` and `.gff.summary.json`. The six-frame locus outputs are not produced.
 
 ## Pipeline
 
@@ -140,6 +149,8 @@ and `.gz`, and the following files are written into `-o`:
 All outputs are written by default; there is no opt-in flag per format.
 PNG statistics plots are not generated.
 
+GFF3 mode instead writes the `.gff.*` file set described in [GFF3 mode](#gff3-mode).
+
 ## Notes
 
 - Checkpoints are reused only with identical input/profile hashes and runtime settings; the saved
@@ -160,9 +171,9 @@ cargo test -p fastnlr
 
 `tests/run.rs` drives the library pipeline from synthetic DNA and asserts that motifs are
 recovered; `tests/e2e.rs` covers the scan-to-assembly path on back-translated constructs.
-`tests/outputs.rs` verifies the main output files and BED block structure, while
-`tests/protein_mode.rs` and `tests/logging.rs` cover the protein-mode output set and rejection of
-conflicting genome-only flags.
+`tests/outputs.rs` verifies the main output files and BED block structure;
+`tests/annotation_mode.rs` covers GFF3 translation, HMM-only classification, deterministic
+thread/batch output, pre-NBARC LRR rejection and rejection of PWM/genome-only flags.
 
 ## License
 

@@ -31,8 +31,10 @@ if (!nzchar(script_dir)) {
 r1 <- file.path(script_dir, "R1-NLR-Chromosome-Map-V1.R")
 r2 <- file.path(script_dir, "R2-NLR-Stats-Report-V1.R")
 
-system2("Rscript", c(r1, input_dir, out_dir, extra_args))
-system2("Rscript", c(r2, input_dir, out_dir))
+r1_status <- system2("Rscript", c(r1, input_dir, out_dir, extra_args))
+if (r1_status != 0L) stop("染色体图生成失败，Rscript 退出码：", r1_status)
+r2_status <- system2("Rscript", c(r2, input_dir, out_dir))
+if (r2_status != 0L) stop("统计图生成失败，Rscript 退出码：", r2_status)
 
 summary_file <- list.files(input_dir, pattern = "\\.summary\\.json$", full.names = TRUE)
 report <- if (length(summary_file) == 1) jsonlite::fromJSON(summary_file[1], simplifyVector = FALSE) else list()
@@ -43,9 +45,9 @@ html <- c(
   "<h1>FastNLR report</h1>",
   sprintf(
     "<p>NLR loci: %s | Complete: %s | Motifs: %s</p>",
-    ifelse(is.null(report$nlr_total), 0, report$nlr_total),
-    ifelse(is.null(report$nlr_complete), 0, report$nlr_complete),
-    ifelse(is.null(report$motif_total), 0, report$motif_total)
+    ifelse(is.null(report$nlr_total), "NA", report$nlr_total),
+    ifelse(is.null(report$nlr_complete), "NA", report$nlr_complete),
+    ifelse(is.null(report$motif_total), "NA", report$motif_total)
   ),
   "<ul>",
   sprintf("<li><a href='%s'>%s</a></li>", basename(pdfs), basename(pdfs)),

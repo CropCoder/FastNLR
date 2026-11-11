@@ -1,6 +1,6 @@
 //! FastNLR command-line entry point.
 //!
-//! Short options: `-i/-x/-y/-o/-t/-n`. Everything else — `--flank`, `--protein`,
+//! Short options: `-i/-x/-y/-o/-t/-n`. Everything else — `--flank`, `--gff`,
 //! `--hmm`, `--checkpoint`, `--progress`, `--log-level`, the recall
 //! enhancements and the custom-motif-library declarations — is long-form only;
 //! run `fastnlr --help` for the full reference.
@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use clap::Parser;
-use nlr_cli::{run_with_progress, RunConfig};
+use nlr_cli::{run_with_progress, AnnotationConfig, RunConfig};
 
 /// Valid log-level values (for --log-level validation and hints).
 const VALID_LOG_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
@@ -50,6 +50,7 @@ fn print_no_args_help() {
         "\n\nFastNLR: high-speed, accurate NLR immune-receptor locus annotation for plant genomes.\n\n\
          Key parameters:\n  \
          -i INPUT.genomic.fasta   Input genome FASTA (gzip allowed)\n  \
+         --gff GFF3               Optional GFF3 annotation for gene-protein mode\n  \
          -o OUTPUT.DIR            Output directory\n  \
          -t THREADS               Thread count\n  \
          --motif-accept-p         Final motif p-value threshold\n  \
@@ -77,6 +78,7 @@ fn print_no_args_help() {
     about = "FastNLR: high-speed, accurate NLR immune-receptor locus annotation for plant genomes.\n\n\
               Key parameters:\n  \
               -i INPUT.genomic.fasta   Input genome FASTA (gzip allowed)\n  \
+              --gff GFF3               Optional GFF3 annotation for gene-protein mode\n  \
               -o OUTPUT.DIR            Output directory\n  \
               -t THREADS               Thread count\n  \
               --motif-accept-p         Final motif p-value threshold\n  \
@@ -84,10 +86,13 @@ fn print_no_args_help() {
               --relaxed-seed           Relaxed seeding for divergent NLRs",
     long_about = "FastNLR scans six-frame translations of an input FASTA for amino-acid motifs,\n\
                   assembles complete and partial NLR loci, and writes multi-format outputs.\n\
-                  By default, the full pipeline runs and writes the complete output set.",
+                  With --gff, FastNLR instead translates the longest CDS transcript per gene\n\
+                  and classifies the resulting proteins using ordered HMM domain evidence only.",
     after_long_help = "Examples:\n  \
         # Full default run (writes the complete output set)\n  \
         fastnlr -i genome.fasta -o results\n\n  \
+  # GFF3-guided protein annotation (no six-frame translation)\n  \
+  fastnlr -i genome.fasta --gff annotation.gff3 -o annotation_results\n\n  \
         # Multithreading\n  \
         fastnlr -i genome.fasta -o results -t 8\n\n  \
         # Checkpoint resume\n  \
@@ -104,6 +109,11 @@ struct Cli {
         help_heading = "Input (required)"
     )]
     input: PathBuf,
+
+    /// Optional GFF3 annotation. When supplied, FastNLR translates the longest CDS
+    /// transcript per gene instead of performing six-frame genome scanning.
+    #[arg(long, value_name = "GFF3", help_heading = "Input (required)")]
+    gff: Option<PathBuf>,
 
     // ===== Motif config (optional, built-in by default) =====
     /// mot.txt PWM config file (default: built-in embedded mot.txt)
@@ -134,16 +144,10 @@ struct Cli {
     #[arg(long, value_name = "BP", help_heading = "Output")]
     flank: Option<u64>,
 
-    // ===== Protein mode =====
-    /// Protein input mode: scan a protein FASTA for NLR domains with HMMER instead of
-    /// six-frame translating a genome. Writes domains.tsv / nlr.tsv / summary.txt
-    /// and does not produce genome-coordinate outputs (GFF/BED/loci FASTA).
-    #[arg(long, help_heading = "Protein mode")]
-    protein: bool,
-
-    /// Extra HMM domain models for protein mode (repeatable, may hold multiple models per file).
+    // ===== GFF3 annotation mode =====
+    /// Extra HMM domain models for GFF3 mode (repeatable, may hold multiple models per file).
     /// A model with the same accession replaces the built-in one; new accessions are added.
-    #[arg(long = "hmm", value_name = "FILE", num_args = 1.., help_heading = "Protein mode")]
+    #[arg(long = "hmm", value_name = "FILE", num_args = 1.., help_heading = "GFF3 annotation mode")]
     hmm: Vec<PathBuf>,
 
     // ===== Performance tuning =====
@@ -174,15 +178,15 @@ struct Cli {
     log_level: String,
 
     // ===== NLR recall enhancements =====
-    /// Final motif-accept p-value threshold (default 1e-5).
+    /// Final PWM motif-accept p-value threshold (default 1e-5; genome mode only).
     /// Increase (e.g. 1e-3) to improve recall for highly divergent NLRs
     /// (helper NLR/RNL such as ADR1 or NRG1), at the cost of more weak hits.
-    #[arg(long, default_value_t = 1e-5, help_heading = "NLR recall enhancements")]
-    motif_accept_p: f64,
+    #[arg(long, help_heading = "NLR recall enhancements")]
+    motif_accept_p: Option<f64>,
 
-    /// Motif prefilter p-value threshold (default 1e-4); use together with --motif-accept-p.
-    #[arg(long, default_value_t = 1e-4, help_heading = "NLR recall enhancements")]
-    motif_prelim_p: f64,
+    /// PWM motif prefilter p-value threshold (default 1e-4; genome mode only).
+    #[arg(long, help_heading = "NLR recall enhancements")]
+    motif_prelim_p: Option<f64>,
 
     /// TIR 专属显著性阈值（默认 1e-7，基因组模式）：剔除 p >= 该值的 TIR 类 motif。
     #[arg(long, value_name = "P", help_heading = "NLR recall enhancements")]
@@ -246,9 +250,8 @@ fn main() {
         std::process::exit(1);
     }
 
-    // 蛋白模式：输入是蛋白 FASTA，走 HMMER + PWM 的独立流水线，产出独立结果集。
-    if cli.protein {
-        run_protein_mode(&cli, start);
+    if cli.gff.is_some() {
+        run_annotation_mode(&cli, start);
         return;
     }
 
@@ -258,8 +261,8 @@ fn main() {
     }
     config.seqs_per_thread = cli.seqs_per_thread;
     config.checkpoint_dir = cli.checkpoint.clone();
-    config.motif_accept_p = cli.motif_accept_p;
-    config.motif_prelim_p = cli.motif_prelim_p;
+    config.motif_accept_p = cli.motif_accept_p.unwrap_or(1e-5);
+    config.motif_prelim_p = cli.motif_prelim_p.unwrap_or(1e-4);
     if let Some(p) = cli.tir_accept_p {
         config.tir_accept_p = p;
     }
@@ -338,37 +341,45 @@ fn main() {
     }
 }
 
-/// 蛋白模式入口：读蛋白 FASTA → HMMER 结构域 + PWM LRR → 写独立结果集。
-fn run_protein_mode(cli: &Cli, start: Instant) {
-    let mut config = nlr_cli::ProteinConfig::new(cli.input.clone());
+/// GFF3 注释模式入口：基因组 + GFF3 → CDS → 蛋白 → HMMER → 写完整结果集。
+fn run_annotation_mode(cli: &Cli, start: Instant) {
+    let gff = cli.gff.clone().expect("run_annotation_mode requires --gff");
+    let mut config = AnnotationConfig::new(cli.input.clone(), gff);
     if let Some(t) = cli.threads {
         config.threads = t;
     }
     config.batch = cli.seqs_per_thread;
-    config.mot_file = cli.mot.clone();
-    config.store_file = cli.store.clone();
-    config.motif_accept_p = cli.motif_accept_p;
-    config.motif_prelim_p = cli.motif_prelim_p;
     config.hmm_files = cli.hmm.clone();
 
     let prefix = genome_prefix(&cli.input);
     tracing::info!(
-        "protein mode: input={} | built-in models=NB-ARC,TIR,Rx_N,RPW8,R1-type | extra HMM files={} | threads={} | output={}",
+        "GFF3 annotation mode: genome={} | gff={} | built-in HMM library={} ({} models) | extra HMM files={} | threads={} | output={}",
         cli.input.display(),
+        config.gff3.display(),
+        nlr_domain::MODEL_LIBRARY_VERSION,
+        nlr_domain::EMBEDDED_MODELS.len(),
         cli.hmm.len(),
         config.threads,
         cli.output_dir.display()
     );
 
-    let pb = make_progress_bar(&cli.progress, estimate_protein_count(&cli.input));
-    let result = match nlr_cli::run_protein(&config, pb.as_ref()) {
+    let pb = make_progress_bar(&cli.progress, 0);
+    let result = match nlr_cli::run_annotation_tracked(&config, |progress| {
+        if let Some(pb) = &pb {
+            if pb.length() != Some(progress.estimated_total) {
+                pb.set_length(progress.estimated_total);
+            }
+            pb.set_position(progress.scanned_fragments);
+        }
+        nlr_cli::RunControl::Continue
+    }) {
         Ok(r) => r,
         Err(e) => {
             if let Some(pb) = &pb {
                 pb.finish_and_clear();
                 eprintln!();
             }
-            print_cli_error(&format!("protein run failed: {}", e));
+            print_cli_error(&format!("GFF3 annotation run failed: {}", e));
             std::process::exit(2);
         }
     };
@@ -378,20 +389,10 @@ fn run_protein_mode(cli: &Cli, start: Instant) {
         pb.finish();
     }
 
-    let meta = nlr_cli::ProteinRunMeta {
-        input_name: cli
-            .input
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string(),
-        threads: config.threads,
-        elapsed: start.elapsed(),
-        lrr_threshold: config.motif_accept_p,
-        hmm_files: cli.hmm.iter().map(|p| p.display().to_string()).collect(),
-    };
+    let meta = nlr_cli::annotation_meta(&config, start.elapsed(), result.model_labels.len());
 
-    let written = match nlr_cli::write_protein_outputs(&cli.output_dir, &prefix, &result, &meta) {
+    let written = match nlr_cli::write_annotation_outputs(&cli.output_dir, &prefix, &result, &meta)
+    {
         Ok(w) => w,
         Err(e) => {
             print_cli_error(&format!("output write failed: {}", e));
@@ -400,45 +401,17 @@ fn run_protein_mode(cli: &Cli, start: Instant) {
     };
 
     // 摘要已写入文件，同时打印到 stdout（与 DNA 模式一致）。
-    let summary_path = cli.output_dir.join(format!("{prefix}.summary.txt"));
+    let summary_path = cli.output_dir.join(format!("{prefix}.gff.summary.txt"));
     if let Ok(summary) = std::fs::read_to_string(&summary_path) {
         print!("{summary}");
     }
     let nlr_total = result.records.iter().filter(|r| r.arch.is_nlr).count();
     tracing::info!(
-        "protein run complete: {} proteins, {} NLR candidates, {} files written",
+        "GFF3 annotation complete: {} proteins, {} NLR candidates, {} files written",
         result.records.len(),
         nlr_total,
         written.len()
     );
-}
-
-/// 估算蛋白序列条数（仅未压缩 FASTA；gzip 返回 0，进度条转为不确定态）。
-fn estimate_protein_count(path: &PathBuf) -> u64 {
-    use std::io::{BufRead, Read, Seek, SeekFrom};
-    let mut file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return 0,
-    };
-    let mut magic = [0u8; 2];
-    if file.read_exact(&mut magic).is_err() || magic == [0x1f, 0x8b] {
-        return 0;
-    }
-    if file.seek(SeekFrom::Start(0)).is_err() {
-        return 0;
-    }
-    let mut count = 0u64;
-    for line in std::io::BufReader::new(file).lines() {
-        match line {
-            Ok(l) => {
-                if l.starts_with('>') {
-                    count += 1;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-    count
 }
 
 /// 时间戳统一格式：年月日时分秒，不保留小数秒。
@@ -533,6 +506,26 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
             cli.input.display()
         ));
     }
+    if !has_fasta_extension(&cli.input, &["fa", "fasta", "fna", "fas", "ffn"]) {
+        return Err(format!(
+            "-i must be a genome FASTA (.fa/.fasta/.fna/.fas/.ffn, optionally .gz): {}",
+            cli.input.display()
+        ));
+    }
+    if let Some(gff) = &cli.gff {
+        if !gff.is_file() {
+            return Err(format!(
+                "GFF3 file does not exist or is not a file: --gff specifies {}",
+                gff.display()
+            ));
+        }
+        if !has_fasta_extension(gff, &["gff", "gff3"]) {
+            return Err(format!(
+                "--gff must be a GFF3 file (.gff/.gff3, optionally .gz): {}",
+                gff.display()
+            ));
+        }
+    }
 
     if cli.threads == Some(0) {
         return Err("--threads must be greater than 0".to_string());
@@ -540,18 +533,20 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
     if cli.seqs_per_thread == 0 {
         return Err("-n/--seqs-per-thread must be greater than 0".to_string());
     }
+    let motif_accept_p = cli.motif_accept_p.unwrap_or(1e-5);
+    let motif_prelim_p = cli.motif_prelim_p.unwrap_or(1e-4);
     for (name, value) in [
-        ("--motif-accept-p", cli.motif_accept_p),
-        ("--motif-prelim-p", cli.motif_prelim_p),
+        ("--motif-accept-p", motif_accept_p),
+        ("--motif-prelim-p", motif_prelim_p),
     ] {
         if !value.is_finite() || value <= 0.0 || value > 1.0 {
             return Err(format!("{name} must be finite and within (0,1]"));
         }
     }
-    if cli.motif_prelim_p < cli.motif_accept_p {
+    if motif_prelim_p < motif_accept_p {
         return Err(format!(
             "--motif-prelim-p ({}) must be >= --motif-accept-p ({})",
-            cli.motif_prelim_p, cli.motif_accept_p
+            motif_prelim_p, motif_accept_p
         ));
     }
     if let Some(p) = cli.tir_accept_p {
@@ -582,10 +577,10 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         }
     }
 
-    // 播种参数组合校验。柔性播种默认开启，因此与「精确组合之外的三态分支」互斥的参数
-    // 必须显式关闭柔性播种，否则会被静默忽略（播种判定是 if/else，柔性分支优先）。
-    // protein 模式只做结构域扫描，播种参数无意义，交给下面的 protein 分支统一报错。
-    if !cli.protein && cli.no_flexible_seed {
+    let gff_mode = cli.gff.is_some();
+
+    // DNA 模式播种参数组合校验。柔性播种默认开启，因此 relaxed-seed 必须显式关闭柔性播种。
+    if !gff_mode && cli.no_flexible_seed {
         if cli.flexible_seed.is_some() {
             return Err(
                 "--flexible-seed 与 --no-flexible-seed 互斥：前者设定阈值，后者关闭柔性播种"
@@ -598,7 +593,7 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
                     .to_string(),
             );
         }
-    } else if !cli.protein && cli.relaxed_seed.is_some() {
+    } else if !gff_mode && cli.relaxed_seed.is_some() {
         return Err(
             "--relaxed-seed 与默认开启的柔性播种互斥（播种判定柔性优先，该参数会被忽略）；\
              如需宽松播种请改加 --no-flexible-seed"
@@ -606,8 +601,8 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         );
     }
 
-    // Protein mode: extra HMM files must exist, and genome-only flags must not be used.
-    if cli.protein {
+    // GFF3 模式：HMM 文件必须存在，DNA 专属参数必须明确拒绝。
+    if gff_mode {
         for path in &cli.hmm {
             if !path.is_file() {
                 return Err(format!(
@@ -617,8 +612,23 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
             }
         }
         let mut conflicts: Vec<&str> = Vec::new();
+        if cli.mot.is_some() {
+            conflicts.push("-x/--mot");
+        }
+        if cli.store.is_some() {
+            conflicts.push("-y/--store");
+        }
+        if cli.motif_accept_p.is_some() {
+            conflicts.push("--motif-accept-p");
+        }
+        if cli.motif_prelim_p.is_some() {
+            conflicts.push("--motif-prelim-p");
+        }
         if cli.flank.is_some() {
             conflicts.push("--flank");
+        }
+        if cli.checkpoint.is_some() {
+            conflicts.push("--checkpoint");
         }
         if cli.relaxed_seed.is_some() {
             conflicts.push("--relaxed-seed");
@@ -629,8 +639,14 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         if cli.require_ploop {
             conflicts.push("--require-ploop");
         }
+        if cli.no_flexible_seed {
+            conflicts.push("--no-flexible-seed");
+        }
         if cli.tir_accept_p.is_some() {
             conflicts.push("--tir-accept-p");
+        }
+        if cli.keep_partial_loci {
+            conflicts.push("--keep-partial-loci");
         }
         if !cli.extra_seeds.is_empty() {
             conflicts.push("--seed-combination");
@@ -638,17 +654,17 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
         if !cli.extra_signatures.is_empty() {
             conflicts.push("--signature");
         }
-        if cli.checkpoint.is_some() {
-            conflicts.push("--checkpoint");
+        if !cli.motif_categories.is_empty() {
+            conflicts.push("--motif-category");
         }
         if !conflicts.is_empty() {
             return Err(format!(
-                "--protein 模式不支持基因组专属参数: {}（这些参数只作用于 DNA 流水线）",
+                "--gff 模式使用纯 HMM 分类，不支持 PWM/DNA 专属参数: {}",
                 conflicts.join(", ")
             ));
         }
     } else if !cli.hmm.is_empty() {
-        return Err("--hmm 只在 --protein 模式下有效".to_string());
+        return Err("--hmm 只在 --gff GFF3 注释模式下有效".to_string());
     }
 
     // log-level validity.
@@ -671,6 +687,23 @@ fn validate_inputs(cli: &Cli) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn has_fasta_extension(path: &Path, allowed: &[&str]) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let uncompressed = name.strip_suffix(".gz").unwrap_or(&name);
+    Path::new(uncompressed)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            allowed
+                .iter()
+                .any(|value| extension.eq_ignore_ascii_case(value))
+        })
 }
 
 /// Print a CLI error (uniform format, with usage hint).
@@ -845,6 +878,15 @@ fn build_summary(
     let _ = writeln!(s, "# peak memory\t{}", format_peak_rss(peak_rss_mb));
     let _ = writeln!(s, "# elapsed\t{:.2}s", elapsed.as_secs_f64());
     let _ = writeln!(s, "# NLR loci\t{}", result.nlrs.len());
+    let _ = writeln!(
+        s,
+        "# Complete NLR loci\t{}",
+        result
+            .nlrs
+            .iter()
+            .filter(|list| list.is_complete_nlr(def))
+            .count()
+    );
     let _ = writeln!(s, "# NLR types (count desc):");
     for (class, count) in type_counts {
         let _ = writeln!(s, "# {}\t{}", count, class);

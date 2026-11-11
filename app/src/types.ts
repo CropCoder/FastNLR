@@ -2,7 +2,7 @@
  * Shared TypeScript contracts for Tauri commands and desktop state.
  * Author: Jiwen Zhao (https://github.com/CropCoder)
  */
-export type InputMode = "genome" | "protein";
+export type InputMode = "genome" | "annotation";
 
 export type JobStatus =
   | "Pending"
@@ -13,6 +13,7 @@ export type JobStatus =
 
 export type JobPhase =
   | "Pending"
+  | "ParsingAnnotation"
   | "Scanning"
   | "Writing"
   | "Completed"
@@ -38,7 +39,7 @@ export interface InputInfo {
 
 export interface JobSnapshot {
   id: number;
-  kind: "Genome" | "Protein";
+  kind: "Genome" | "Annotation";
   status: JobStatus;
   phase: JobPhase;
   scanned: number;
@@ -68,6 +69,7 @@ export interface GenomeLocus {
 export interface ChromosomeStats {
   motifs: number;
   nlrs: number;
+  length?: number;
 }
 
 export interface GenomeSummary {
@@ -81,41 +83,72 @@ export interface GenomeSummary {
   loci: GenomeLocus[];
 }
 
-export interface ProteinRecord {
-  proteinId: string;
-  length: number;
+export interface AnnotationRecord {
+  geneId: string;
+  geneName: string;
+  geneBiotype: string;
+  transcriptId: string;
+  transcriptName: string;
+  seqid: string;
+  geneStart: number;
+  geneEnd: number;
+  strand: string;
+  cdsCount: number;
+  cdsLengthBp: number;
+  proteinLength: number;
   class: string;
   nterm: string;
   hasNbarc: boolean;
   hasTir: boolean;
-  hasLrr: boolean;
+  hasLrrAny: boolean;
+  hasCtermLrr: boolean;
+  complete: boolean;
+  isNlr: boolean;
   domainCount: number;
   domains: string;
   family: string;
+  internalStopCount: number;
+  hasInternalStop: boolean;
+  trailingPartialBases: number;
+  phaseConsistent: boolean;
 }
 
-export interface ProteinDomain {
-  proteinId: string;
+export interface AnnotationDomain {
+  geneId: string;
+  transcriptId: string;
+  seqid: string;
+  strand: string;
   source: string;
   model: string;
   modelName: string;
   category: string;
-  start: number;
-  end: number;
+  proteinStart: number;
+  proteinEnd: number;
+  cdsStart: number;
+  cdsEnd: number;
+  genomicStart: number;
+  genomicEnd: number;
+  genomicSegments: string;
   bitscore: number | null;
   pvalue: number | null;
   passed: boolean;
 }
 
-export interface ProteinSummary {
+export interface AnnotationSummary {
   proteinsScanned: number;
   nlrTotal: number;
+  completeNlrTotal: number;
+  genesWithCds: number;
+  skippedGenes: number;
   elapsed: string | null;
   modelLabels: string[];
+  modelLibraryVersion: string;
+  modelCount: number;
   typeCounts: Record<string, number>;
+  completeTypeCounts: Record<string, number>;
   familyCounts: Record<string, number>;
-  records: ProteinRecord[];
-  domains: ProteinDomain[];
+  records: AnnotationRecord[];
+  domains: AnnotationDomain[];
 }
 
 export interface RunResults {
@@ -124,7 +157,7 @@ export interface RunResults {
   outputDir: string;
   outputs: OutputFile[];
   genome: GenomeSummary | null;
-  protein: ProteinSummary | null;
+  annotation: AnnotationSummary | null;
 }
 
 export interface GenomeDraft {
@@ -150,20 +183,17 @@ export interface GenomeDraft {
   extraSignatures: string;
 }
 
-export interface ProteinDraft {
-  mode: "protein";
+export interface AnnotationDraft {
+  mode: "annotation";
   inputPath: string;
+  gffPath: string;
   outputDir: string;
   threads: number;
   batch: number;
-  motifAcceptP: string;
-  motifPrelimP: string;
   hmmFiles: string[];
-  motFile: string;
-  storeFile: string;
 }
 
-export type RunDraft = GenomeDraft | ProteinDraft;
+export type RunDraft = GenomeDraft | AnnotationDraft;
 
 export interface AppSettings {
   defaultThreads: number;

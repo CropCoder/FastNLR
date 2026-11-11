@@ -17,15 +17,17 @@
 </head>
 <body>
   <h1>FastNLR Web</h1>
-  <p>Local annotation service for NLR loci.</p>
+  <p>Local six-frame genome or GFF3-guided NLR annotation service.</p>
 
   <label>Genome FASTA path</label>
   <input id="input" placeholder="/path/to/genome.fasta" />
+  <label>GFF3 annotation path (optional)</label>
+  <input id="gff" placeholder="/path/to/annotation.gff3" />
   <label>Output directory (optional)</label>
   <input id="outdir" placeholder="/path/to/output" />
   <label>Threads</label>
   <input id="threads" type="number" value="4" />
-  <button onclick="run()">Run genome annotation</button>
+  <button onclick="run()">Run annotation</button>
 
   <div id="status"></div>
 
@@ -42,10 +44,12 @@
       try {
         const body = {
           input_path: document.getElementById("input").value.trim(),
+          gff_path: document.getElementById("gff").value.trim(),
           output_dir: document.getElementById("outdir").value.trim() || null,
           threads: Number(document.getElementById("threads").value) || null
         };
-        const created = await api("/api/jobs/genome", {
+        const endpoint = body.gff_path ? "/api/jobs/annotation" : "/api/jobs/genome";
+        const created = await api(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body)
@@ -59,7 +63,7 @@
     async function poll(id, status) {
       const snap = await api("/api/jobs/" + id);
       status.textContent = "job " + id + ": " + snap.status +
-        " (" + snap.scanned + " fragments)";
+        " (" + snap.scanned + " units)";
       if (snap.status === "Running" || snap.status === "Pending") {
         setTimeout(() => poll(id, status), 1500);
       } else {

@@ -1,6 +1,8 @@
 # Rust build artifacts
 /target
 **/target
+/target-v*/
+/app/target-v*/
 Cargo.lock.bak
 
 # Frontend / desktop build artifacts

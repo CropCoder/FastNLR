@@ -21,7 +21,7 @@ export function AboutPage() {
       <PageHeader
         eyebrow="About FastNLR"
         title="Fast, self-contained NLR annotation"
-        description="A native desktop interface for the FastNLR Rust pipeline, built for plant genome and protein analyses."
+        description="A native desktop interface for the FastNLR Rust pipeline, with six-frame genome and GFF3-guided protein analyses."
       />
 
       <section className="about-hero panel">

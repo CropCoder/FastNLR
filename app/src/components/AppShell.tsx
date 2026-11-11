@@ -6,7 +6,6 @@ import {
   Activity,
   AlertCircle,
   Check,
-  Dna,
   History,
   Info,
   Play,
@@ -69,7 +68,7 @@ export function AppShell() {
             if (disposed) return;
             updateHistory(activeRun.historyId, {
               resultCount:
-                results.genome?.nlr_total ?? results.protein?.nlrTotal ?? 0,
+                results.genome?.nlr_total ?? results.annotation?.nlrTotal ?? 0,
             });
           } catch {
             // 结果页会给出更具体的读取错误，历史状态仍保留为 Completed。
@@ -111,20 +110,17 @@ export function AppShell() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="brand-mark">
-            <Dna size={22} strokeWidth={2.4} />
-          </div>
-          <div>
-            <strong>FastNLR</strong>
-            <span>Desktop</span>
-          </div>
+          <strong>FastNLR</strong>
+          <span>Desktop</span>
         </div>
 
+        <span className="nav-section-label">Workspace</span>
         <nav className="sidebar-nav" aria-label="Main navigation">
           {navigation.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
+              title={label}
               className={({ isActive }) =>
                 `nav-item${isActive ? " active" : ""}`
               }
@@ -169,7 +165,7 @@ export function AppShell() {
         )}
 
         <div className="sidebar-footer">
-          <span>v{runtime?.version ?? "1.8.0"}</span>
+          <span>v{runtime?.version ?? "1.9.1"}</span>
           <span>
             {runtime?.os ?? "desktop"} / {runtime?.arch ?? "native"}
           </span>

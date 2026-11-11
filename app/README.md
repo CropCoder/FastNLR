@@ -1,7 +1,11 @@
 # FastNLR Desktop
 
-Tauri 2 + React desktop application for genome and protein NLR annotation. The backend calls
+Tauri 2 + React desktop application for genome and optional GFF3-guided NLR annotation. The backend calls
 `nlr-service` directly and does not start a local HTTP server.
+
+GFF3 mode uses the 23 embedded Pfam HMMs only. PWM controls are not part of the
+annotation form; LRR is accepted as C-terminal evidence only when it occurs
+after NB-ARC.
 
 ## Supported targets
 
@@ -76,5 +80,9 @@ committing certificate files:
 ## Project layout
 
 - `src/`: React pages, workflow state, result tables, and charts.
+- `src/components/ChromosomePanorama.tsx`: interactive physical-position map, filtered NLR family
+  blocks, smoothed density curves, and locus detail dialogs.
 - `src-tauri/src/lib.rs`: Tauri commands, parameter validation, job control, and result adapters.
+  GFF3 results expose only NLR candidates in the NLR gene table and include complete-count and
+  model-library metadata.
 - `src-tauri/capabilities/default.json`: minimal dialog, opener, and store permissions.

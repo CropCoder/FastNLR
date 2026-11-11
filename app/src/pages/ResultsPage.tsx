@@ -1,5 +1,5 @@
 /**
- * Genome and protein result overview, tables, and output browser.
+ * Genome and GFF3 annotation result overview, tables, and output browser.
  * Author: Jiwen Zhao (https://github.com/CropCoder)
  */
 import type { ColumnDef } from "@tanstack/react-table";
@@ -11,6 +11,7 @@ import {
   Files,
   FolderOpen,
   Layers3,
+  Map,
   RefreshCw,
   RotateCcw,
   Table2,
@@ -19,6 +20,7 @@ import {
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DataTable } from "../components/DataTable";
+import { ChromosomePanorama } from "../components/ChromosomePanorama";
 import { DistributionChart } from "../components/DistributionChart";
 import { EmptyState } from "../components/EmptyState";
 import { MetricCard } from "../components/MetricCard";
@@ -28,8 +30,8 @@ import { formatBytes, formatDate } from "../lib/format";
 import { useAppStore } from "../store/appStore";
 import type {
   GenomeLocus,
-  ProteinDomain,
-  ProteinRecord,
+  AnnotationDomain,
+  AnnotationRecord,
   RunResults,
 } from "../types";
 
@@ -61,10 +63,23 @@ const locusColumns: ColumnDef<GenomeLocus>[] = [
   },
 ];
 
-const proteinColumns: ColumnDef<ProteinRecord>[] = [
-  { accessorKey: "proteinId", header: "Protein" },
+const annotationColumns: ColumnDef<AnnotationRecord>[] = [
+  { accessorKey: "geneId", header: "Gene" },
+  { accessorKey: "transcriptId", header: "Transcript" },
+  { accessorKey: "seqid", header: "Sequence" },
   {
-    accessorKey: "length",
+    accessorKey: "geneStart",
+    header: "Start",
+    cell: ({ getValue }) => Number(getValue()).toLocaleString(),
+  },
+  {
+    accessorKey: "geneEnd",
+    header: "End",
+    cell: ({ getValue }) => Number(getValue()).toLocaleString(),
+  },
+  { accessorKey: "strand", header: "Strand" },
+  {
+    accessorKey: "proteinLength",
     header: "Length",
     cell: ({ getValue }) => Number(getValue()).toLocaleString(),
   },
@@ -75,6 +90,16 @@ const proteinColumns: ColumnDef<ProteinRecord>[] = [
   },
   { accessorKey: "family", header: "Family" },
   { accessorKey: "nterm", header: "N-terminus" },
+  {
+    accessorKey: "complete",
+    header: "Complete",
+    cell: ({ getValue }) => (getValue() ? "Yes" : "No"),
+  },
+  {
+    accessorKey: "hasCtermLrr",
+    header: "C-terminal LRR",
+    cell: ({ getValue }) => (getValue() ? "Yes" : "No"),
+  },
   { accessorKey: "domainCount", header: "Domains" },
   {
     accessorKey: "domains",
@@ -87,8 +112,9 @@ const proteinColumns: ColumnDef<ProteinRecord>[] = [
   },
 ];
 
-const domainColumns: ColumnDef<ProteinDomain>[] = [
-  { accessorKey: "proteinId", header: "Protein" },
+const domainColumns: ColumnDef<AnnotationDomain>[] = [
+  { accessorKey: "geneId", header: "Gene" },
+  { accessorKey: "transcriptId", header: "Transcript" },
   { accessorKey: "source", header: "Source" },
   {
     accessorKey: "model",
@@ -101,8 +127,10 @@ const domainColumns: ColumnDef<ProteinDomain>[] = [
     ),
   },
   { accessorKey: "category", header: "Category" },
-  { accessorKey: "start", header: "Start" },
-  { accessorKey: "end", header: "End" },
+  { accessorKey: "proteinStart", header: "Protein start" },
+  { accessorKey: "proteinEnd", header: "Protein end" },
+  { accessorKey: "genomicStart", header: "Genome start" },
+  { accessorKey: "genomicEnd", header: "Genome end" },
   {
     accessorKey: "bitscore",
     header: "Bitscore",
@@ -126,20 +154,29 @@ const domainColumns: ColumnDef<ProteinDomain>[] = [
   },
 ];
 
-type ResultTab = "overview" | "loci" | "domains" | "files";
+type ResultTab = "overview" | "panorama" | "loci" | "domains" | "files";
 
-const resultTabs = (mode: "genome" | "protein"): Array<{
+const resultTabs = (mode: "genome" | "annotation"): Array<{
   value: ResultTab;
   label: string;
   icon: LucideIcon;
 }> => [
   { value: "overview", label: "Overview", icon: Layers3 },
+  ...(mode === "genome"
+    ? [
+        {
+          value: "panorama" as const,
+          label: "Chromosome map",
+          icon: Map,
+        },
+      ]
+    : []),
   {
     value: "loci",
-    label: mode === "genome" ? "NLR loci" : "NLR proteins",
+    label: mode === "genome" ? "NLR loci" : "NLR genes",
     icon: Table2,
   },
-  ...(mode === "protein"
+  ...(mode === "annotation"
     ? [{ value: "domains" as const, label: "Domain hits", icon: Boxes }]
     : []),
   { value: "files", label: "Output files", icon: Files },
@@ -177,7 +214,7 @@ export function ResultsPage() {
       .then((value) => {
         if (disposed) return;
         setResults(value);
-        const count = value.genome?.nlr_total ?? value.protein?.nlrTotal ?? 0;
+        const count = value.genome?.nlr_total ?? value.annotation?.nlrTotal ?? 0;
         updateHistory(entry.id, { resultCount: count });
       })
       .catch((reason) => {
@@ -264,8 +301,8 @@ export function ResultsPage() {
   }
 
   const genome = results.genome;
-  const protein = results.protein;
-  const resultCount = genome?.nlr_total ?? protein?.nlrTotal ?? 0;
+  const annotation = results.annotation;
+  const resultCount = genome?.nlr_total ?? annotation?.nlrTotal ?? 0;
   const chromosomeNlrs = genome
     ? Object.fromEntries(
         Object.entries(genome.per_chromosome)
@@ -278,7 +315,7 @@ export function ResultsPage() {
   return (
     <div className="page results-page">
       <PageHeader
-        eyebrow={`${entry.mode === "genome" ? "Genome" : "Protein"} results`}
+        eyebrow={`${entry.mode === "genome" ? "Genome" : "GFF3 annotation"} results`}
         title={entry.inputName}
         description={`${resultCount.toLocaleString()} NLR candidates · completed ${formatDate(entry.finishedAt || entry.startedAt)}`}
         actions={
@@ -308,6 +345,7 @@ export function ResultsPage() {
             type="button"
             className={tab === value ? "active" : ""}
             onClick={() => setTab(value as ResultTab)}
+            title={label}
           >
             <Icon size={16} />
             {label}
@@ -321,7 +359,7 @@ export function ResultsPage() {
             <MetricCard
               label="NLR candidates"
               value={resultCount.toLocaleString()}
-              detail={entry.mode === "genome" ? "assembled loci" : "classified proteins"}
+              detail={entry.mode === "genome" ? "assembled loci" : "classified NLR genes"}
               icon={<Dna size={19} />}
               accent="mint"
             />
@@ -352,23 +390,25 @@ export function ResultsPage() {
             ) : (
               <>
                 <MetricCard
-                  label="Proteins scanned"
-                  value={(protein?.proteinsScanned ?? 0).toLocaleString()}
-                  detail="input sequences"
-                  icon={<Layers3 size={19} />}
-                  accent="iris"
-                />
-                <MetricCard
-                  label="Domain hits"
-                  value={(protein?.domains.length ?? 0).toLocaleString()}
-                  detail="HMM and LRR evidence"
+                  label="Complete NLR"
+                  value={(annotation?.completeNlrTotal ?? 0).toLocaleString()}
+                  detail="NB-ARC plus C-terminal LRR"
                   icon={<Boxes size={19} />}
                   accent="sun"
                 />
                 <MetricCard
+                  label="Genes translated"
+                  value={(annotation?.proteinsScanned ?? 0).toLocaleString()}
+                  detail="longest CDS transcript per gene"
+                  icon={<Layers3 size={19} />}
+                  accent="iris"
+                />
+                <MetricCard
                   label="Elapsed"
-                  value={protein?.elapsed ?? "—"}
-                  detail={`${protein?.modelLabels.length ?? 0} domain models`}
+                  value={annotation?.elapsed ?? "—"}
+                  detail={`${annotation?.modelCount ?? annotation?.modelLabels.length ?? 0} models · ${
+                    annotation?.modelLibraryVersion || "unknown library"
+                  }`}
                   icon={<RefreshCw size={19} />}
                   accent="coral"
                 />
@@ -381,13 +421,13 @@ export function ResultsPage() {
               title="NLR families"
               subtitle="Biological family classification"
               values={
-                genome?.nlr_family_counts ?? protein?.familyCounts ?? {}
+                genome?.nlr_family_counts ?? annotation?.familyCounts ?? {}
               }
             />
             <DistributionChart
               title="Domain architectures"
               subtitle="Detected domain combinations"
-              values={genome?.nlr_type_counts ?? protein?.typeCounts ?? {}}
+              values={genome?.nlr_type_counts ?? annotation?.typeCounts ?? {}}
             />
             {genome ? (
               <DistributionChart
@@ -401,11 +441,11 @@ export function ResultsPage() {
                 <div className="chart-heading">
                   <div>
                     <h3>Domain model set</h3>
-                    <p>Models used for protein classification</p>
+                    <p>Models used for GFF3-guided protein classification</p>
                   </div>
                 </div>
                 <div className="model-tags">
-                  {protein?.modelLabels.map((label) => (
+                  {annotation?.modelLabels.map((label) => (
                     <span key={label}>{label}</span>
                   ))}
                 </div>
@@ -415,12 +455,31 @@ export function ResultsPage() {
         </>
       ) : null}
 
+      {tab === "panorama" && genome ? (
+        <section className="panel panorama-panel">
+          <div className="section-heading panorama-section-heading">
+            <span className="section-number">02</span>
+            <div>
+              <h2>Chromosome panorama</h2>
+              <p>
+                Physical NLR distribution across assembled chromosomes and contigs.
+                Density curves use a smoothed kernel over locus midpoints.
+              </p>
+            </div>
+          </div>
+          <ChromosomePanorama
+            chromosomes={genome.per_chromosome}
+            loci={genome.loci}
+          />
+        </section>
+      ) : null}
+
       {tab === "loci" ? (
         <section className="panel table-panel">
           <div className="section-heading">
-            <span className="section-number">01</span>
+            <span className="section-number">03</span>
             <div>
-              <h2>{entry.mode === "genome" ? "Assembled NLR loci" : "Classified NLR proteins"}</h2>
+              <h2>{entry.mode === "genome" ? "Assembled NLR loci" : "Classified NLR genes"}</h2>
               <p>Sort and filter the complete result table.</p>
             </div>
           </div>
@@ -430,29 +489,29 @@ export function ResultsPage() {
               columns={locusColumns}
               searchPlaceholder="Filter by locus, sequence, family, or architecture"
             />
-          ) : protein ? (
+          ) : annotation ? (
             <DataTable
-              data={protein.records}
-              columns={proteinColumns}
-              searchPlaceholder="Filter by protein, family, or architecture"
+              data={annotation.records}
+              columns={annotationColumns}
+              searchPlaceholder="Filter by gene, transcript, family, or architecture"
             />
           ) : null}
         </section>
       ) : null}
 
-      {tab === "domains" && protein ? (
+      {tab === "domains" && annotation ? (
         <section className="panel table-panel">
           <div className="section-heading">
-            <span className="section-number">02</span>
+            <span className="section-number">03</span>
             <div>
               <h2>Domain evidence</h2>
-              <p>All HMM and PWM LRR hits reported by the protein pipeline.</p>
+              <p>Passed and failed HMM hits with protein, CDS, and genomic coordinates.</p>
             </div>
           </div>
           <DataTable
-            data={protein.domains}
+            data={annotation.domains}
             columns={domainColumns}
-            searchPlaceholder="Filter by protein, model, category, or source"
+            searchPlaceholder="Filter by gene, transcript, model, category, or source"
           />
         </section>
       ) : null}
@@ -460,7 +519,7 @@ export function ResultsPage() {
       {tab === "files" ? (
         <section className="panel files-panel">
           <div className="section-heading">
-            <span className="section-number">03</span>
+            <span className="section-number">04</span>
             <div>
               <h2>Generated files</h2>
               <p>Open individual outputs or reveal the complete result directory.</p>

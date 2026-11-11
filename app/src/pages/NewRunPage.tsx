@@ -1,5 +1,5 @@
 /**
- * Genome and protein annotation setup form.
+ * Genome and optional GFF3 annotation setup form.
  * Author: Jiwen Zhao (https://github.com/CropCoder)
  */
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,12 +20,14 @@ import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { PageHeader } from "../components/PageHeader";
+import { InfoHint } from "../components/InfoHint";
 import {
   hasExistingResults,
   inspectInput,
   listenForFileDrop,
   pickDirectory,
-  pickFasta,
+  pickGenome,
+  pickGff,
   pickFiles,
   startRun,
 } from "../lib/bridge";
@@ -35,14 +37,14 @@ import type {
   GenomeDraft,
   InputInfo,
   InputMode,
-  ProteinDraft,
+  AnnotationDraft,
   RunDraft,
   RunHistoryEntry,
 } from "../types";
 
 interface FormValues {
-  mode: InputMode;
   inputPath: string;
+  gffPath: string;
   outputDir: string;
   threads: number;
   flank: number;
@@ -75,8 +77,8 @@ const probability = z
 
 const formSchema = z
   .object({
-    mode: z.enum(["genome", "protein"]),
-    inputPath: z.string().min(1, "Select an input FASTA"),
+    inputPath: z.string().min(1, "Select a genome FASTA"),
+    gffPath: z.string(),
     outputDir: z.string().min(1, "Select an output directory"),
     threads: z.number().int().min(1).max(512),
     flank: z.number().int().min(0).max(1_000_000),
@@ -117,8 +119,8 @@ const formSchema = z
 
 function baseDefaults(): FormValues {
   return {
-    mode: "genome",
     inputPath: "",
+    gffPath: "",
     outputDir: "",
     threads: 1,
     flank: 2000,
@@ -144,19 +146,15 @@ function baseDefaults(): FormValues {
 
 function draftToForm(draft: RunDraft): FormValues {
   const defaults = baseDefaults();
-  if (draft.mode === "protein") {
+  if (draft.mode === "annotation") {
     return {
       ...defaults,
-      mode: "protein",
       inputPath: draft.inputPath,
+      gffPath: draft.gffPath,
       outputDir: draft.outputDir,
       threads: draft.threads,
       batch: draft.batch,
-      motifAcceptP: draft.motifAcceptP,
-      motifPrelimP: draft.motifPrelimP,
       hmmFiles: draft.hmmFiles,
-      motFile: draft.motFile,
-      storeFile: draft.storeFile,
     };
   }
   return {
@@ -166,18 +164,15 @@ function draftToForm(draft: RunDraft): FormValues {
 }
 
 function formToDraft(values: FormValues): RunDraft {
-  if (values.mode === "protein") {
-    const draft: ProteinDraft = {
-      mode: "protein",
+  if (values.gffPath.trim()) {
+    const draft: AnnotationDraft = {
+      mode: "annotation",
       inputPath: values.inputPath,
+      gffPath: values.gffPath.trim(),
       outputDir: values.outputDir,
       threads: values.threads,
       batch: values.batch,
-      motifAcceptP: values.motifAcceptP,
-      motifPrelimP: values.motifPrelimP,
       hmmFiles: values.hmmFiles,
-      motFile: values.motFile,
-      storeFile: values.storeFile,
     };
     return draft;
   }
@@ -258,7 +253,8 @@ export function NewRunPage() {
     defaultValues: defaults,
   });
 
-  const mode = watch("mode");
+  const gffPath = watch("gffPath");
+  const mode: InputMode = gffPath.trim() ? "annotation" : "genome";
   const hmmFiles = watch("hmmFiles");
   const noFlexibleSeed = watch("noFlexibleSeed");
   const inputPath = watch("inputPath");
@@ -267,7 +263,7 @@ export function NewRunPage() {
     if (pendingDraft) {
       setPendingDraft(null);
       if (pendingDraft.inputPath) {
-        void inspectInput(pendingDraft.inputPath, pendingDraft.mode)
+        void inspectInput(pendingDraft.inputPath, "genome")
           .then(setInputInfo)
           .catch(() => setInputInfo(null));
       }
@@ -277,16 +273,16 @@ export function NewRunPage() {
   useEffect(() => {
     let dispose: () => void = () => undefined;
     void listenForFileDrop((path) => {
-      void applyInput(path, mode);
+      void applyInput(path);
     }).then((unlisten) => {
       dispose = unlisten;
     });
     return () => dispose();
-  }, [mode]);
+  }, []);
 
-  async function applyInput(path: string, nextMode = mode) {
+  async function applyInput(path: string) {
     try {
-      const info = await inspectInput(path, nextMode);
+      const info = await inspectInput(path, "genome");
       setInputInfo(info);
       setValue("inputPath", info.path, { shouldValidate: true });
       if (!getValues("outputDir")) {
@@ -303,8 +299,13 @@ export function NewRunPage() {
   }
 
   async function chooseInput() {
-    const path = await pickFasta(mode);
+    const path = await pickGenome();
     if (path) await applyInput(path);
+  }
+
+  async function chooseGffAnnotation() {
+    const path = await pickGff();
+    if (path) setValue("gffPath", path, { shouldValidate: true });
   }
 
   async function chooseOutput() {
@@ -325,18 +326,11 @@ export function NewRunPage() {
     });
   }
 
-  function switchMode(nextMode: InputMode) {
-    setValue("mode", nextMode);
-    setValue("inputPath", "");
-    setInputInfo(null);
-    setSubmitError(null);
-  }
-
   async function submit(values: FormValues) {
     setStarting(true);
     setSubmitError(null);
     try {
-      const info = await inspectInput(values.inputPath, values.mode);
+      const info = await inspectInput(values.inputPath, "genome");
       setInputInfo(info);
       const draft = formToDraft(values);
       if (await hasExistingResults(draft)) {
@@ -350,7 +344,7 @@ export function NewRunPage() {
       const historyId = makeId();
       const entry: RunHistoryEntry = {
         id: historyId,
-        mode: values.mode,
+        mode: draft.mode,
         inputPath: values.inputPath,
         inputName: info.name,
         outputDir: values.outputDir,
@@ -369,7 +363,7 @@ export function NewRunPage() {
       setActiveRun({
         jobId,
         historyId,
-        mode: values.mode,
+        mode: draft.mode,
         inputName: info.name,
         prefix: info.prefix,
         outputDir: values.outputDir,
@@ -406,33 +400,16 @@ export function NewRunPage() {
         ) : null}
 
         <section className="panel mode-panel">
-          <div className="mode-switch" role="tablist" aria-label="Input mode">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "genome"}
-              className={mode === "genome" ? "selected" : ""}
-              onClick={() => switchMode("genome")}
-            >
-              <span className="mode-index">01</span>
-              <span>
-                <strong>Genome</strong>
-                <small>Six-frame DNA annotation</small>
-              </span>
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "protein"}
-              className={mode === "protein" ? "selected" : ""}
-              onClick={() => switchMode("protein")}
-            >
-              <span className="mode-index">02</span>
-              <span>
-                <strong>Protein</strong>
-                <small>HMM domain classification</small>
-              </span>
-            </button>
+          <div className="mode-summary">
+            <span className="mode-index">{mode === "genome" ? "01" : "02"}</span>
+            <span>
+              <strong>{mode === "genome" ? "Six-frame genome annotation" : "GFF3-guided protein annotation"}</strong>
+              <small>
+                {mode === "genome"
+                  ? "No annotation supplied: scan all six translated frames."
+                  : "Longest CDS transcript per gene is translated and classified with ordered HMM evidence."}
+              </small>
+            </span>
           </div>
         </section>
 
@@ -441,31 +418,55 @@ export function NewRunPage() {
             <span className="section-number">1</span>
             <div>
               <h2>Input and destination</h2>
-              <p>Select the FASTA file and the folder that will receive all generated files.</p>
+              <p>Select a genome FASTA, optionally add GFF3, and choose the output folder.</p>
             </div>
           </div>
 
           <div className="form-grid two-column">
             <div className="field full">
-              <label htmlFor="input-path">Input FASTA</label>
+              <label htmlFor="input-path">Genome FASTA</label>
               <button type="button" className="file-drop" onClick={chooseInput}>
                 <UploadCloud size={25} />
                 <span>
                   <strong>
-                    {inputInfo?.name || (inputPath ? inputPath.split(/[\\/]/).pop() : "Choose or drop a FASTA file")}
+                    {inputInfo?.name || (inputPath ? inputPath.split(/[\\/]/).pop() : "Choose or drop a genome FASTA")}
                   </strong>
                   <small>
                     {inputInfo
                       ? `${formatBytes(inputInfo.sizeBytes)}${inputInfo.compressed ? " · gzip" : ""} · prefix ${inputInfo.prefix}`
-                      : mode === "genome"
-                        ? ".fa, .fasta, .fna, .fas, .ffn, or .gz"
-                        : ".fa, .fasta, .faa, .fas, or .gz"}
+                      : ".fa, .fasta, .fna, .fas, .ffn, or .gz"}
                   </small>
                 </span>
                 <ChevronRight size={18} />
               </button>
               <input type="hidden" {...register("inputPath")} />
               {errors.inputPath ? <p className="field-error">{errors.inputPath.message}</p> : null}
+            </div>
+
+            <div className="field full">
+              <label htmlFor="gff-path">GFF3 annotation (optional)</label>
+              <div className="input-with-button">
+                <input
+                  id="gff-path"
+                  placeholder="Leave empty for six-frame genome annotation"
+                  {...register("gffPath")}
+                />
+                <button type="button" className="btn secondary" onClick={chooseGffAnnotation}>
+                  Browse
+                </button>
+                {gffPath ? (
+                  <button
+                    type="button"
+                    className="btn ghost"
+                    onClick={() => setValue("gffPath", "", { shouldValidate: true })}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              <small>
+                When supplied, FastNLR uses the longest CDS transcript per gene and skips six-frame translation.
+              </small>
             </div>
 
             <div className="field full">
@@ -485,7 +486,10 @@ export function NewRunPage() {
             </div>
 
             <div className="field">
-              <label htmlFor="threads">Threads</label>
+              <label htmlFor="threads">
+                Threads
+                <InfoHint text="Use the physical core count for the most predictable performance. Higher values do not guarantee faster runs." />
+              </label>
               <input
                 id="threads"
                 type="number"
@@ -529,10 +533,18 @@ export function NewRunPage() {
               <div className="form-grid three-column">
                 {mode === "genome" ? (
                   <>
-                    <Field label="Flank bases" error={errors.flank?.message}>
+                    <Field
+                      label="Flank bases"
+                      hint="Additional bases added around each locus when extracting the loci FASTA."
+                      error={errors.flank?.message}
+                    >
                       <input type="number" min={0} {...register("flank", { valueAsNumber: true })} />
                     </Field>
-                    <Field label="Fragments per batch" error={errors.seqsPerThread?.message}>
+                    <Field
+                      label="Fragments per batch"
+                      hint="Controls scan batch size and memory granularity."
+                      error={errors.seqsPerThread?.message}
+                    >
                       <input
                         type="number"
                         min={1}
@@ -542,19 +554,38 @@ export function NewRunPage() {
                     <Field label="Checkpoint directory">
                       <input placeholder="Optional" {...register("checkpointDir")} />
                     </Field>
-                    <Field label="Motif accept p" error={errors.motifAcceptP?.message}>
+                    <Field
+                      label="Motif accept p"
+                      hint="Final motif acceptance threshold. Larger values improve recall but may add weaker hits."
+                      error={errors.motifAcceptP?.message}
+                    >
                       <input {...register("motifAcceptP")} />
                     </Field>
-                    <Field label="Motif prefilter p" error={errors.motifPrelimP?.message}>
+                    <Field
+                      label="Motif prefilter p"
+                      hint="Cheap prefilter applied before full motif scoring."
+                      error={errors.motifPrelimP?.message}
+                    >
                       <input {...register("motifPrelimP")} />
                     </Field>
-                    <Field label="TIR accept p" error={errors.tirAcceptP?.message}>
+                    <Field
+                      label="TIR accept p"
+                      hint="TIR motifs use this stricter threshold to reduce weak domain calls."
+                      error={errors.tirAcceptP?.message}
+                    >
                       <input {...register("tirAcceptP")} />
                     </Field>
-                    <Field label="Flexible seed minimum">
+                    <Field
+                      label="Flexible seed minimum"
+                      hint="Minimum ordered NB-ARC motif count required for a flexible seed."
+                    >
                       <input type="number" min={1} {...register("flexibleSeed")} />
                     </Field>
-                    <Field label="Relaxed seed minimum" error={errors.relaxedSeed?.message}>
+                    <Field
+                      label="Relaxed seed minimum"
+                      hint="Legacy relaxed seeding mode. It requires flexible seeding to be disabled."
+                      error={errors.relaxedSeed?.message}
+                    >
                       <input
                         type="number"
                         min={1}
@@ -566,14 +597,12 @@ export function NewRunPage() {
                   </>
                 ) : (
                   <>
-                    <Field label="Proteins per batch" error={errors.batch?.message}>
+                    <Field
+                      label="Genes per batch"
+                      hint="Controls CDS extraction and HMM scan batch size."
+                      error={errors.batch?.message}
+                    >
                       <input type="number" min={1} {...register("batch", { valueAsNumber: true })} />
-                    </Field>
-                    <Field label="Motif accept p" error={errors.motifAcceptP?.message}>
-                      <input {...register("motifAcceptP")} />
-                    </Field>
-                    <Field label="Motif prefilter p" error={errors.motifPrelimP?.message}>
-                      <input {...register("motifPrelimP")} />
                     </Field>
                   </>
                 )}
@@ -608,7 +637,7 @@ export function NewRunPage() {
                   <div className="inline-heading">
                     <div>
                       <h3>Custom HMM files</h3>
-                      <p>Optional models are added to the five embedded Pfam profiles.</p>
+                      <p>Optional models are added to the 23 embedded Pfam HMM profiles.</p>
                     </div>
                     <button type="button" className="btn secondary small" onClick={chooseHmmFiles}>
                       <Plus size={16} />
@@ -641,24 +670,24 @@ export function NewRunPage() {
                 </div>
               )}
 
-              <div className="form-grid two-column advanced-files">
-                <Field label="Custom mot.txt">
-                  <div className="input-with-button">
-                    <input placeholder="Use embedded profile" {...register("motFile")} />
-                    <button type="button" className="btn ghost" onClick={() => chooseModelFiles("motFile")}>
-                      Browse
-                    </button>
-                  </div>
-                </Field>
-                <Field label="Custom store.txt">
-                  <div className="input-with-button">
-                    <input placeholder="Use embedded profile" {...register("storeFile")} />
-                    <button type="button" className="btn ghost" onClick={() => chooseModelFiles("storeFile")}>
-                      Browse
-                    </button>
-                  </div>
-                </Field>
-                {mode === "genome" ? (
+              {mode === "genome" ? (
+                <div className="form-grid two-column advanced-files">
+                  <Field label="Custom mot.txt">
+                    <div className="input-with-button">
+                      <input placeholder="Use embedded profile" {...register("motFile")} />
+                      <button type="button" className="btn ghost" onClick={() => chooseModelFiles("motFile")}>
+                        Browse
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label="Custom store.txt">
+                    <div className="input-with-button">
+                      <input placeholder="Use embedded profile" {...register("storeFile")} />
+                      <button type="button" className="btn ghost" onClick={() => chooseModelFiles("storeFile")}>
+                        Browse
+                      </button>
+                    </div>
+                  </Field>
                   <>
                     <Field label="Motif categories">
                       <input placeholder="21=CC,22=CC,25=TIR" {...register("motifCategories")} />
@@ -670,8 +699,8 @@ export function NewRunPage() {
                       <input placeholder="21,4;22,4" {...register("extraSignatures")} />
                     </Field>
                   </>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
@@ -682,11 +711,11 @@ export function NewRunPage() {
           <div>
             <Gauge size={18} />
             <span>
-              <strong>{mode === "genome" ? "Genome annotation" : "Protein classification"}</strong>
+              <strong>{mode === "genome" ? "Genome annotation" : "GFF3 protein annotation"}</strong>
               <small>
                 {mode === "genome"
-                  ? "Outputs include loci FASTA, GFF, BED, statistics, plots, and summary JSON."
-                  : "Outputs include domain hits, NLR candidates, and a run summary."}
+                  ? "Outputs include loci FASTA, GFF, BED, statistics, and summary JSON."
+                  : "Outputs include CDS/protein FASTA, domain evidence, NLR genes, GFF3, and summaries."}
               </small>
             </span>
           </div>
@@ -706,16 +735,21 @@ export function NewRunPage() {
 
 function Field({
   label,
+  hint,
   error,
   children,
 }: {
   label: string;
+  hint?: string;
   error?: string;
   children: ReactNode;
 }) {
   return (
     <div className="field">
-      <label>{label}</label>
+      <label>
+        {label}
+        {hint ? <InfoHint text={hint} /> : null}
+      </label>
       {children}
       {error ? <p className="field-error">{error}</p> : null}
     </div>

@@ -68,14 +68,12 @@ pub fn assemble(
     pre_nlrs.sort();
 
     let mut nlrs: Vec<MotifList> = Vec::new();
-    let mut suffix = 1usize;
-    for mut list in pre_nlrs {
+    for (suffix, mut list) in (1usize..).zip(pre_nlrs) {
         list.sort();
         // 去重：merge_seeds 合并重叠种子时会重复并入同一 motif（同一 id + 同一坐标），
         // 这里作为组装结果的唯一出口统一清理，保证位点内记录与坐标一一对应。
         list.remove_redundant_motifs();
         list.name = format!("{}_nlr{}", seq_id, suffix);
-        suffix += 1;
         nlrs.push(list);
     }
     nlrs

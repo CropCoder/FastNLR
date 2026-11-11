@@ -3,9 +3,10 @@
 //! 设计要点：
 //! - **结构域证据**：用 `hmmer-pure-rs`（HMMER 3.4 的纯 Rust 移植）扫描内置或用户提供的 Pfam
 //!   HMM，按 Pfam GA（gathering）位分阈值判定模型是否成立，同时给出 bitscore 与 p 值。
-//! - **LRR 证据**：由调用方用现有 PWM motif（motif_9/11）判定后以计数传入。实测 Pfam 的 7 个
-//!   LRR 模型联合灵敏度仅 47.5%，而 PWM 在同一金标准集上为 99.5%，故 LRR 不走 HMM。
-//! - **无基因组坐标**：蛋白模式没有坐标概念，输出为结构域表与架构表，不产生 GFF/BED/loci。
+//! - **有序结构域证据**：NB-ARC、TIR、CC 与 LRR 均来自通过 Pfam GA 的 HMM 命中。
+//!   LRR 只有位于 NB-ARC（无 NB-ARC 时为 TIR）之后才作为 C 端证据参与完整 NLR 判定。
+//! - **序列层坐标**：本 crate 输出蛋白上的 1-based 结构域坐标；GFF3 模式由 `nlr-cli`
+//!   将坐标映射到 CDS 和基因组区间。
 //!
 //! `hmmer-pure-rs` 精确锁定 0.7.4（`=` 版本约束）：其得分直接参与回归测试，禁止静默升级。
 
@@ -20,11 +21,15 @@ use hmmer_pure_rs::{Alphabet, Bg, Hmm, OProfile, Pipeline, Profile, TopHits};
 /// 复用 `nlr-core` 的结构域类别枚举，保证与 DNA 模式的类别串一致。
 pub use nlr_core::signature_def::DomainCategory;
 
-/// 内置精选模型：(accession, 名称, 类别, HMM 文本)。
+/// 内置模型库版本。
+pub const MODEL_LIBRARY_VERSION: &str = "FastNLR-Pfam-HMM-23-2026-11-11";
+
+/// 内置模型：(accession, 名称, 类别, HMM 文本)。
 ///
 /// 取自 InterPro/Pfam 的 HMM（见 `data/README.md` 与 `data/fetch_hmms.py`）：
 /// NB-ARC 与 TIR 是 NLR 的核心结构域；Rx_N 覆盖 CNL 型 CC，RPW8 覆盖 RNL/helper 型 CC。
-pub const EMBEDDED_MODELS: [(&str, &str, DomainCategory, &str); 5] = [
+/// LRR 重复和 LRR 端域模型只提供位置明确的 LRR 证据，分类仍使用统一的有序域规则。
+pub const EMBEDDED_MODELS: [(&str, &str, DomainCategory, &str); 23] = [
     (
         "PF00931",
         "NB-ARC",
@@ -54,6 +59,114 @@ pub const EMBEDDED_MODELS: [(&str, &str, DomainCategory, &str); 5] = [
         "R1-type",
         DomainCategory::Cc,
         include_str!("../data/PF12061.hmm"),
+    ),
+    (
+        "PF00560",
+        "LRR_1",
+        DomainCategory::Lrr,
+        include_str!("../data/PF00560.hmm"),
+    ),
+    (
+        "PF07723",
+        "LRR_2",
+        DomainCategory::Lrr,
+        include_str!("../data/PF07723.hmm"),
+    ),
+    (
+        "PF07725",
+        "LRR_3",
+        DomainCategory::Lrr,
+        include_str!("../data/PF07725.hmm"),
+    ),
+    (
+        "PF12799",
+        "LRR_4",
+        DomainCategory::Lrr,
+        include_str!("../data/PF12799.hmm"),
+    ),
+    (
+        "PF13516",
+        "LRR_6",
+        DomainCategory::Lrr,
+        include_str!("../data/PF13516.hmm"),
+    ),
+    (
+        "PF13855",
+        "LRR_8",
+        DomainCategory::Lrr,
+        include_str!("../data/PF13855.hmm"),
+    ),
+    (
+        "PF14580",
+        "LRR_9",
+        DomainCategory::Lrr,
+        include_str!("../data/PF14580.hmm"),
+    ),
+    (
+        "PF18805",
+        "LRR_10",
+        DomainCategory::Lrr,
+        include_str!("../data/PF18805.hmm"),
+    ),
+    (
+        "PF18831",
+        "LRR_11",
+        DomainCategory::Lrr,
+        include_str!("../data/PF18831.hmm"),
+    ),
+    (
+        "PF18837",
+        "LRR_12",
+        DomainCategory::Lrr,
+        include_str!("../data/PF18837.hmm"),
+    ),
+    (
+        "PF23598",
+        "LRR_14",
+        DomainCategory::Lrr,
+        include_str!("../data/PF23598.hmm"),
+    ),
+    (
+        "PF24969",
+        "LRR_15",
+        DomainCategory::Lrr,
+        include_str!("../data/PF24969.hmm"),
+    ),
+    (
+        "PF23247",
+        "LRR_RPS2",
+        DomainCategory::Lrr,
+        include_str!("../data/PF23247.hmm"),
+    ),
+    (
+        "PF23286",
+        "LRR_13",
+        DomainCategory::Lrr,
+        include_str!("../data/PF23286.hmm"),
+    ),
+    (
+        "PF01462",
+        "LRRNT",
+        DomainCategory::Lrr,
+        include_str!("../data/PF01462.hmm"),
+    ),
+    (
+        "PF08263",
+        "LRRNT_2",
+        DomainCategory::Lrr,
+        include_str!("../data/PF08263.hmm"),
+    ),
+    (
+        "PF01463",
+        "LRRCT",
+        DomainCategory::Lrr,
+        include_str!("../data/PF01463.hmm"),
+    ),
+    (
+        "PF16920",
+        "LRRCT_2",
+        DomainCategory::Lrr,
+        include_str!("../data/PF16920.hmm"),
     ),
 ];
 
@@ -113,10 +226,13 @@ pub struct NlrArchitecture {
     pub nterm: String,
     pub has_nbarc: bool,
     pub has_tir: bool,
-    pub has_lrr: bool,
-    // 完整性判定暂时禁用：不再输出蛋白模式的 complete 字段。
-    // pub complete: bool,
-    /// 是否算 NLR 候选：含 NB-ARC，或含 TIR 且含 LRR。
+    /// 任意位置存在通过 GA 的 LRR 命中（包含错误的 N 端位置）。
+    pub has_lrr_any: bool,
+    /// 存在位于 NB-ARC（无 NB-ARC 时位于 TIR）结构域块之后的 LRR。
+    pub has_cterm_lrr: bool,
+    /// 存在 NB-ARC 且存在 C 端 LRR；不等同于生物学 family。
+    pub complete: bool,
+    /// 是否算 NLR 候选：含 NB-ARC，或含 TIR 且含 C 端 LRR。
     pub is_nlr: bool,
 }
 
@@ -126,6 +242,9 @@ pub fn category_for_accession(acc: &str) -> DomainCategory {
         "PF00931" => DomainCategory::Nbarc,
         "PF01582" => DomainCategory::Tir,
         "PF18052" | "PF05659" | "PF12061" => DomainCategory::Cc,
+        "PF00560" | "PF07723" | "PF07725" | "PF12799" | "PF13516" | "PF13855" | "PF14580"
+        | "PF18805" | "PF18831" | "PF18837" | "PF23598" | "PF24969" | "PF23247" | "PF23286"
+        | "PF01462" | "PF08263" | "PF01463" | "PF16920" => DomainCategory::Lrr,
         _ => DomainCategory::Na,
     }
 }
@@ -195,7 +314,26 @@ impl HmmLibrary {
 
     /// 构造扫描器；**必须在实际使用它的线程内调用**（`OProfile` 既不是 `Clone` 也不是 `Send`）。
     pub fn scanner(&self) -> Scanner {
-        let template = &self.models[0].hmm;
+        self.scanner_for(|_| true)
+    }
+
+    /// 只扫描核心结构域，避免 DNA 模式的六框 N 端补全执行高成本 LRR 模型。
+    pub fn core_scanner(&self) -> Scanner {
+        self.scanner_for(|model| model.category != DomainCategory::Lrr)
+    }
+
+    /// 构造两阶段蛋白扫描器：所有蛋白扫描核心域，仅 NLR 候选追加扫描 LRR。
+    pub fn protein_scanner(&self) -> ProteinScanner {
+        ProteinScanner {
+            core: self.core_scanner(),
+            lrr: self.scanner_for(|model| model.category == DomainCategory::Lrr),
+        }
+    }
+
+    fn scanner_for(&self, include: impl Fn(&DomainModel) -> bool) -> Scanner {
+        let selected: Vec<&DomainModel> =
+            self.models.iter().filter(|model| include(model)).collect();
+        let template = &selected[0].hmm;
         let abc = Alphabet::new(template.abc_type);
         let bg = Bg::new(&abc);
         let mut pli = Pipeline::new();
@@ -205,8 +343,7 @@ impl HmmLibrary {
         pli.e_value_threshold = 10.0;
         pli.dom_e_value_threshold = 10.0;
 
-        let prepared = self
-            .models
+        let prepared = selected
             .iter()
             .map(|m| {
                 let mut gm = Profile::new(m.hmm.m, &abc);
@@ -231,6 +368,28 @@ impl HmmLibrary {
             pli,
             prepared,
         }
+    }
+}
+
+/// 线程本地的两阶段蛋白扫描器。
+pub struct ProteinScanner {
+    core: Scanner,
+    lrr: Scanner,
+}
+
+impl ProteinScanner {
+    /// 先扫描核心域；只有含通过 GA 的 NB-ARC 或 TIR 时才扫描 LRR 模型。
+    pub fn scan_protein(&mut self, protein_id: &str, seq: &str) -> Vec<DomainHit> {
+        let mut hits = self.core.scan_protein(protein_id, seq);
+        if hits.iter().any(|hit| {
+            hit.passed && matches!(hit.category, DomainCategory::Nbarc | DomainCategory::Tir)
+        }) {
+            hits.extend(self.lrr.scan_protein(protein_id, seq));
+            hits.sort_by(|a, b| {
+                (a.start, a.end, &a.model_acc).cmp(&(b.start, b.end, &b.model_acc))
+            });
+        }
+        hits
     }
 }
 
@@ -319,26 +478,20 @@ fn parse_hmms(text: &str) -> Result<Vec<Hmm>, String> {
 /// 依据结构域证据判定 NLR 架构。
 ///
 /// - 只有 `passed` 的 HMM 命中参与判定；
-/// - `lrr_hits` 是调用方用 PWM motif 得到的 LRR 命中数（>=1 即视为含 LRR）；
 /// - 类别串与 DNA 模式共用 `nlr_core::signature_def::canonical_domain_string`（有序域模型），
 ///   保证同一基因在两种模式下判定口径一致。
-pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
+pub fn classify(hmm_hits: &[DomainHit]) -> NlrArchitecture {
     let mut passed: Vec<&DomainHit> = hmm_hits.iter().filter(|h| h.passed).collect();
-    passed.sort_by(|a, b| (a.start, a.end).cmp(&(b.start, b.end)));
+    passed.sort_by(|a, b| (a.start, a.end, &a.model_acc).cmp(&(b.start, b.end, &b.model_acc)));
 
     let has_nbarc = passed.iter().any(|h| h.category == DomainCategory::Nbarc);
     let has_tir = passed.iter().any(|h| h.category == DomainCategory::Tir);
-    let has_lrr = lrr_hits > 0;
+    let has_lrr_any = passed.iter().any(|h| h.category == DomainCategory::Lrr);
+    let has_cterm_lrr = passed_lrr_is_cterm(&passed);
     let selected_nterm_rpw8 = selected_nterm_uses_rpw8(&passed);
 
-    // 按位置构造类别序列；LRR 来自 PWM（无位置信息），按 C 端证据追加。
-    let mut cats: Vec<DomainCategory> = passed.iter().map(|h| h.category).collect();
-    let mut scores: Vec<f64> = passed.iter().map(|h| h.bitscore as f64).collect();
-    if has_lrr {
-        cats.push(DomainCategory::Lrr);
-        // LRR 证据位于 C 端，不参与 N 端仲裁，权重用 -inf 占位。
-        scores.push(f64::NEG_INFINITY);
-    }
+    let cats: Vec<DomainCategory> = passed.iter().map(|h| h.category).collect();
+    let scores: Vec<f64> = passed.iter().map(|h| h.bitscore as f64).collect();
     let (nterm_cat, class) = nlr_core::signature_def::canonical_domain_string_with_scores(
         &cats,
         Some(&scores),
@@ -370,10 +523,39 @@ pub fn classify(hmm_hits: &[DomainHit], lrr_hits: usize) -> NlrArchitecture {
         nterm,
         has_nbarc,
         has_tir,
-        has_lrr,
-        // complete: has_nbarc && has_lrr,
-        is_nlr: has_nbarc || (has_tir && has_lrr),
+        has_lrr_any,
+        has_cterm_lrr,
+        complete: has_nbarc && has_cterm_lrr,
+        is_nlr: has_nbarc || (has_tir && has_cterm_lrr),
     }
+}
+
+/// C 端 LRR 必须位于首个 NB-ARC 块之后；若没有 NB-ARC，则以首个 TIR 块为锚点。
+fn passed_lrr_is_cterm(passed: &[&DomainHit]) -> bool {
+    let (anchor_category, anchor) = if let Some(index) = passed
+        .iter()
+        .position(|hit| hit.category == DomainCategory::Nbarc)
+    {
+        (DomainCategory::Nbarc, index)
+    } else if let Some(index) = passed
+        .iter()
+        .position(|hit| hit.category == DomainCategory::Tir)
+    {
+        (DomainCategory::Tir, index)
+    } else {
+        return false;
+    };
+
+    let anchor_end = passed[anchor..]
+        .iter()
+        .take_while(|hit| hit.category == anchor_category)
+        .map(|hit| hit.end)
+        .max()
+        .unwrap_or(passed[anchor].end);
+    passed
+        .iter()
+        .skip(anchor + 1)
+        .any(|hit| hit.category == DomainCategory::Lrr && hit.start > anchor_end)
 }
 
 /// Whether the N-terminal CC evidence selected by the ordered-domain model contains RPW8.

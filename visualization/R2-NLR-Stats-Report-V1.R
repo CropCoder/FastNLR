@@ -52,11 +52,12 @@ if (length(summary_file) != 1) {
   stop("输入目录中需恰好一个 summary.json：", input_dir)
 }
 report <- fromJSON(summary_file[1], simplifyVector = FALSE)
+nlr_complete <- if (is.null(report$nlr_complete)) NA_integer_ else as.integer(report$nlr_complete)
 
 # 1. 全局数量与完整度
 counts <- data.frame(
   metric = c("Motifs", "NLR loci", "Complete NLR"),
-  value = c(report$motif_total, report$nlr_total, report$nlr_complete),
+  value = c(report$motif_total, report$nlr_total, nlr_complete),
   stringsAsFactors = FALSE
 )
 p_counts <- ggplot(counts, aes(x = metric, y = value, fill = metric)) +
@@ -110,10 +111,11 @@ ggsave(file.path(out_dir, "NLR-Stats-Composition.pdf"), p_comp,
 
 # 3. 各染色体数量统计
 chr_df <- do.call(rbind, lapply(names(report$per_chromosome), function(chr) {
+  complete_nlrs <- report$per_chromosome[[chr]]$complete_nlrs
   data.frame(
     chr = chr,
     nlrs = report$per_chromosome[[chr]]$nlrs,
-    complete = report$per_chromosome[[chr]]$complete_nlrs,
+    complete = if (is.null(complete_nlrs)) NA_integer_ else as.integer(complete_nlrs),
     stringsAsFactors = FALSE
   )
 }))

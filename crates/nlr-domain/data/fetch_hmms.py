@@ -17,7 +17,34 @@ import os
 import sys
 import urllib.request
 
-MODELS = ["PF00931", "PF01582", "PF18052", "PF05659", "PF12061"]
+CORE_MODELS = {"PF00931", "PF01582", "PF18052", "PF05659", "PF12061"}
+MODELS = [
+    # Core NLR architecture markers
+    "PF00931",
+    "PF01582",
+    "PF18052",
+    "PF05659",
+    "PF12061",
+    # LRR repeat and terminal-domain markers
+    "PF00560",
+    "PF07723",
+    "PF07725",
+    "PF12799",
+    "PF13516",
+    "PF13855",
+    "PF14580",
+    "PF18805",
+    "PF18831",
+    "PF18837",
+    "PF23598",
+    "PF24969",
+    "PF23247",
+    "PF23286",
+    "PF01462",
+    "PF08263",
+    "PF01463",
+    "PF16920",
+]
 URL = "https://www.ebi.ac.uk/interpro/wwwapi/entry/pfam/{acc}/?annotation=hmm"
 
 
@@ -34,12 +61,16 @@ def fetch(acc: str) -> bytes:
 def main() -> int:
     outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
     os.makedirs(outdir, exist_ok=True)
+    refresh_core = os.environ.get("FASTNLR_REFRESH_CORE") == "1"
     for acc in MODELS:
+        path = os.path.join(outdir, f"{acc}.hmm")
+        if acc in CORE_MODELS and os.path.exists(path) and not refresh_core:
+            print(f"{path}  (kept pinned core model; set FASTNLR_REFRESH_CORE=1 to replace)")
+            continue
         text = fetch(acc)
         header = text.split(b"\n", 1)[0]
         if not header.startswith(b"HMMER3"):
             print(f"warning: {acc} 的响应不像 HMMER3 文件: {header[:40]!r}", file=sys.stderr)
-        path = os.path.join(outdir, f"{acc}.hmm")
         with open(path, "wb") as fh:
             fh.write(text)
         print(f"{path}  ({len(text)} bytes)")

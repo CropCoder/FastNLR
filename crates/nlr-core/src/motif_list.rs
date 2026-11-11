@@ -100,13 +100,12 @@ impl MotifList {
         self.sort();
     }
 
-    // 完整性判定暂时禁用：不再输出“完整 NLR”结论。
-    // 原逻辑为「同时含 P-loop（motif_1）与 LRR 类 motif」，后续需要恢复时取消注释即可。
-    // pub fn is_complete_nlr(&self, def: &AnnotatorSignatureDefinition) -> bool {
-    //     let has_ploop = self.motifs.iter().any(|m| def.is_ploop(m.id));
-    //     let has_lrr = self.motifs.iter().any(|m| def.is_lrr(m.id));
-    //     has_ploop && has_lrr
-    // }
+    /// DNA 模式完整 NLR：同时包含 P-loop（motif_1）和至少一个 LRR 类 motif。
+    pub fn is_complete_nlr(&self, def: &AnnotatorSignatureDefinition) -> bool {
+        let has_ploop = self.motifs.iter().any(|m| def.is_ploop(m.id));
+        let has_lrr = self.motifs.iter().any(|m| def.is_lrr(m.id));
+        has_ploop && has_lrr
+    }
 
     /// Whether it contains a stop codon.
     pub fn has_stop_codon(&self) -> bool {

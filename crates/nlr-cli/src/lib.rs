@@ -14,6 +14,13 @@ use nlr_core::signature_def::{AnnotatorSignatureDefinition, DomainCategory, Flex
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub mod annotation;
+
+pub use annotation::{
+    annotation_meta, run_annotation, run_annotation_tracked, write_annotation_outputs,
+    AnnotationConfig, AnnotationDomain, AnnotationRecord, AnnotationResult, AnnotationRunMeta,
+    GenomicPiece,
+};
 pub use nlr_core::locus_filter::LocusFilterConfig;
 
 /// 柔性播种的默认 NB-ARC motif 门槛（`--flexible-seed` 未显式给值时生效）。
@@ -85,7 +92,7 @@ pub fn annotate_hmm_nterm(
     def: &AnnotatorSignatureDefinition,
     library: &nlr_domain::HmmLibrary,
 ) -> usize {
-    let mut scanner = library.scanner();
+    let mut scanner = library.core_scanner();
     let mut annotated = 0usize;
     for contig in contigs {
         annotated += annotate_hmm_nterm_contig(&mut scanner, nlrs, contig, def);
@@ -136,7 +143,7 @@ pub fn annotate_hmm_nterm_contig(
             if !nbarc_best.is_finite() {
                 continue;
             }
-            let arch = nlr_domain::classify(&hits, 0);
+            let arch = nlr_domain::classify(&hits);
             let nterm = match arch.nterm.as_str() {
                 "CC" => Some(DomainCategory::Cc),
                 "TIR" => Some(DomainCategory::Tir),
@@ -478,8 +485,10 @@ pub fn run(config: &RunConfig) -> std::io::Result<RunResult> {
 /// 运行过程中的进度快照（供 GUI/Web 复用）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunProgress {
-    /// 已完成扫描的片段数。
+    /// DNA 模式为已完成片段数；GFF 模式为已完成基因数。
     pub scanned_fragments: u64,
+    /// GFF 模式在解析注释后给出的准确基因数；DNA 模式为 0。
+    pub estimated_total: u64,
 }
 
 /// 进度回调返回的控制信号。
@@ -496,6 +505,9 @@ pub fn run_with_progress(
 ) -> std::io::Result<RunResult> {
     run_tracked(config, |p| {
         if let Some(pb) = progress {
+            if p.estimated_total > 0 && pb.length() != Some(p.estimated_total) {
+                pb.set_length(p.estimated_total);
+            }
             pb.set_position(p.scanned_fragments);
         }
         RunControl::Continue
@@ -643,6 +655,7 @@ pub fn run_tracked(
         scanned += chunk_len;
         let control = on_progress(RunProgress {
             scanned_fragments: scanned,
+            estimated_total: 0,
         });
         if matches!(control, RunControl::Break)
             || interrupted.load(std::sync::atomic::Ordering::SeqCst)
@@ -950,8 +963,9 @@ pub fn write_genome_outputs(
     // 第一步：逐 contig 做 HMM N 端补充。必须先完成全部 contig 的注释，再执行高精度过滤，
     // 保证过滤基于最终域串，而不是未补全的 PWM 域串。
     let library = nlr_domain::HmmLibrary::from_embedded();
-    let mut scanner = library.scanner();
+    let mut scanner = library.core_scanner();
     let mut annotated = 0usize;
+    let mut sequence_lengths = std::collections::BTreeMap::new();
     let mut reader = nlr_seq::fasta::FastaReader::from_file(input_fasta).map_err(|e| {
         std::io::Error::other(format!(
             "cannot open genome {} for loci/HMM output: {}",
@@ -960,6 +974,7 @@ pub fn write_genome_outputs(
         ))
     })?;
     while let Some(contig) = reader.read_entry()? {
+        sequence_lengths.insert(contig.identifier.clone(), contig.sequence.len() as u64);
         annotated +=
             annotate_hmm_nterm_contig(&mut scanner, &mut result.nlrs, &contig, &result.def);
     }
@@ -1047,7 +1062,12 @@ pub fn write_genome_outputs(
     written.push(p);
 
     // 机器可读汇总 summary.json（GUI/Web/R 的统一数据源）。
-    let report = nlr_report::build_summary_report(&result.motifs_by_seq, nlrs, def);
+    let report = nlr_report::build_summary_report_with_lengths(
+        &result.motifs_by_seq,
+        nlrs,
+        def,
+        &sequence_lengths,
+    );
     let (p, mut f) = create(".summary.json")?;
     nlr_report::write_summary_json(&mut f, &report)
         .map_err(|e| std::io::Error::other(format!("write {} failed: {}", p.display(), e)))?;
@@ -1172,374 +1192,6 @@ fn load_checkpoint(
         def,
         gff_date: Some(manifest.created_at),
     }))
-}
-
-// =====================================================================================
-// 蛋白模式（--protein）：HMMER 结构域扫描 + PWM LRR 判定，输出独立结果集（无基因组坐标）
-// =====================================================================================
-
-/// 蛋白模式运行配置。
-#[derive(Debug, Clone)]
-pub struct ProteinConfig {
-    pub input_fasta: PathBuf,
-    /// 用户追加/覆盖的 HMM 文件（可含多个模型）。
-    pub hmm_files: Vec<PathBuf>,
-    pub mot_file: Option<PathBuf>,
-    pub store_file: Option<PathBuf>,
-    pub threads: usize,
-    /// 每批处理的蛋白条数（控制内存与进度粒度）。
-    pub batch: usize,
-    /// LRR PWM 的最终接受阈值。
-    pub motif_accept_p: f64,
-    /// LRR PWM 的预筛阈值。
-    pub motif_prelim_p: f64,
-}
-
-impl ProteinConfig {
-    pub fn new(input_fasta: PathBuf) -> Self {
-        ProteinConfig {
-            input_fasta,
-            hmm_files: Vec::new(),
-            mot_file: None,
-            store_file: None,
-            threads: std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1),
-            batch: 256,
-            motif_accept_p: 1e-5,
-            motif_prelim_p: 1e-4,
-        }
-    }
-
-    pub fn validate(&self) -> std::io::Result<()> {
-        let invalid =
-            |message: String| std::io::Error::new(std::io::ErrorKind::InvalidInput, message);
-        if self.threads == 0 {
-            return Err(invalid("thread count must be greater than 0".into()));
-        }
-        if self.batch == 0 {
-            return Err(invalid("batch size must be greater than 0".into()));
-        }
-        for (name, p) in [
-            ("motif_accept_p", self.motif_accept_p),
-            ("motif_prelim_p", self.motif_prelim_p),
-        ] {
-            if !p.is_finite() || p <= 0.0 || p > 1.0 {
-                return Err(invalid(format!("{name} must be finite and within (0,1]")));
-            }
-        }
-        if self.motif_prelim_p < self.motif_accept_p {
-            return Err(invalid(format!(
-                "motif_prelim_p ({}) must be >= motif_accept_p ({})",
-                self.motif_prelim_p, self.motif_accept_p
-            )));
-        }
-        Ok(())
-    }
-}
-
-/// 单条蛋白的判定结果。
-pub struct ProteinRecord {
-    pub id: String,
-    pub length: usize,
-    pub arch: nlr_domain::NlrArchitecture,
-    /// 全部被 HMMER 报告的结构域命中（含未通过 GA 的，写入 domains.tsv）。
-    pub hits: Vec<nlr_domain::DomainHit>,
-    /// PWM 的 LRR 命中：(motif id, start, end, pvalue)，坐标均为蛋白上的 1-based 闭区间。
-    pub lrr_sites: Vec<(u8, usize, usize, f64)>,
-}
-
-impl ProteinRecord {
-    /// 通过 GA 的 HMM 命中，按位置排序。
-    pub fn passed_domains(&self) -> Vec<&nlr_domain::DomainHit> {
-        self.hits.iter().filter(|h| h.passed).collect()
-    }
-}
-
-/// 蛋白模式整体结果。
-pub struct ProteinResult {
-    /// 全部输入蛋白的判定，按 id 排序（并行扫描后统一排序，保证输出可复现）。
-    pub records: Vec<ProteinRecord>,
-    /// 内置 + 用户模型的展示串，例如 `PF00931(NB-ARC)`。
-    pub model_labels: Vec<String>,
-}
-
-/// 蛋白模式运行元信息（用于写摘要）。
-pub struct ProteinRunMeta {
-    pub input_name: String,
-    pub threads: usize,
-    pub elapsed: std::time::Duration,
-    pub lrr_threshold: f64,
-    pub hmm_files: Vec<String>,
-}
-
-/// 蛋白模式主流程：读蛋白 FASTA → 并行结构域扫描 → 汇总。
-pub fn run_protein(
-    config: &ProteinConfig,
-    progress: Option<&indicatif::ProgressBar>,
-) -> std::io::Result<ProteinResult> {
-    run_protein_tracked(config, |p| {
-        if let Some(pb) = progress {
-            pb.set_position(p.scanned_fragments);
-        }
-        RunControl::Continue
-    })
-}
-
-/// 蛋白模式主流程（带进度/取消回调）。
-pub fn run_protein_tracked(
-    config: &ProteinConfig,
-    mut on_progress: impl FnMut(RunProgress) -> RunControl,
-) -> std::io::Result<ProteinResult> {
-    config.validate()?;
-    // 1) 模型库：内置 4 个精选 Pfam 模型 + 用户 --hmm 覆盖/追加。
-    let mut library = nlr_domain::HmmLibrary::from_embedded();
-    for path in &config.hmm_files {
-        let added = library.add_file(path)?;
-        tracing::info!("loaded {added} domain model(s) from {}", path.display());
-    }
-    let model_labels: Vec<String> = library
-        .models()
-        .iter()
-        .map(|m| format!("{}({})", m.acc, m.name))
-        .collect();
-
-    // 2) LRR 用现有 PWM（motif 9/11），与 DNA 模式共用同一份表与阈值。
-    let (mot, store) = load_profile_text(&config.mot_file, &config.store_file)?;
-    let definition = nlr_config::MotifDefinition::load_from_str(&mot, &store)?;
-    let parser = std::sync::Arc::new(nlr_scan::MotifParser::with_thresholds(
-        definition,
-        config.motif_prelim_p,
-        config.motif_accept_p,
-    ));
-    let signature_def = nlr_core::signature_def::AnnotatorSignatureDefinition::new();
-
-    // 3) 流式读蛋白 + 批量并行扫描（扫描器在工作线程内构造，OProfile 不是 Send）。
-    let mut reader = nlr_seq::fasta::FastaReader::from_file(&config.input_fasta)?;
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(config.threads.max(1))
-        .build()
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-
-    let batch_size = config.batch.max(1);
-    let mut records: Vec<ProteinRecord> = Vec::new();
-    let mut scanned = 0u64;
-    loop {
-        let mut batch: Vec<nlr_seq::translate::BioSequence> = Vec::with_capacity(batch_size);
-        while batch.len() < batch_size {
-            match reader.read_entry()? {
-                Some(seq) => batch.push(seq),
-                None => break,
-            }
-        }
-        if batch.is_empty() {
-            break;
-        }
-
-        let batch_records: Vec<ProteinRecord> = pool.install(|| {
-            use rayon::prelude::*;
-            batch
-                .par_iter()
-                .map_init(
-                    || library.scanner(),
-                    |scanner, seq| scan_one_protein(scanner, &parser, &signature_def, seq),
-                )
-                .collect()
-        });
-        scanned += batch_records.len() as u64;
-        records.extend(batch_records);
-        if matches!(
-            on_progress(RunProgress {
-                scanned_fragments: scanned,
-            }),
-            RunControl::Break
-        ) {
-            break;
-        }
-    }
-
-    records.sort_by(|a, b| a.id.cmp(&b.id));
-    tracing::info!("protein scan complete: {scanned} sequences");
-    Ok(ProteinResult {
-        records,
-        model_labels,
-    })
-}
-
-/// 扫描单条蛋白：HMM 结构域 + PWM LRR → 架构判定。
-fn scan_one_protein(
-    scanner: &mut nlr_domain::Scanner,
-    parser: &nlr_scan::MotifParser,
-    signature_def: &nlr_core::signature_def::AnnotatorSignatureDefinition,
-    seq: &nlr_seq::translate::BioSequence,
-) -> ProteinRecord {
-    let hits = scanner.scan_protein(&seq.identifier, &seq.sequence);
-
-    // PWM 只取 LRR 类 motif（默认 motif_9 / motif_11），find_motifs 内部已按 accept 阈值过滤。
-    let list = parser.find_motifs(&seq.identifier, &seq.sequence);
-    let mut lrr_sites: Vec<(u8, usize, usize, f64)> = list
-        .motifs
-        .iter()
-        .filter(|m| signature_def.is_lrr(m.id))
-        .map(|m| {
-            let start = m.position as usize;
-            let end = start + m.protein_sequence.len().saturating_sub(1);
-            (m.id, start, end, m.pvalue)
-        })
-        .collect();
-    lrr_sites.sort_by_key(|(_, s, e, _)| (*s, *e));
-
-    let arch = nlr_domain::classify(&hits, lrr_sites.len());
-    ProteinRecord {
-        id: seq.identifier.clone(),
-        length: seq.sequence.len(),
-        arch,
-        hits,
-        lrr_sites,
-    }
-}
-
-/// 写出蛋白模式结果集（domains.tsv / nlr.tsv / summary.txt）。
-pub fn write_protein_outputs(
-    output_dir: &std::path::Path,
-    prefix: &str,
-    result: &ProteinResult,
-    meta: &ProteinRunMeta,
-) -> std::io::Result<Vec<PathBuf>> {
-    use std::collections::BTreeMap;
-    use std::io::Write as _;
-
-    std::fs::create_dir_all(output_dir)?;
-    let mut written: Vec<PathBuf> = Vec::new();
-
-    // 结构域明细：HMM 命中 + PWM LRR 命中。
-    let p = output_dir.join(format!("{prefix}.domains.tsv"));
-    let mut f = std::fs::File::create(&p)?;
-    writeln!(
-        f,
-        "#protein_id\tsource\tmodel\tmodel_name\tcategory\tstart\tend\tbitscore\tpvalue\tpassed"
-    )?;
-    for r in &result.records {
-        for h in &r.hits {
-            writeln!(
-                f,
-                "{}\thmm\t{}\t{}\t{}\t{}\t{}\t{:.1}\t{}\t{}",
-                r.id,
-                h.model_acc,
-                h.model_name,
-                h.category.as_str(),
-                h.start,
-                h.end,
-                h.bitscore,
-                nlr_core::motif::format_double_java(h.pvalue),
-                h.passed
-            )?;
-        }
-        for (id, start, end, pvalue) in &r.lrr_sites {
-            writeln!(
-                f,
-                "{}\tpwm\tmotif_{}\tLRR\tLRR\t{}\t{}\t.\t{}\ttrue",
-                r.id,
-                id,
-                start,
-                end,
-                nlr_core::motif::format_double_java(*pvalue)
-            )?;
-        }
-    }
-    written.push(p);
-
-    // NLR 候选汇总。
-    let p = output_dir.join(format!("{prefix}.nlr.tsv"));
-    let mut f = std::fs::File::create(&p)?;
-    writeln!(
-        f,
-        "#protein_id\tlength\tclass\tnterm\thas_nbarc\thas_tir\thas_lrr\tn_domains\tdomains\tfamily"
-    )?;
-    let mut type_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut family_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut nlr_total = 0usize;
-    for r in &result.records {
-        let passed = r.passed_domains();
-        if !r.arch.is_nlr {
-            continue;
-        }
-        nlr_total += 1;
-        *type_counts.entry(r.arch.class.clone()).or_default() += 1;
-        *family_counts.entry(r.arch.family.clone()).or_default() += 1;
-
-        // 结构域摘要：HMM 通过 GA 的命中 + LRR 位点，按起点排序。
-        let mut items: Vec<(usize, String)> = passed
-            .iter()
-            .map(|h| (h.start, format!("{}:{}-{}", h.model_name, h.start, h.end)))
-            .collect();
-        items.extend(
-            r.lrr_sites
-                .iter()
-                .map(|(id, s, e, _)| (*s, format!("motif_{id}:{s}-{e}"))),
-        );
-        items.sort();
-        let domains = items
-            .iter()
-            .map(|(_, s)| s.clone())
-            .collect::<Vec<_>>()
-            .join(";");
-        writeln!(
-            f,
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            r.id,
-            r.length,
-            r.arch.class,
-            r.arch.nterm,
-            r.arch.has_nbarc,
-            r.arch.has_tir,
-            r.arch.has_lrr,
-            items.len(),
-            domains,
-            r.arch.family
-        )?;
-    }
-    written.push(p);
-
-    // 运行摘要。
-    use std::fmt::Write as _;
-    let mut s = String::new();
-    let _ = writeln!(s, "# FastNLR protein-mode run summary");
-    let _ = writeln!(s, "# input file\t{}", meta.input_name);
-    let _ = writeln!(s, "# threads\t{}", meta.threads);
-    let _ = writeln!(s, "# elapsed\t{:.2}s", meta.elapsed.as_secs_f64());
-    let _ = writeln!(s, "# domain models\t{}", result.model_labels.join(", "));
-    if !meta.hmm_files.is_empty() {
-        let _ = writeln!(s, "# user HMM files\t{}", meta.hmm_files.join(", "));
-    }
-    let _ = writeln!(
-        s,
-        "# LRR model\tPWM motif_9/motif_11 (p < {})",
-        meta.lrr_threshold
-    );
-    let _ = writeln!(s, "# proteins scanned\t{}", result.records.len());
-    let _ = writeln!(s, "# NLR candidates\t{}", nlr_total);
-    let _ = writeln!(s, "# NLR types (count desc):");
-    let mut types: Vec<(&String, &usize)> = type_counts.iter().collect();
-    types.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    for (class, count) in types {
-        let _ = writeln!(s, "# {}\t{}", count, class);
-    }
-    let _ = writeln!(s, "# NLR families (count desc):");
-    let mut families: Vec<(&String, &usize)> = family_counts.iter().collect();
-    families.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    for (family, count) in families {
-        let _ = writeln!(s, "# {}\t{}", count, family);
-    }
-    let _ = writeln!(s, "# output files:");
-    for path in &written {
-        let _ = writeln!(s, "# {}", path.display());
-    }
-    let p = output_dir.join(format!("{prefix}.summary.txt"));
-    std::fs::write(&p, &s)?;
-    written.push(p);
-
-    Ok(written)
 }
 
 #[cfg(test)]

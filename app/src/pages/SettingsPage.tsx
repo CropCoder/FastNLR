@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
+import { InfoHint } from "../components/InfoHint";
 import { pickDirectory } from "../lib/bridge";
 import { useAppStore } from "../store/appStore";
 
@@ -65,7 +66,10 @@ export function SettingsPage() {
           </div>
           <div className="settings-form">
             <div className="field">
-              <label htmlFor="default-threads">Default threads</label>
+              <label htmlFor="default-threads">
+                Default threads
+                <InfoHint text="Applied to new runs. Existing runs keep their saved thread count." />
+              </label>
               <input
                 id="default-threads"
                 type="number"
@@ -77,7 +81,10 @@ export function SettingsPage() {
               <small>This system reports {runtime?.logicalCpus ?? 1} logical CPUs.</small>
             </div>
             <div className="field">
-              <label htmlFor="default-output">Default output directory</label>
+              <label htmlFor="default-output">
+                Default output directory
+                <InfoHint text="Leave blank to create a result folder beside the selected input FASTA." />
+              </label>
               <div className="input-with-button">
                 <input
                   id="default-output"

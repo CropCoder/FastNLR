@@ -1,6 +1,6 @@
 [package]
 name = "fastnlr-app"
-version = "1.8.0"
+version = "1.9.1"
 edition = "2021"
 authors = ["Jiwen Zhao (https://github.com/CropCoder)"]
 license = "GPL-3.0-only"

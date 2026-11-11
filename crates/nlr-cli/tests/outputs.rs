@@ -285,9 +285,35 @@ fn summary_json_is_written_and_parseable() {
     let value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&summary_path).unwrap()).unwrap();
     assert!(value.get("nlr_total").is_some(), "缺少 nlr_total 字段");
+    assert!(
+        value.get("nlr_complete").is_some(),
+        "缺少 nlr_complete 字段"
+    );
     assert!(value.get("loci").is_some(), "缺少 loci 字段");
     assert!(
         value.get("loci").and_then(|v| v.as_array()).is_some(),
         "loci 应为数组"
+    );
+    let chromosome = value
+        .get("per_chromosome")
+        .and_then(|v| v.get("chr1"))
+        .expect("summary.json 应包含 chr1");
+    assert!(
+        chromosome
+            .get("length")
+            .and_then(|v| v.as_u64())
+            .is_some_and(|length| length > 0),
+        "summary.json 应记录染色体长度"
+    );
+    assert!(
+        chromosome.get("complete_nlrs").is_some(),
+        "summary.json 应记录每染色体完整位点数"
+    );
+    assert!(
+        value
+            .get("loci")
+            .and_then(|value| value.as_array())
+            .is_some_and(|loci| loci.iter().all(|locus| locus.get("complete").is_some())),
+        "每个 locus 应包含 complete 字段"
     );
 }

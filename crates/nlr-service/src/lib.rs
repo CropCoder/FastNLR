@@ -1,7 +1,7 @@
 //! nlr-service — 供桌面版 / Web 服务复用的作业执行层。
 //!
 //! 提供统一的作业生命周期：提交、查询进度、取消与结果收集。内部在独立线程中调用
-//! `nlr_cli` 的 `run_tracked` / `run_protein_tracked`，不复制扫描与组装逻辑。
+//! `nlr_cli` 的 `run_tracked` / `run_annotation_tracked`，不复制扫描与组装逻辑。
 //! Author: Jiwen Zhao (https://github.com/CropCoder)
 
 use std::collections::HashMap;
@@ -12,13 +12,13 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-pub use nlr_cli::{ProteinConfig, RunConfig};
+pub use nlr_cli::{AnnotationConfig, RunConfig};
 
 /// 作业类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum JobKind {
     Genome,
-    Protein,
+    Annotation,
 }
 
 /// 作业状态。
@@ -35,6 +35,7 @@ pub enum JobStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum JobPhase {
     Pending,
+    ParsingAnnotation,
     Scanning,
     Writing,
     Completed,
@@ -63,10 +64,10 @@ pub struct GenomeJob {
     pub flank: u64,
 }
 
-/// 蛋白模式作业规格。
+/// GFF3 注释模式作业规格。
 #[derive(Debug, Clone)]
-pub struct ProteinJob {
-    pub config: ProteinConfig,
+pub struct AnnotationJob {
+    pub config: AnnotationConfig,
     pub output_dir: PathBuf,
     pub prefix: String,
 }
@@ -120,11 +121,11 @@ impl Service {
         id
     }
 
-    /// 提交蛋白作业，返回作业 id。
-    pub fn submit_protein(&self, job: ProteinJob) -> u64 {
+    /// 提交 GFF3 注释作业，返回作业 id。
+    pub fn submit_annotation(&self, job: AnnotationJob) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
         let state = Arc::new(JobState {
-            kind: JobKind::Protein,
+            kind: JobKind::Annotation,
             status: Mutex::new(JobStatus::Pending),
             phase: Mutex::new(JobPhase::Pending),
             scanned: AtomicU64::new(0),
@@ -135,7 +136,7 @@ impl Service {
         });
         self.jobs.lock().unwrap().insert(id, state.clone());
         let service = self.clone();
-        std::thread::spawn(move || service.run_protein_job(id, state, job));
+        std::thread::spawn(move || service.run_annotation_job(id, state, job));
         id
     }
 
@@ -188,7 +189,7 @@ impl Service {
         let state_for_phase = state.clone();
         let outcome = execute_genome(
             &job,
-            move |fragments| {
+            move |fragments, _total| {
                 state_for_progress
                     .scanned
                     .store(fragments, Ordering::SeqCst);
@@ -200,15 +201,22 @@ impl Service {
         let _ = id;
     }
 
-    fn run_protein_job(&self, id: u64, state: Arc<JobState>, job: ProteinJob) {
+    fn run_annotation_job(&self, id: u64, state: Arc<JobState>, job: AnnotationJob) {
         *state.status.lock().unwrap() = JobStatus::Running;
-        *state.phase.lock().unwrap() = JobPhase::Scanning;
+        *state.phase.lock().unwrap() = JobPhase::ParsingAnnotation;
         let state_for_progress = state.clone();
         let state_for_phase = state.clone();
-        let outcome = execute_protein(
+        let outcome = execute_annotation(
             &job,
-            move |proteins| {
-                state_for_progress.scanned.store(proteins, Ordering::SeqCst);
+            move |processed, total| {
+                state_for_progress
+                    .scanned
+                    .store(processed, Ordering::SeqCst);
+                if total > 0 {
+                    state_for_progress
+                        .estimated_total
+                        .store(total, Ordering::SeqCst);
+                }
                 state_for_progress.cancel.load(Ordering::SeqCst)
             },
             move |phase| *state_for_phase.phase.lock().unwrap() = phase,
@@ -226,16 +234,16 @@ impl Default for Service {
 
 /// 同步执行基因组作业（阻塞调用用）；返回输出文件路径。
 pub fn run_genome_blocking(job: &GenomeJob) -> Result<Vec<PathBuf>, String> {
-    match execute_genome(job, |_| false, |_| {}) {
+    match execute_genome(job, |_, _| false, |_| {}) {
         Ok(paths) => Ok(paths),
         Err(ExecutionError::Canceled) => Err("job canceled".to_string()),
         Err(ExecutionError::Failed(message)) => Err(message),
     }
 }
 
-/// 同步执行蛋白作业（阻塞调用用）；返回输出文件路径。
-pub fn run_protein_blocking(job: &ProteinJob) -> Result<Vec<PathBuf>, String> {
-    match execute_protein(job, |_| false, |_| {}) {
+/// 同步执行 GFF3 注释作业（阻塞调用用）；返回输出文件路径。
+pub fn run_annotation_blocking(job: &AnnotationJob) -> Result<Vec<PathBuf>, String> {
+    match execute_annotation(job, |_, _| false, |_| {}) {
         Ok(paths) => Ok(paths),
         Err(ExecutionError::Canceled) => Err("job canceled".to_string()),
         Err(ExecutionError::Failed(message)) => Err(message),
@@ -249,12 +257,12 @@ enum ExecutionError {
 
 fn execute_genome(
     job: &GenomeJob,
-    mut progress: impl FnMut(u64) -> bool,
+    mut progress: impl FnMut(u64, u64) -> bool,
     mut phase: impl FnMut(JobPhase),
 ) -> Result<Vec<PathBuf>, ExecutionError> {
     let mut canceled = false;
     let mut result = nlr_cli::run_tracked(&job.config, |p| {
-        if progress(p.scanned_fragments) {
+        if progress(p.scanned_fragments, p.estimated_total) {
             canceled = true;
             nlr_cli::RunControl::Break
         } else {
@@ -280,15 +288,16 @@ fn execute_genome(
     .map_err(|e| ExecutionError::Failed(e.to_string()))
 }
 
-fn execute_protein(
-    job: &ProteinJob,
-    mut progress: impl FnMut(u64) -> bool,
+fn execute_annotation(
+    job: &AnnotationJob,
+    mut progress: impl FnMut(u64, u64) -> bool,
     mut phase: impl FnMut(JobPhase),
 ) -> Result<Vec<PathBuf>, ExecutionError> {
     let started = Instant::now();
     let mut canceled = false;
-    let result = nlr_cli::run_protein_tracked(&job.config, |p| {
-        if progress(p.scanned_fragments) {
+    let result = nlr_cli::run_annotation_tracked(&job.config, |p| {
+        phase(JobPhase::Scanning);
+        if progress(p.scanned_fragments, p.estimated_total) {
             canceled = true;
             nlr_cli::RunControl::Break
         } else {
@@ -301,26 +310,9 @@ fn execute_protein(
         return Err(ExecutionError::Canceled);
     }
 
-    let meta = nlr_cli::ProteinRunMeta {
-        input_name: job
-            .config
-            .input_fasta
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string(),
-        threads: job.config.threads,
-        elapsed: started.elapsed(),
-        lrr_threshold: job.config.motif_accept_p,
-        hmm_files: job
-            .config
-            .hmm_files
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect(),
-    };
+    let meta = nlr_cli::annotation_meta(&job.config, started.elapsed(), result.model_labels.len());
     phase(JobPhase::Writing);
-    nlr_cli::write_protein_outputs(&job.output_dir, &job.prefix, &result, &meta)
+    nlr_cli::write_annotation_outputs(&job.output_dir, &job.prefix, &result, &meta)
         .map_err(|e| ExecutionError::Failed(e.to_string()))
 }
 

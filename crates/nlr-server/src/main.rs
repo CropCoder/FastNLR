@@ -69,8 +69,9 @@ struct GenomeJobRequest {
 }
 
 #[derive(Deserialize)]
-struct ProteinJobRequest {
+struct AnnotationJobRequest {
     input_path: String,
+    gff_path: String,
     #[serde(default)]
     output_dir: Option<String>,
     #[serde(default)]
@@ -79,6 +80,7 @@ struct ProteinJobRequest {
     threads: Option<usize>,
     #[serde(default)]
     batch: Option<usize>,
+    // Retained only to reject pre-1.9.1 PWM fields explicitly.
     #[serde(default)]
     motif_accept_p: Option<f64>,
     #[serde(default)]
@@ -121,7 +123,7 @@ async fn main() {
         .route("/", get(index))
         .route("/api/health", get(health))
         .route("/api/jobs/genome", post(create_genome_job))
-        .route("/api/jobs/protein", post(create_protein_job))
+        .route("/api/jobs/annotation", post(create_annotation_job))
         .route("/api/jobs/{id}", get(job_status))
         .route("/api/jobs/{id}/cancel", post(cancel_job))
         .route("/api/jobs/{id}/outputs", get(job_outputs))
@@ -186,26 +188,32 @@ async fn create_genome_job(
     }))
 }
 
-async fn create_protein_job(
+async fn create_annotation_job(
     State(state): State<AppState>,
-    Json(req): Json<ProteinJobRequest>,
+    Json(req): Json<AnnotationJobRequest>,
 ) -> Result<Json<JobCreated>, ApiError> {
-    let mut config = nlr_cli::ProteinConfig::new(PathBuf::from(&req.input_path));
+    if req.motif_accept_p.is_some()
+        || req.motif_prelim_p.is_some()
+        || req.mot_file.is_some()
+        || req.store_file.is_some()
+    {
+        return Err(ApiError::bad_request(
+            "GFF3 annotation mode uses HMM-only classification; PWM fields \
+             motif_accept_p, motif_prelim_p, mot_file, and store_file are not supported"
+                .to_string(),
+        ));
+    }
+    let mut config = nlr_cli::AnnotationConfig::new(
+        PathBuf::from(&req.input_path),
+        PathBuf::from(&req.gff_path),
+    );
     if let Some(t) = req.threads {
         config.threads = t;
     }
     if let Some(b) = req.batch {
         config.batch = b;
     }
-    if let Some(p) = req.motif_accept_p {
-        config.motif_accept_p = p;
-    }
-    if let Some(p) = req.motif_prelim_p {
-        config.motif_prelim_p = p;
-    }
     config.hmm_files = req.hmm_files.iter().map(PathBuf::from).collect();
-    config.mot_file = req.mot_file.map(PathBuf::from);
-    config.store_file = req.store_file.map(PathBuf::from);
     config.validate().map_err(ApiError::bad_request)?;
 
     let output_dir = resolve_output_dir(&state, req.output_dir.as_deref());
@@ -213,12 +221,12 @@ async fn create_protein_job(
         .prefix
         .clone()
         .unwrap_or_else(|| derive_prefix(&req.input_path));
-    let job = nlr_service::ProteinJob {
+    let job = nlr_service::AnnotationJob {
         config,
         output_dir: output_dir.clone(),
         prefix,
     };
-    let job_id = state.service.submit_protein(job);
+    let job_id = state.service.submit_annotation(job);
     Ok(Json(JobCreated {
         job_id,
         output_dir: output_dir.display().to_string(),

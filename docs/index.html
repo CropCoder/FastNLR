@@ -609,7 +609,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="wrap nav-inner">
     <a href="#top" class="logo" aria-label="FastNLR home">
       FastNLR
-      <span class="ver">v1.8.0</span>
+      <span class="ver">v1.9.1</span>
     </a>
     <div class="nav-links">
       <div class="nav-group">
@@ -795,9 +795,9 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <pre id="code-binary"><span class="c"># Linux x86_64 binaries target glibc 2.17+, so they run on
 # CentOS 7 / RHEL 8 / Debian 11 / Ubuntu 20.04 and newer.</span>
 <span class="c"># Download from Releases, then:</span>
-curl -L -o fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.8.0/fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz</span>
-tar -xzf fastnlr-v1.8.0-x86_64-unknown-linux-gnu.tar.gz
+curl -L -o fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz \
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.9.1/fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz</span>
+tar -xzf fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 
 <span class="c"># Annotate a genome (prefix-derived subfiles)</span>
@@ -861,8 +861,8 @@ cargo build --release
         <code>source data/motif_library_rnl_tir/flags.sh  # adds 8 motifs</code>
       </div>
       <div class="usage-item reveal">
-        <div class="u-label">Protein mode (HMM domains)</div>
-        <code>fastnlr --protein -i proteins.fa -o protein_results</code>
+        <div class="u-label">GFF3-guided protein mode</div>
+        <code>fastnlr -i genome.fasta --gff annotation.gff3 -o annotation_results</code>
       </div>
     </div>
 
@@ -879,12 +879,13 @@ cargo build --release
         <button class="ref-tab" type="button" role="tab" id="cli-tab-runtime" aria-selected="false" aria-controls="cli-panel-runtime" data-ref="runtime" tabindex="-1">Runtime</button>
         <button class="ref-tab" type="button" role="tab" id="cli-tab-seeding" aria-selected="false" aria-controls="cli-panel-seeding" data-ref="seeding" tabindex="-1">Seeding &amp; thresholds</button>
         <button class="ref-tab" type="button" role="tab" id="cli-tab-library" aria-selected="false" aria-controls="cli-panel-library" data-ref="library" tabindex="-1">Custom library</button>
-        <button class="ref-tab" type="button" role="tab" id="cli-tab-protein" aria-selected="false" aria-controls="cli-panel-protein" data-ref="protein" tabindex="-1">Protein mode</button>
+        <button class="ref-tab" type="button" role="tab" id="cli-tab-protein" aria-selected="false" aria-controls="cli-panel-protein" data-ref="protein" tabindex="-1">GFF3 mode</button>
       </div>
 
       <div class="ref-panel" id="cli-panel-input" role="tabpanel" aria-labelledby="cli-tab-input">
         <div class="option-grid">
           <div class="option-card"><div class="opt-head"><code>-i &lt;genome.fasta&gt;</code><span class="opt-badge required">Required</span></div><p>Genome FASTA input, optionally gzip-compressed.</p></div>
+          <div class="option-card"><div class="opt-head"><code>--gff &lt;annotation.gff3&gt;</code><span class="opt-badge">Optional</span></div><p>Use GFF3 gene models instead of six-frame scanning. The longest CDS transcript is selected per gene.</p></div>
           <div class="option-card"><div class="opt-head"><code>-o &lt;OUTPUT.DIR&gt;</code><span class="opt-badge required">Required</span></div><p>Output directory. It is created if missing, and the input filename becomes the output prefix.</p></div>
           <div class="option-card"><div class="opt-head"><code>-x &lt;mot.txt&gt;</code><span class="opt-badge default">Built-in</span></div><p>Optional PWM profile. The standard profile is embedded when omitted.</p></div>
           <div class="option-card"><div class="opt-head"><code>-y &lt;store.txt&gt;</code><span class="opt-badge default">Built-in</span></div><p>Optional CDF profile paired with the custom PWM file.</p></div>
@@ -923,7 +924,7 @@ cargo build --release
 
       <div class="ref-panel" id="cli-panel-protein" role="tabpanel" aria-labelledby="cli-tab-protein" hidden>
         <div class="option-grid">
-          <div class="option-card"><div class="opt-head"><code>--protein</code><span class="opt-badge protein">Mode</span></div><p>Treat <code>-i</code> as protein FASTA and classify HMM domains plus PWM LRR motifs. Genome-only flags are rejected.</p></div>
+          <div class="option-card"><div class="opt-head"><code>--gff &lt;FILE&gt;</code><span class="opt-badge protein">Mode</span></div><p>Parse plain or gzipped GFF3, extract CDS and classify translated proteins with ordered HMM-only evidence. PWM and DNA-only flags are rejected.</p></div>
           <div class="option-card"><div class="opt-head"><code>--hmm &lt;FILE&gt;</code><span class="opt-badge protein">Repeatable</span></div><p>Add or override HMM models by accession; each file may contain multiple models.</p></div>
         </div>
       </div>
@@ -956,7 +957,7 @@ cargo build --release
         <details class="output-snippet">
           <summary>Show GFF2 header example</summary>
           <pre>##gff-version 2
-##source-version FastNLR V1.8.0
+##source-version FastNLR V1.9.1
 ##date 2026-11-09 14:53:40
 ##Type DNA</pre>
         </details>
@@ -964,13 +965,19 @@ cargo build --release
 
       <div class="output-group">
         <div class="output-group-head">
-          <div><div class="output-kicker">Protein-driven mode</div><h4>Domain classification results</h4></div>
-          <span class="output-count">3 files</span>
+          <div><div class="output-kicker">GFF3-guided mode</div><h4>Gene protein classification results</h4></div>
+          <span class="output-count">9 files</span>
         </div>
         <div class="output-grid">
-          <div class="output-card protein"><code>&lt;prefix&gt;.domains.tsv</code><p>Per-domain hits with source, model, coordinates, score, p-value and gathering-threshold status.</p></div>
-          <div class="output-card protein"><code>&lt;prefix&gt;.nlr.tsv</code><p>Per-protein class, N-terminal domain, domain flags, completeness and compact domain map.</p></div>
-          <div class="output-card protein"><code>&lt;prefix&gt;.summary.txt</code><p>Model set, thresholds and counts by NLR class and family.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.cds.fasta</code><p>Longest-transcript CDS sequences in gene direction.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.proteins.fasta</code><p>Translated proteins used for ordered HMM scanning.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.domains.tsv</code><p>Domain evidence with protein, CDS and genomic coordinates.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.genes.tsv</code><p>All translated gene/transcript classifications.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.nlr.tsv</code><p>NLR candidate subset with class, family and domain layout.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.nlr.gff3</code><p>Gene-level NLR annotations in GFF3.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.skipped.tsv</code><p>Models skipped because of missing contigs or invalid structures.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.summary.txt</code><p>Human-readable run and classification summary.</p></div>
+          <div class="output-card protein"><code>&lt;prefix&gt;.gff.summary.json</code><p>Machine-readable counts and domain model metadata.</p></div>
         </div>
       </div>
     </div>
@@ -1017,8 +1024,8 @@ cargo build --release
         <div class="card-icon">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h10M4 17h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
-        <h3>Protein mode</h3>
-        <p>Run <code>--protein</code> on a protein FASTA to scan NLR domains with a bundled HMMER 3.4 port (Pfam NB-ARC / TIR / Rx_N / RPW8 / R1-type at gathering thresholds) plus the PWM LRR motifs, and get a domain architecture call per protein. <code>--hmm</code> adds your own models.</p>
+        <h3>GFF3-guided protein mode</h3>
+        <p>Add <code>--gff</code> to select the longest CDS transcript per annotated gene, translate it from the genome, and classify the protein with 23 bundled Pfam HMMs. LRR is accepted as C-terminal evidence only when it lies after NB-ARC. <code>--hmm</code> adds your own models.</p>
       </div>
 
       <div class="card reveal">
@@ -1050,7 +1057,7 @@ cargo build --release
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v6m0 0 4 4m-4-4-4 4M5 21h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
         <h3>HMM-assisted N-terminal domains</h3>
-        <p>When the PWM library does not identify a CC/TIR domain, the locus is checked with the same bundled HMMER profiles used in protein mode. HMM hits fill the missing N-terminal domain instead of leaving a bare <code>NBARC-LRR</code>.</p>
+        <p>When the PWM library does not identify a CC/TIR domain, the locus is checked with the bundled HMMER profiles also used in GFF3-guided protein mode. HMM hits fill the missing N-terminal domain instead of leaving a bare <code>NBARC-LRR</code>.</p>
       </div>
 
       <div class="card reveal">
@@ -1262,6 +1269,14 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <p class="lead">Release timeline of FastNLR with a short summary of what changed in each version.</p>
     </div>
     <div class="timeline">
+      <div class="tl-item major reveal">
+        <span class="tl-dot"></span>
+        <div class="tl-head">
+          <span class="tl-version">v1.9.1</span>
+          <span class="tl-date">2026-11-10</span>
+        </div>
+        <p class="tl-desc">GFF3-guided gene protein annotation with longest-transcript selection, CDS translation, streaming multithreaded HMM/PWM scanning, protein/CDS/genomic domain coordinates, and an optional annotation workflow across CLI, desktop, and Web APIs.</p>
+      </div>
       <div class="tl-item major reveal">
         <span class="tl-dot"></span>
         <div class="tl-head">

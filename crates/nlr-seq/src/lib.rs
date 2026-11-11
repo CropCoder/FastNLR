@@ -5,6 +5,7 @@
 pub mod chopper;
 pub mod codon;
 pub mod fasta;
+pub mod gff3;
 pub mod translate;
 
 pub use chopper::SequenceChopper;

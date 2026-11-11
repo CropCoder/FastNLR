@@ -59,8 +59,8 @@ fn embedded_models_find_expected_domain_architecture() {
     let library = HmmLibrary::from_embedded();
     assert_eq!(
         library.models().len(),
-        5,
-        "内置应为 NB-ARC/TIR/Rx_N/RPW8/R1-type 五个模型"
+        23,
+        "内置应为 5 个核心模型和 18 个 LRR/LRR 端域模型"
     );
 
     let mut scanner = library.scanner();
@@ -68,8 +68,7 @@ fn embedded_models_find_expected_domain_architecture() {
     for (id, seq) in fixtures() {
         let hits = scanner.scan_protein(&id, &seq);
         let passed: Vec<_> = hits.iter().filter(|h| h.passed).collect();
-        // 只算 HMM 证据时的架构（LRR 由 CLI 用 PWM 补充）。
-        let arch = classify(&hits, 0);
+        let arch = classify(&hits);
         seen += 1;
 
         match id.as_str() {
@@ -93,9 +92,9 @@ fn embedded_models_find_expected_domain_architecture() {
                     nb.bitscore
                 );
                 assert_eq!(arch.nterm, "CC");
-                assert_eq!(arch.class, "CC-NBARC");
+                assert_eq!(arch.class, "CC-NBARC-LRR");
                 assert_eq!(arch.family, "CNL");
-                assert!(arch.has_nbarc && !arch.has_lrr);
+                assert!(arch.has_nbarc && arch.has_cterm_lrr && arch.complete);
             }
             "RPS4L_ARATH" => {
                 let tir = passed
@@ -108,8 +107,9 @@ fn embedded_models_find_expected_domain_architecture() {
                     tir.bitscore
                 );
                 assert_eq!(arch.nterm, "TIR");
-                assert_eq!(arch.class, "TIR-NBARC");
+                assert_eq!(arch.class, "TIR-NBARC-LRR");
                 assert!(arch.has_tir && arch.has_nbarc);
+                assert!(arch.has_cterm_lrr && arch.complete);
             }
             "ADR1_ARATH" => {
                 let rpw8 = passed
@@ -137,7 +137,8 @@ fn embedded_models_find_expected_domain_architecture() {
                     r1t.bitscore
                 );
                 assert_eq!(arch.nterm, "CC");
-                assert_eq!(arch.class, "CC-NBARC");
+                assert_eq!(arch.class, "CC-NBARC-LRR");
+                assert!(arch.has_cterm_lrr && arch.complete);
             }
             other => panic!("unexpected fixture {other}"),
         }
@@ -154,7 +155,7 @@ fn shuffled_sequences_are_not_called() {
         assert_eq!(scrambled.len(), seq.len());
         let hits = scanner.scan_protein(&id, &scrambled);
         let passed = hits.iter().filter(|h| h.passed).count();
-        let arch = classify(&hits, 1);
+        let arch = classify(&hits);
         assert_eq!(passed, 0, "{id} 打乱序列不应有通过 GA 的结构域: {hits:?}");
         assert!(!arch.is_nlr, "{id} 打乱序列不应判为 NLR");
     }
@@ -178,12 +179,13 @@ fn classification_rules() {
     let hits = vec![
         mk(DomainCategory::Cc, 10, 100, true),
         mk(DomainCategory::Nbarc, 150, 350, true),
+        mk(DomainCategory::Lrr, 400, 500, true),
     ];
-    let a = classify(&hits, 3);
+    let a = classify(&hits);
     assert_eq!(a.class, "CC-NBARC-LRR");
     assert_eq!(a.family, "CNL");
     assert_eq!(a.nterm, "CC");
-    assert!(a.is_nlr);
+    assert!(a.is_nlr && a.has_cterm_lrr && a.complete);
 
     // A downstream RPW8 cross-hit must not turn an Rx_N-driven CNL into RNL.
     let with_acc = |acc: &str, cat: DomainCategory, start: usize, end: usize| DomainHit {
@@ -201,44 +203,54 @@ fn classification_rules() {
         with_acc("PF18052", DomainCategory::Cc, 10, 100),
         with_acc("PF00931", DomainCategory::Nbarc, 150, 350),
         with_acc("PF05659", DomainCategory::Cc, 500, 600),
+        with_acc("PF23598", DomainCategory::Lrr, 650, 750),
     ];
-    let a = classify(&hits, 3);
+    let a = classify(&hits);
     assert_eq!(a.class, "CC-NBARC-LRR");
     assert_eq!(a.family, "CNL");
+    assert!(a.has_cterm_lrr && a.complete);
 
     // TIR-NBARC（无 LRR）
     let hits = vec![
         mk(DomainCategory::Tir, 20, 190, true),
         mk(DomainCategory::Nbarc, 210, 380, true),
     ];
-    let a = classify(&hits, 0);
+    let a = classify(&hits);
     assert_eq!(a.class, "TIR-NBARC");
     assert_eq!(a.family, "TNL");
     assert_eq!(a.nterm, "TIR");
     assert!(a.is_nlr);
 
     // NBARC-LRR（无 N 端结构域）
-    let a = classify(&[mk(DomainCategory::Nbarc, 100, 300, true)], 2);
+    let hits = vec![
+        mk(DomainCategory::Nbarc, 100, 300, true),
+        mk(DomainCategory::Lrr, 320, 420, true),
+    ];
+    let a = classify(&hits);
     assert_eq!(a.class, "NBARC-LRR");
     assert_eq!(a.family, "NB-only");
     assert_eq!(a.nterm, "NB-only");
     assert!(a.is_nlr);
 
     // TIR-only + LRR 也算候选（TIR-only NLR）
-    let a = classify(&[mk(DomainCategory::Tir, 30, 200, true)], 1);
+    let hits = vec![
+        mk(DomainCategory::Tir, 30, 200, true),
+        mk(DomainCategory::Lrr, 220, 320, true),
+    ];
+    let a = classify(&hits);
     assert_eq!(a.class, "TIR-LRR");
     assert_eq!(a.family, "TIR-only");
     assert_eq!(a.nterm, "TIR");
     assert!(a.is_nlr);
 
     // 无域
-    let a = classify(&[], 0);
+    let a = classify(&[]);
     assert_eq!(a.class, "");
     assert_eq!(a.nterm, "None");
     assert!(!a.is_nlr);
 
     // 未通过 GA 的命中不参与判定
-    let a = classify(&[mk(DomainCategory::Nbarc, 100, 300, false)], 0);
+    let a = classify(&[mk(DomainCategory::Nbarc, 100, 300, false)]);
     assert!(!a.is_nlr && a.class.is_empty());
 
     // CC 位于 NB-ARC 之后时既不算 N 端结构域，也不进入域串（有序域模型：NB-ARC 之后
@@ -249,9 +261,22 @@ fn classification_rules() {
         mk(DomainCategory::Nbarc, 100, 300, true),
         mk(DomainCategory::Cc, 320, 420, true),
     ];
-    let a = classify(&hits, 0);
+    let a = classify(&hits);
     assert_eq!(a.nterm, "NB-only");
     assert_eq!(a.class, "NBARC");
+
+    // NB-ARC 之前的 LRR 不是 C 端证据，也不能被强制追加到域串末端。
+    let hits = vec![
+        mk(DomainCategory::Cc, 10, 100, true),
+        mk(DomainCategory::Lrr, 120, 190, true),
+        mk(DomainCategory::Nbarc, 250, 450, true),
+    ];
+    let a = classify(&hits);
+    assert_eq!(a.class, "CC-NBARC");
+    assert_eq!(a.family, "CNL");
+    assert!(a.has_lrr_any);
+    assert!(!a.has_cterm_lrr);
+    assert!(!a.complete);
 }
 
 #[test]

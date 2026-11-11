@@ -65,6 +65,27 @@ fn gff_start_is_1_based() {
 }
 
 #[test]
+fn gff_complete_only_filters_partial_loci() {
+    let complete = sample_nlr();
+    let mut partial_m1 = Motif::new_protein(6, "chr1".to_string(), 1, "N".to_string(), 1e-6);
+    partial_m1.set_dna("chr1".to_string(), 500, 20000, 0, Strand::Forward);
+    let partial = MotifList::new("chr1_nlr2".to_string(), vec![partial_m1]);
+
+    let mut buf = Vec::new();
+    write_nlr_gff(
+        &mut buf,
+        &[complete, partial],
+        &def(),
+        "2026-01-01 00:00",
+        true,
+    )
+    .unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    assert!(text.contains("name=chr1_nlr1"));
+    assert!(!text.contains("name=chr1_nlr2"));
+}
+
+#[test]
 fn bed_has_12_columns() {
     let nlrs = vec![sample_nlr()];
     let mut buf = Vec::new();
@@ -73,8 +94,28 @@ fn bed_has_12_columns() {
     let body = s.lines().find(|l| l.starts_with("chr1\t")).unwrap();
     let cols: Vec<&str> = body.split('\t').collect();
     assert_eq!(cols.len(), 12);
-    // 完整性判定暂时禁用：非终止子位点统一为橙色。
-    assert_eq!(cols[8], "255,128,0");
+    assert_eq!(cols[8], "0,255,0");
+}
+
+#[test]
+fn bed_colors_partial_and_stopped_loci() {
+    let mut partial_m1 = Motif::new_protein(6, "chr1".to_string(), 1, "N".to_string(), 1e-6);
+    partial_m1.set_dna("chr1".to_string(), 500, 20000, 0, Strand::Forward);
+    let partial = MotifList::new("chr1_nlr2".to_string(), vec![partial_m1]);
+
+    let mut stopped_m1 = Motif::new_protein(6, "chr1".to_string(), 1, "N*".to_string(), 1e-6);
+    stopped_m1.set_dna("chr1".to_string(), 800, 20000, 0, Strand::Forward);
+    let stopped = MotifList::new("chr1_nlr3".to_string(), vec![stopped_m1]);
+
+    let mut buf = Vec::new();
+    write_nlr_bed(&mut buf, &[sample_nlr(), partial, stopped], &def()).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+    let colors: Vec<&str> = text
+        .lines()
+        .filter(|line| line.starts_with("chr1\t"))
+        .map(|line| line.split('\t').nth(8).unwrap())
+        .collect();
+    assert_eq!(colors, ["0,255,0", "255,128,0", "255,0,0"]);
 }
 
 #[test]

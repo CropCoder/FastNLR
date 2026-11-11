@@ -22,7 +22,7 @@ function isTauriRuntime() {
 export async function getRuntimeInfo(): Promise<RuntimeInfo> {
   if (!isTauriRuntime()) {
     return {
-      version: "1.8.0",
+      version: "1.9.1",
       os: "browser",
       arch: "web",
       logicalCpus: navigator.hardwareConcurrency || 1,
@@ -33,31 +33,39 @@ export async function getRuntimeInfo(): Promise<RuntimeInfo> {
 
 export async function inspectInput(
   path: string,
-  mode: InputMode,
+  _mode: InputMode = "genome",
 ): Promise<InputInfo> {
   if (!isTauriRuntime()) {
     const name = path.split(/[\\/]/).pop() || "input.fasta";
-    const prefix = name.replace(/\.gz$/i, "").replace(/\.(fa|fasta|fna|fas|ffn|faa)$/i, "");
+    const prefix = name.replace(/\.gz$/i, "").replace(/\.(fa|fasta|fna|fas|ffn)$/i, "");
     return { path, name, prefix, sizeBytes: 0, compressed: /\.gz$/i.test(name) };
   }
-  return invoke<InputInfo>("inspect_input", { path, mode });
+  return invoke<InputInfo>("inspect_input", { path, mode: _mode });
 }
 
-export async function pickFasta(mode: InputMode): Promise<string | null> {
+export async function pickGenome(): Promise<string | null> {
   if (!isTauriRuntime()) return null;
   const result = await open({
     multiple: false,
     directory: false,
-    title: mode === "genome" ? "Select genome FASTA" : "Select protein FASTA",
+    title: "Select genome FASTA",
     filters: [
       {
-        name: "FASTA",
-        extensions:
-          mode === "genome"
-            ? ["fa", "fasta", "fna", "fas", "ffn", "gz"]
-            : ["fa", "fasta", "faa", "fas", "gz"],
+        name: "Genome FASTA",
+        extensions: ["fa", "fasta", "fna", "fas", "ffn", "gz"],
       },
     ],
+  });
+  return typeof result === "string" ? result : null;
+}
+
+export async function pickGff(): Promise<string | null> {
+  if (!isTauriRuntime()) return null;
+  const result = await open({
+    multiple: false,
+    directory: false,
+    title: "Select GFF3 annotation",
+    filters: [{ name: "GFF3", extensions: ["gff", "gff3", "gz"] }],
   });
   return typeof result === "string" ? result : null;
 }
@@ -83,7 +91,7 @@ export async function pickDirectory(title: string): Promise<string | null> {
 export async function startRun(draft: RunDraft): Promise<number> {
   if (!isTauriRuntime()) throw new Error("FastNLR jobs can only run in the desktop app.");
   return invoke<number>(
-    draft.mode === "genome" ? "start_genome_job" : "start_protein_job",
+    draft.mode === "genome" ? "start_genome_job" : "start_annotation_job",
     { request: toBackendRequest(draft) },
   );
 }
@@ -114,14 +122,11 @@ export function toBackendRequest(draft: RunDraft) {
   }
   return {
     inputPath: draft.inputPath,
+    gffPath: draft.gffPath,
     outputDir: draft.outputDir,
     threads: draft.threads,
     batch: draft.batch,
-    motifAcceptP: Number(draft.motifAcceptP),
-    motifPrelimP: Number(draft.motifPrelimP),
     hmmFiles: draft.hmmFiles,
-    motFile: draft.motFile || null,
-    storeFile: draft.storeFile || null,
   };
 }
 
