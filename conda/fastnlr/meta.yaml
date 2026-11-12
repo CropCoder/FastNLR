@@ -1,5 +1,5 @@
 {% set name = "fastnlr" %}
-{% set version = "1.9.1" %}
+{% set version = "1.9.2" %}
 
 package:
   name: {{ name }}
@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://github.com/CropCoder/FastNLR/archive/refs/tags/v{{ version }}.tar.gz
-  sha256: 32ace197f91ecc6aff8781c8752a60eeda28272711768b03193fa4094b26b08f
+  sha256: 143d049fbb1bb89f185c72c1db5fa86b2010427c12abe0a04c9bbee6841a1b20
 
 build:
   number: 0
