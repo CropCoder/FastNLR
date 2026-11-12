@@ -165,7 +165,7 @@ export function AppShell() {
         )}
 
         <div className="sidebar-footer">
-          <span>v{runtime?.version ?? "1.9.1"}</span>
+          <span>v{runtime?.version ?? "1.9.2"}</span>
           <span>
             {runtime?.os ?? "desktop"} / {runtime?.arch ?? "native"}
           </span>

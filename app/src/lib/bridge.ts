@@ -22,7 +22,7 @@ function isTauriRuntime() {
 export async function getRuntimeInfo(): Promise<RuntimeInfo> {
   if (!isTauriRuntime()) {
     return {
-      version: "1.9.1",
+      version: "1.9.2",
       os: "browser",
       arch: "web",
       logicalCpus: navigator.hardwareConcurrency || 1,

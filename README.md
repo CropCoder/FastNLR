@@ -9,7 +9,7 @@
 [![CI](https://github.com/CropCoder/FastNLR/actions/workflows/rust.yml/badge.svg)](https://github.com/CropCoder/FastNLR/actions)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
-[![Version](https://img.shields.io/badge/version-1.9.1-green.svg)](https://github.com/CropCoder/FastNLR/releases)
+[![Version](https://img.shields.io/badge/version-1.9.2-green.svg)](https://github.com/CropCoder/FastNLR/releases)
 
 [Install](#install) · [Quick start](#quick-start) · [Features](#features) · [Performance](#performance) ·
 [Interfaces](#other-interfaces) · [Website](https://cropcoder.github.io/FastNLR/) · [Citation](#citation)
@@ -39,9 +39,9 @@ conda install bioconda::fastnlr
 ### Prebuilt binary
 
 ```bash
-curl -L -o fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz \
-  https://github.com/CropCoder/FastNLR/releases/download/v1.9.1/fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz
+curl -L -o fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz \
+  https://github.com/CropCoder/FastNLR/releases/download/v1.9.2/fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 ```
 

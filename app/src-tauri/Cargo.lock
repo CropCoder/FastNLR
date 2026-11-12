@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "fastnlr"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "chrono",
  "clap",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "fastnlr-app"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "fastnlr",
  "nlr-report",
@@ -2407,14 +2407,14 @@ dependencies = [
 
 [[package]]
 name = "nlr-assemble"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "nlr-core",
 ]
 
 [[package]]
 name = "nlr-config"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "memmap2",
  "nlr-core",
@@ -2422,11 +2422,11 @@ dependencies = [
 
 [[package]]
 name = "nlr-core"
-version = "1.9.1"
+version = "1.9.2"
 
 [[package]]
 name = "nlr-domain"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "hmmer-pure-rs",
  "nlr-core",
@@ -2434,14 +2434,14 @@ dependencies = [
 
 [[package]]
 name = "nlr-output"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "nlr-core",
 ]
 
 [[package]]
 name = "nlr-report"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "nlr-core",
  "serde",
@@ -2450,7 +2450,7 @@ dependencies = [
 
 [[package]]
 name = "nlr-scan"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "nlr-config",
  "nlr-core",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "nlr-seq"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "flate2",
  "memmap2",
@@ -2468,7 +2468,7 @@ dependencies = [
 
 [[package]]
 name = "nlr-service"
-version = "1.9.1"
+version = "1.9.2"
 dependencies = [
  "fastnlr",
  "serde",

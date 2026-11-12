@@ -1,6 +1,6 @@
 # Curated Pfam HMM library for FastNLR protein mode
 
-FastNLR 1.9.1 embeds 23 Pfam profile HMMs. GFF3 mode uses HMM evidence only;
+FastNLR 1.9.2 embeds 23 Pfam profile HMMs. GFF3 mode uses HMM evidence only;
 PWM motifs are not calculated.
 
 ## Core architecture models

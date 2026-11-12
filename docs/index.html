@@ -609,7 +609,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="wrap nav-inner">
     <a href="#top" class="logo" aria-label="FastNLR home">
       FastNLR
-      <span class="ver">v1.9.1</span>
+      <span class="ver">v1.9.2</span>
     </a>
     <div class="nav-links">
       <div class="nav-group">
@@ -795,9 +795,9 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <pre id="code-binary"><span class="c"># Linux x86_64 binaries target glibc 2.17+, so they run on
 # CentOS 7 / RHEL 8 / Debian 11 / Ubuntu 20.04 and newer.</span>
 <span class="c"># Download from Releases, then:</span>
-curl -L -o fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.9.1/fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz</span>
-tar -xzf fastnlr-v1.9.1-x86_64-unknown-linux-gnu.tar.gz
+curl -L -o fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz \
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.9.2/fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz</span>
+tar -xzf fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 
 <span class="c"># Annotate a genome (prefix-derived subfiles)</span>
@@ -957,7 +957,7 @@ cargo build --release
         <details class="output-snippet">
           <summary>Show GFF2 header example</summary>
           <pre>##gff-version 2
-##source-version FastNLR V1.9.1
+##source-version FastNLR V1.9.2
 ##date 2026-11-09 14:53:40
 ##Type DNA</pre>
         </details>
@@ -1269,6 +1269,14 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <p class="lead">Release timeline of FastNLR with a short summary of what changed in each version.</p>
     </div>
     <div class="timeline">
+      <div class="tl-item major reveal">
+        <span class="tl-dot"></span>
+        <div class="tl-head">
+          <span class="tl-version">v1.9.2</span>
+          <span class="tl-date">2026-11-12</span>
+        </div>
+        <p class="tl-desc">HMM filtering, completeness finalization, and deterministic motif output now share the same result path across fresh runs and checkpoint recovery. Release assets use the platform-specific Windows installer name and omit separate SHA256 summary files.</p>
+      </div>
       <div class="tl-item major reveal">
         <span class="tl-dot"></span>
         <div class="tl-head">

@@ -2,13 +2,13 @@
 #
 # 下载并安装 FastNLR 最新版预编译二进制到 ~/.local/bin。
 #
-# 用法：bash install_fastnlr.sh [版本号，如 v1.9.1]
+# 用法：bash install_fastnlr.sh [版本号，如 v1.9.2]
 #
 # Author: Jiwen Zhao (https://github.com/CropCoder)
 
 set -euo pipefail
 
-version="${1:-v1.9.1}"
+version="${1:-v1.9.2}"
 base_url="https://github.com/CropCoder/FastNLR/releases/download/${version}"
 
 case "$(uname -s)-$(uname -m)" in
