@@ -163,6 +163,55 @@ pub fn annotate_hmm_nterm_contig(
     annotated
 }
 
+/// 位点收尾精修（幂等）：HMM N 端补充 → 高精度过滤 → 按 contig 重命名。
+///
+/// 这些步骤原本只存在于输出路径 [`write_genome_outputs`] 内部，导致只调用
+/// `run`/`run_tracked` 的服务层/桌面端拿到的是未补 HMM、未过滤、未重命名的中间态位点。
+/// 现抽为本函数并由 `run_tracked` 收尾统一调用；`write_genome_outputs` 亦调用本函数，
+/// 借 [`RunResult::finalized`] 保证最多执行一次。
+///
+/// 返回被 HMM 补充的位点数（未执行时为 0）。
+pub fn finalize_result(
+    input_fasta: &std::path::Path,
+    result: &mut RunResult,
+    locus_filter: Option<&LocusFilterConfig>,
+) -> std::io::Result<usize> {
+    if result.finalized {
+        return Ok(0);
+    }
+
+    // 1. 逐 contig 流式做 HMM N 端补充。必须先完成全部 contig 的注释，再执行高精度过滤，
+    //    保证过滤基于最终域串，而不是未补全的 PWM 域串。
+    let library = nlr_domain::HmmLibrary::from_embedded();
+    let mut scanner = library.core_scanner();
+    let mut annotated = 0usize;
+    let mut reader = nlr_seq::fasta::FastaReader::from_file(input_fasta).map_err(|e| {
+        std::io::Error::other(format!(
+            "cannot open genome {} for loci/HMM output: {}",
+            input_fasta.display(),
+            e
+        ))
+    })?;
+    while let Some(contig) = reader.read_entry()? {
+        annotated +=
+            annotate_hmm_nterm_contig(&mut scanner, &mut result.nlrs, &contig, &result.def);
+    }
+    tracing::info!(
+        "HMM N-terminal domain annotation: {} / {} loci updated",
+        annotated,
+        result.nlrs.len()
+    );
+
+    // 2. 应用高精度过滤，再对保留位点重新命名（过滤后编号保持连续）。
+    if let Some(cfg) = locus_filter {
+        filter_loci(&mut result.nlrs, &result.def, cfg);
+    }
+    renumber_loci(&mut result.nlrs);
+
+    result.finalized = true;
+    Ok(annotated)
+}
+
 /// 解析柔性与精确播种的最终生效配置。
 ///
 /// 柔性播种**默认开启**：精确种子组合与柔性条件取并集，因此只会新增种子、
@@ -473,6 +522,11 @@ pub struct RunResult {
     pub def: AnnotatorSignatureDefinition,
     /// Checkpoint-fixed GFF timestamp; `None` uses the current local time.
     pub gff_date: Option<String>,
+    /// 位点收尾精修是否已应用（HMM N 端补充 + 高精度过滤 + 重命名）。
+    ///
+    /// `run`/`run_tracked` 返回的 `nlrs` 已是最终结果（该位为 `true`）；
+    /// `write_genome_outputs` 借此保证收尾幂等，不会重复执行。
+    pub finalized: bool,
 }
 
 /// Core orchestration: input FASTA -> chop -> six-frame translation -> scan -> coord map -> assemble.
@@ -583,7 +637,7 @@ pub fn run_tracked(
 
     // 1.5 Checkpoint resume: if a checkpoint exists, assemble and return (skip scan).
     if let Some(dir) = &config.checkpoint_dir {
-        if let Some(existing) = load_checkpoint(
+        if let Some(mut existing) = load_checkpoint(
             dir,
             signature_def.clone(),
             &config.assemble,
@@ -591,6 +645,12 @@ pub fn run_tracked(
                 .as_ref()
                 .expect("checkpoint manifest exists"),
         )? {
+            // 复用检查点同样走收尾精修，保证 run* 系列入口返回的位点口径一致。
+            finalize_result(
+                &config.input_fasta,
+                &mut existing,
+                config.locus_filter.as_ref(),
+            )?;
             return Ok(existing);
         }
     }
@@ -713,14 +773,23 @@ pub fn run_tracked(
         nlrs.append(&mut assembled);
     }
 
-    let result = RunResult {
+    let mut result = RunResult {
         nlrs,
         motifs_by_seq,
         def: signature_def,
         gff_date: checkpoint_manifest
             .as_ref()
             .map(|manifest| manifest.created_at.clone()),
+        finalized: false,
     };
+
+    // 5.5 收尾精修：HMM N 端补充 + 高精度过滤 + 重命名。run* 系列入口在此统一收口，
+    //     服务层/桌面端只调用 run_tracked 也能拿到与最终输出一致的位点。
+    finalize_result(
+        &config.input_fasta,
+        &mut result,
+        config.locus_filter.as_ref(),
+    )?;
 
     // 6. Save checkpoint only after a complete, non-interrupted scan.
     if let Some(dir) = &config.checkpoint_dir {
@@ -917,6 +986,9 @@ fn filter_motifs_by_signature(
 }
 
 /// Flatten all motifs into a list (for `-m` / `-c` output).
+///
+/// 排序后返回：`motifs_by_seq` 是 HashMap，迭代序随进程随机；不排序会导致
+/// `.motifs.bed` 的行序在两次运行间不可复现。
 pub fn all_motifs(result: &RunResult) -> Vec<Motif> {
     let mut out = Vec::new();
     for v in result.motifs_by_seq.values() {
@@ -924,6 +996,7 @@ pub fn all_motifs(result: &RunResult) -> Vec<Motif> {
             out.push(m.clone());
         }
     }
+    out.sort();
     out
 }
 
@@ -940,8 +1013,9 @@ fn renumber_loci(nlrs: &mut [MotifList]) {
 
 /// 写出 DNA 模式的全部输出文件（含 summary.json），返回成功写入的路径列表。
 ///
-/// 该函数是 CLI、Web 服务与桌面端共用的输出入口：先流式逐 contig 做 HMM N 端补充并写
-/// loci FASTA，再写 txt/GFF/BED/motif BED/NB-ARC FASTA/stats TSV/summary.json。
+/// 该函数是 CLI、Web 服务与桌面端共用的输出入口：先做位点收尾精修（见
+/// [`finalize_result`]，对 `run_tracked` 的结果为幂等空操作），再流式逐 contig 写
+/// loci FASTA，最后写 txt/GFF/BED/motif BED/NB-ARC FASTA/stats TSV/summary.json。
 pub fn write_genome_outputs(
     input_fasta: &std::path::Path,
     output_dir: &std::path::Path,
@@ -960,38 +1034,16 @@ pub fn write_genome_outputs(
         Ok((p, f))
     };
 
-    // 第一步：逐 contig 做 HMM N 端补充。必须先完成全部 contig 的注释，再执行高精度过滤，
-    // 保证过滤基于最终域串，而不是未补全的 PWM 域串。
-    let library = nlr_domain::HmmLibrary::from_embedded();
-    let mut scanner = library.core_scanner();
-    let mut annotated = 0usize;
-    let mut sequence_lengths = std::collections::BTreeMap::new();
-    let mut reader = nlr_seq::fasta::FastaReader::from_file(input_fasta).map_err(|e| {
-        std::io::Error::other(format!(
-            "cannot open genome {} for loci/HMM output: {}",
-            input_fasta.display(),
-            e
-        ))
-    })?;
-    while let Some(contig) = reader.read_entry()? {
-        sequence_lengths.insert(contig.identifier.clone(), contig.sequence.len() as u64);
-        annotated +=
-            annotate_hmm_nterm_contig(&mut scanner, &mut result.nlrs, &contig, &result.def);
-    }
-    tracing::info!(
-        "HMM N-terminal domain annotation: {} / {} loci updated",
-        annotated,
-        result.nlrs.len()
-    );
+    // 第一步：位点收尾精修（HMM N 端补充 → 高精度过滤 → 重命名）。
+    // `run_tracked` 已经收尾时此调用为幂等空操作；直接构造 RunResult 的调用方
+    // （测试、外部嵌入）在这里补齐，保证输出基于最终位点集合。
+    // 注：HMM 补充必须在过滤前完成全部 contig（过滤依赖最终域串），因此该精修遍
+    // 与下面的 loci FASTA 写出遍无法合并为单遍（无缓冲流式下存在全局依赖）。
+    finalize_result(input_fasta, result, locus_filter)?;
 
-    // 第二步：应用高精度过滤，再对保留位点重新命名（过滤后编号保持连续）。
-    if let Some(cfg) = locus_filter {
-        filter_loci(&mut result.nlrs, &result.def, cfg);
-    }
-    renumber_loci(&mut result.nlrs);
-
-    // 第三步：写出位点 FASTA（过滤后的位点）。
+    // 第二步：流式读取基因组写出位点 FASTA，并顺带收集 contig 长度（summary.json 用）。
     let (loci_path, mut loci_file) = create(".loci.fasta")?;
+    let mut sequence_lengths = std::collections::BTreeMap::new();
     let mut reader = nlr_seq::fasta::FastaReader::from_file(input_fasta).map_err(|e| {
         std::io::Error::other(format!(
             "cannot open genome {} for loci output: {}",
@@ -1000,6 +1052,7 @@ pub fn write_genome_outputs(
         ))
     })?;
     while let Some(contig) = reader.read_entry()? {
+        sequence_lengths.insert(contig.identifier.clone(), contig.sequence.len() as u64);
         nlr_output::write_nlr_loci_all(
             &mut loci_file,
             &result.nlrs,
@@ -1191,6 +1244,7 @@ fn load_checkpoint(
         motifs_by_seq,
         def,
         gff_date: Some(manifest.created_at),
+        finalized: false,
     }))
 }
 
@@ -1321,6 +1375,7 @@ mod tests {
             motifs_by_seq: by_seq,
             def: AnnotatorSignatureDefinition::new(),
             gff_date: None,
+            finalized: false,
         };
         save_checkpoint(&ckpt, &result, &manifest).unwrap();
 
@@ -1357,6 +1412,7 @@ mod tests {
             motifs_by_seq: HashMap::new(),
             def: AnnotatorSignatureDefinition::new(),
             gff_date: None,
+            finalized: false,
         };
         save_checkpoint(&ckpt, &result, &manifest).unwrap();
 
@@ -1415,6 +1471,7 @@ mod tests {
             motifs_by_seq: HashMap::new(),
             def: AnnotatorSignatureDefinition::new(),
             gff_date: None,
+            finalized: false,
         };
         save_checkpoint(&ckpt, &result, &manifest).unwrap();
 

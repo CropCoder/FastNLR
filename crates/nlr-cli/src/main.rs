@@ -778,6 +778,7 @@ fn print_run_config(cli: &Cli, config: &RunConfig) {
         ".nbarc.fasta",
         ".loci.fasta",
         ".stats.tsv",
+        ".summary.json",
         ".summary.txt",
     ];
     let targets: Vec<String> = suffixes
