@@ -160,7 +160,12 @@ jobs:
       - name: Prepare release files
         run: |
           cd app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg
-          echo "DMG=$(realpath ./*.dmg)" >> "$GITHUB_ENV"
+          dmg=$(find . -maxdepth 1 -type f -name "*.dmg" | head -1)
+          test -n "$dmg"
+          version="${GITHUB_REF_NAME#v}"
+          release_dmg="FastNLR_${version}_macos_ARM.dmg"
+          mv "$dmg" "$release_dmg"
+          echo "DMG=$(realpath "$release_dmg")" >> "$GITHUB_ENV"
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
