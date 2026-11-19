@@ -2,16 +2,19 @@
 //!
 //! - 64 standard codons (including 3 stop codons TAA/TAG/TGA -> `*`);
 //! - non-standard triplets (containing N, IUPAC, etc.) -> `X`;
-//! - input is uppercased before table lookup.
+//! - base lookup is case-insensitive (soft-masked genomes are common).
 
 /// Encodes 3 bases into an integer index (A=0, C=1, G=2, T=3; other bases map to out-of-range, returning X).
+///
+/// Lowercase bases are accepted as their uppercase equivalents so that soft-masked
+/// genome FASTA files translate identically to hard-masked ones.
 #[inline]
 fn base_idx(b: u8) -> usize {
     match b {
-        b'A' => 0,
-        b'C' => 1,
-        b'G' => 2,
-        b'T' => 3,
+        b'A' | b'a' => 0,
+        b'C' | b'c' => 1,
+        b'G' | b'g' => 2,
+        b'T' | b't' => 3,
         _ => 4, // non-ACGT -> out-of-range marker
     }
 }
@@ -62,6 +65,13 @@ mod tests {
         assert_eq!(translate_triplet(b"ATG"), 'M');
         assert_eq!(translate_triplet(b"TAA"), '*');
         assert_eq!(translate_triplet(b"GGG"), 'G');
+    }
+
+    #[test]
+    fn lowercase_codons_translate_like_uppercase() {
+        assert_eq!(translate_triplet(b"atg"), 'M');
+        assert_eq!(translate_triplet(b"taa"), '*');
+        assert_eq!(translate_triplet(b"GgG"), 'G');
     }
 
     #[test]

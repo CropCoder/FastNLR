@@ -49,7 +49,8 @@ motifs or NLRs.
 
 Six-frame translation reproduces the reference implementation's frame-specific tail semantics
 through a small `end_offset` table derived from `len % 3`, so the last partial codon is handled
-identically on both strands.
+identically on both strands. Codon lookup is case-insensitive, so soft-masked lowercase genome
+sequence translates identically to uppercase sequence.
 
 ### `fasta`
 
@@ -59,6 +60,10 @@ identically on both strands.
 | `FastaReader::new(reader)` | reader-agnostic constructor returning `io::Result<Self>` |
 | `read_entry()` | returns `io::Result<Option<BioSequence>>`; I/O and gzip errors are propagated |
 | `read_all(path)` | loads every entry into memory — convenient, but peak memory scales with the genome |
+
+Both FASTA ingestion paths reject empty identifiers, duplicate identifiers, empty records and
+non-ASCII sequence bytes with `io::ErrorKind::InvalidData`. After trimming line-edge whitespace,
+sequence lines may contain ASCII letters, `*` and `-`.
 
 ### `chopper::SequenceChopper`
 
@@ -101,7 +106,7 @@ assert!(frames[0].sequence.starts_with("MK"));
 
 - **Two ingestion paths, one behaviour.** The `mmap` path avoids repeated file-system reads, while
   the gzip path decompresses on the fly. Both construct owned fragment strings and uppercase them,
-  and both produce identical fragment identifiers and sequences.
+  enforce the same strict FASTA validation, and produce identical fragment identifiers and sequences.
 - **Fragment identifiers are the coordinate contract.** `{contig}_{offset}` is parsed by
   `nlr-cli` to recover the contig name and the fragment offset when mapping motif hits back to
   genome coordinates.

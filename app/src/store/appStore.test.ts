@@ -61,7 +61,7 @@ const interruptedEntry = {
 describe("appStore initialization", () => {
   beforeEach(() => {
     getRuntimeInfo.mockResolvedValue({
-      version: "1.9.2",
+      version: "2.0.1",
       os: "windows",
       arch: "x86_64",
       logicalCpus: 12,

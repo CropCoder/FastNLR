@@ -189,4 +189,21 @@ mod tests {
         // frame+2: GAA ATT -> EI (2 codons, starting at index 2)
         assert_eq!(frames[2].sequence, "EI");
     }
+
+    #[test]
+    fn lowercase_dna_translates_like_uppercase() {
+        let upper = BioSequence::new("upper", "ATGAAATTT");
+        let lower = BioSequence::new("lower", "atgaaattt");
+        let upper_frames: Vec<String> = upper
+            .translate2protein()
+            .into_iter()
+            .map(|frame| frame.sequence)
+            .collect();
+        let lower_frames: Vec<String> = lower
+            .translate2protein()
+            .into_iter()
+            .map(|frame| frame.sequence)
+            .collect();
+        assert_eq!(upper_frames, lower_frames);
+    }
 }

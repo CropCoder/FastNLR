@@ -24,7 +24,7 @@ describe("NewRunPage", () => {
     useAppStore.setState({
       initialized: true,
       runtime: {
-        version: "1.9.2",
+        version: "2.0.1",
         os: "linux",
         arch: "x86_64",
         logicalCpus: 8,

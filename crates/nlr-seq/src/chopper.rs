@@ -3,10 +3,13 @@
 //! - reads character by character, accumulating up to `fragmentLength` then chopping;
 //! - fragment naming `{id}_{offset}`, where offset is the 0-based start of the fragment, step `fragmentLength - overlap`;
 //! - sequence is uppercased; newlines are skipped; header takes only the first whitespace-delimited token with `>` stripped.
+//! - identifiers are unique and non-empty; empty records and non-sequence bytes are rejected.
 //!
-//! The reader includes an EOF guard for malformed headers.
+//! Both the mmap and streaming paths apply the same FASTA validation.
 
+use crate::fasta::{invalid_data, is_valid_sequence_byte, parse_header_fields};
 use crate::translate::BioSequence;
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 
 /// Sequence chopper.
@@ -20,6 +23,8 @@ pub struct SequenceChopper {
     eof: bool,
     /// mmap path: (mapping, current read position). When non-None, zero-copy slicing is used.
     mmap: Option<(memmap2::Mmap, usize)>,
+    /// Identifiers already seen, to reject duplicate FASTA records.
+    seen_ids: HashSet<String>,
 }
 
 impl SequenceChopper {
@@ -91,20 +96,13 @@ impl SequenceChopper {
         let mut current_id = String::new();
         if pos < data.len() {
             pos += 1; // skip '>'
-            while pos < data.len() && data[pos] != b'\n' && data[pos] != b'\r' {
-                current_id.push(data[pos] as char);
-                pos += 1;
-            }
-            // Skip newline (\n or \r\n).
-            while pos < data.len() && (data[pos] == b'\n' || data[pos] == b'\r') {
-                pos += 1;
-            }
-            // Take only the first whitespace-delimited token.
-            current_id = current_id
-                .split_whitespace()
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let (identifier, next_pos) = parse_mmap_header(data, pos)?;
+            current_id = identifier;
+            pos = next_pos;
+        }
+        let mut seen_ids = HashSet::new();
+        if !current_id.is_empty() {
+            seen_ids.insert(current_id.clone());
         }
 
         Ok(SequenceChopper {
@@ -116,6 +114,7 @@ impl SequenceChopper {
             offset: 0,
             eof: false,
             mmap: Some((mmap, pos)),
+            seen_ids,
         })
     }
 
@@ -136,10 +135,14 @@ impl SequenceChopper {
         }
         // Now c == Some(b'>'); read identifier.
         let current_id = if c == Some(b'>') {
-            reader.read_identifier()?
+            reader.read_header_id()?
         } else {
             String::new() // empty file
         };
+        let mut seen_ids = HashSet::new();
+        if !current_id.is_empty() {
+            seen_ids.insert(current_id.clone());
+        }
 
         Ok(SequenceChopper {
             reader,
@@ -150,6 +153,7 @@ impl SequenceChopper {
             offset: 0,
             eof: false,
             mmap: None,
+            seen_ids,
         })
     }
 
@@ -177,42 +181,29 @@ impl SequenceChopper {
             if pos >= data.len() {
                 self.eof = true;
                 // EOF: return remaining sequence.
+                if self.current_id.is_empty() {
+                    return Ok(None);
+                }
                 if !self.current_sequence.is_empty() {
-                    let seq = BioSequence::new(
-                        format!("{}_{}", self.current_id, self.offset),
-                        self.current_sequence.to_uppercase(),
-                    );
+                    let seq = self.current_fragment()?;
                     self.current_sequence.clear();
+                    self.current_id.clear();
                     return Ok(Some(seq));
                 }
-                return Ok(None);
+                return Err(empty_sequence_error(&self.current_id));
             }
             let b = data[pos];
             match b {
                 b'>' => {
                     // Hit next sequence: return current accumulation, switch to new ID.
-                    let seq = BioSequence::new(
-                        format!("{}_{}", self.current_id, self.offset),
-                        self.current_sequence.to_uppercase(),
-                    );
+                    let seq = self.current_fragment()?;
                     self.offset = 0;
                     self.current_sequence = String::new();
                     // Read identifier (up to newline, \r-tolerant).
                     pos += 1;
-                    let id_start = pos;
-                    while pos < data.len() && data[pos] != b'\n' && data[pos] != b'\r' {
-                        pos += 1;
-                    }
-                    let id = String::from_utf8_lossy(&data[id_start..pos])
-                        .split_whitespace()
-                        .next()
-                        .unwrap_or("")
-                        .to_string();
-                    self.current_id = id;
-                    // Skip newline (\n or \r\n).
-                    while pos < data.len() && (data[pos] == b'\n' || data[pos] == b'\r') {
-                        pos += 1;
-                    }
+                    let (identifier, next_pos) = parse_mmap_header(&data, pos)?;
+                    self.register_id(identifier)?;
+                    pos = next_pos;
                     self.mmap = Some((data, pos));
                     return Ok(Some(seq));
                 }
@@ -221,12 +212,10 @@ impl SequenceChopper {
                     pos += 1;
                 }
                 _ => {
+                    self.validate_sequence_byte(b)?;
                     if self.current_sequence.len() == self.fragment_length {
                         // Chop.
-                        let seq = BioSequence::new(
-                            format!("{}_{}", self.current_id, self.offset),
-                            self.current_sequence.to_uppercase(),
-                        );
+                        let seq = self.current_fragment()?;
                         self.offset = self.offset + self.fragment_length - self.overlap;
                         let keep = self.fragment_length - self.overlap;
                         let tail: String = self.current_sequence[keep..].to_string();
@@ -250,33 +239,30 @@ impl SequenceChopper {
             match ch {
                 None => {
                     self.eof = true;
+                    if self.current_id.is_empty() {
+                        return Ok(None);
+                    }
                     if !self.current_sequence.is_empty() {
-                        let seq = BioSequence::new(
-                            format!("{}_{}", self.current_id, self.offset),
-                            self.current_sequence.to_uppercase(),
-                        );
+                        let seq = self.current_fragment()?;
                         self.current_sequence.clear();
+                        self.current_id.clear();
                         return Ok(Some(seq));
                     }
-                    return Ok(None);
+                    return Err(empty_sequence_error(&self.current_id));
                 }
                 Some(b'>') => {
-                    let seq = BioSequence::new(
-                        format!("{}_{}", self.current_id, self.offset),
-                        self.current_sequence.to_uppercase(),
-                    );
+                    let seq = self.current_fragment()?;
                     self.offset = 0;
                     self.current_sequence = String::new();
-                    self.current_id = self.reader.read_identifier()?;
+                    let identifier = self.reader.read_header_id()?;
+                    self.register_id(identifier)?;
                     return Ok(Some(seq));
                 }
                 Some(b'\n') | Some(b'\r') => {}
                 Some(b) => {
+                    self.validate_sequence_byte(b)?;
                     if self.current_sequence.len() == self.fragment_length {
-                        let seq = BioSequence::new(
-                            format!("{}_{}", self.current_id, self.offset),
-                            self.current_sequence.to_uppercase(),
-                        );
+                        let seq = self.current_fragment()?;
                         self.offset = self.offset + self.fragment_length - self.overlap;
                         let keep = self.fragment_length - self.overlap;
                         let tail: String = self.current_sequence[keep..].to_string();
@@ -290,12 +276,64 @@ impl SequenceChopper {
             }
         }
     }
+
+    fn current_fragment(&self) -> std::io::Result<BioSequence> {
+        if self.current_sequence.is_empty() {
+            return Err(empty_sequence_error(&self.current_id));
+        }
+        Ok(BioSequence::new(
+            format!("{}_{}", self.current_id, self.offset),
+            self.current_sequence.to_uppercase(),
+        ))
+    }
+
+    fn register_id(&mut self, identifier: String) -> std::io::Result<()> {
+        if !self.seen_ids.insert(identifier.clone()) {
+            return Err(invalid_data(format!(
+                "duplicate FASTA identifier '{identifier}'"
+            )));
+        }
+        self.current_id = identifier;
+        Ok(())
+    }
+
+    fn validate_sequence_byte(&self, byte: u8) -> std::io::Result<()> {
+        if is_valid_sequence_byte(byte) {
+            return Ok(());
+        }
+        Err(invalid_data(format!(
+            "FASTA record '{}' contains invalid sequence byte 0x{byte:02X}; \
+             only ASCII letters, '*' and '-' are accepted",
+            self.current_id
+        )))
+    }
+}
+
+fn parse_mmap_header(data: &[u8], mut pos: usize) -> std::io::Result<(String, usize)> {
+    let id_start = pos;
+    while pos < data.len() && data[pos] != b'\n' && data[pos] != b'\r' {
+        pos += 1;
+    }
+    let header = std::str::from_utf8(&data[id_start..pos]).map_err(|error| {
+        invalid_data(format!(
+            "FASTA header contains invalid UTF-8 at byte {id_start}: {error}"
+        ))
+    })?;
+    let (identifier, _) = parse_header_fields(header)?;
+    while pos < data.len() && (data[pos] == b'\n' || data[pos] == b'\r') {
+        pos += 1;
+    }
+    Ok((identifier, pos))
+}
+
+fn empty_sequence_error(identifier: &str) -> std::io::Error {
+    invalid_data(format!("FASTA record '{identifier}' has an empty sequence"))
 }
 
 /// Internal extension: byte-by-byte read + read identifier.
 trait ReadByte {
     fn read_byte(&mut self) -> std::io::Result<Option<u8>>;
-    fn read_identifier(&mut self) -> std::io::Result<String>;
+    fn read_header_id(&mut self) -> std::io::Result<String>;
 }
 
 impl<R: BufRead + ?Sized> ReadByte for R {
@@ -307,17 +345,11 @@ impl<R: BufRead + ?Sized> ReadByte for R {
         }
     }
 
-    fn read_identifier(&mut self) -> std::io::Result<String> {
+    fn read_header_id(&mut self) -> std::io::Result<String> {
         let mut line = String::new();
         self.read_line(&mut line)?;
-        let trimmed = line.trim_end();
-        let id = trimmed
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .trim_start_matches('>')
-            .to_string();
-        Ok(id)
+        let (identifier, _) = parse_header_fields(line.trim_end())?;
+        Ok(identifier)
     }
 }
 

@@ -9,5 +9,5 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-fastnlr = { path = "../nlr-cli", version = "1.9.2" }
+fastnlr = { path = "../nlr-cli", version = "2.0.1" }
 serde = { workspace = true }

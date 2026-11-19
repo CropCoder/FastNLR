@@ -21,6 +21,12 @@ function cargoVersion(relativePath) {
   return match[1];
 }
 
+function matchedVersion(relativePath, pattern, label) {
+  const match = read(relativePath).match(pattern);
+  if (!match) throw new Error(`Cannot find ${label} in ${relativePath}`);
+  return match[1].replace(/^v/, "");
+}
+
 const jsonVersions = {
   "app/package.json": JSON.parse(read("app/package.json")).version,
   "app/package-lock.json": JSON.parse(read("app/package-lock.json")).version,
@@ -34,7 +40,35 @@ const cargoVersions = {
   "app/src-tauri/Cargo.toml": cargoVersion("app/src-tauri/Cargo.toml"),
 };
 
-const versions = { ...jsonVersions, ...cargoVersions };
+const textVersions = {
+  "README.md": matchedVersion(
+    "README.md",
+    /!\[Version\]\([^)]*version-([0-9]+\.[0-9]+\.[0-9]+)-green\.svg\)/,
+    "Version badge",
+  ),
+  "docs/index.html": matchedVersion(
+    "docs/index.html",
+    /<span class="ver">v([0-9]+\.[0-9]+\.[0-9]+)<\/span>/,
+    "current homepage version",
+  ),
+  "skills/fastnlr/scripts/install_fastnlr.sh": matchedVersion(
+    "skills/fastnlr/scripts/install_fastnlr.sh",
+    /version="\$\{1:-v([0-9]+\.[0-9]+\.[0-9]+)\}"/,
+    "default Unix installer version",
+  ),
+  "skills/fastnlr/scripts/install_fastnlr.ps1": matchedVersion(
+    "skills/fastnlr/scripts/install_fastnlr.ps1",
+    /param\(\[string\]\$Version = "v([0-9]+\.[0-9]+\.[0-9]+)"\)/,
+    "default PowerShell installer version",
+  ),
+  "packaging/Build-TBtools-Plugin-V1.sh": matchedVersion(
+    "packaging/Build-TBtools-Plugin-V1.sh",
+    /version="\$\{2:-v([0-9]+\.[0-9]+\.[0-9]+)\}"/,
+    "default TBtools package version",
+  ),
+};
+
+const versions = { ...jsonVersions, ...cargoVersions, ...textVersions };
 const expected = process.argv[2]?.replace(/^v/, "");
 const unique = new Set(Object.values(versions));
 

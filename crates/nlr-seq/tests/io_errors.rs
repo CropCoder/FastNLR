@@ -53,3 +53,99 @@ fn corrupt_gzip_is_reported() {
     assert!(chopper_err.is_some(), "corrupt gzip chopper must fail");
     let _ = std::fs::remove_file(path);
 }
+
+fn drain_chopper(mut chopper: nlr_seq::SequenceChopper) -> io::Result<usize> {
+    let mut count = 0;
+    while chopper.next_sequence()?.is_some() {
+        count += 1;
+    }
+    Ok(count)
+}
+
+fn chopper_errors(data: &[u8]) -> (io::Error, io::Error) {
+    let reader: Box<dyn BufRead> = Box::new(io::Cursor::new(data.to_vec()));
+    let reader_error = match nlr_seq::SequenceChopper::new(reader, 8, 2).and_then(drain_chopper) {
+        Ok(_) => panic!("reader path accepted malformed FASTA"),
+        Err(error) => error,
+    };
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("input.fa");
+    std::fs::write(&path, data).unwrap();
+    let mmap_error =
+        match nlr_seq::SequenceChopper::from_mmap_file(&path, 8, 2).and_then(drain_chopper) {
+            Ok(_) => panic!("mmap path accepted malformed FASTA"),
+            Err(error) => error,
+        };
+    (reader_error, mmap_error)
+}
+
+#[test]
+fn chopper_rejects_duplicate_ids_on_both_paths() {
+    let (reader_error, mmap_error) = chopper_errors(b">chr1\nACGT\n>chr1\nTGCA\n");
+    for error in [reader_error, mmap_error] {
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error
+            .to_string()
+            .contains("duplicate FASTA identifier 'chr1'"));
+    }
+}
+
+#[test]
+fn chopper_rejects_empty_id_on_both_paths() {
+    let (reader_error, mmap_error) = chopper_errors(b">\nACGT\n");
+    for error in [reader_error, mmap_error] {
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("empty identifier"));
+    }
+}
+
+#[test]
+fn chopper_rejects_empty_sequence_on_both_paths() {
+    let (reader_error, mmap_error) = chopper_errors(b">chr1\n>chr2\nACGT\n");
+    for error in [reader_error, mmap_error] {
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error
+            .to_string()
+            .contains("FASTA record 'chr1' has an empty sequence"));
+    }
+}
+
+#[test]
+fn chopper_rejects_invalid_sequence_bytes_on_both_paths() {
+    let (reader_error, mmap_error) = chopper_errors(b">chr1\nAC GT\n");
+    for error in [reader_error, mmap_error] {
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("invalid sequence byte 0x20"));
+    }
+}
+
+#[test]
+fn chopper_rejects_non_utf8_headers_on_both_paths() {
+    let (reader_error, mmap_error) = chopper_errors(b">chr\xff\nACGT\n");
+    for error in [reader_error, mmap_error] {
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    }
+}
+
+#[test]
+fn fasta_reader_rejects_strictly_invalid_records() {
+    let cases: [(&[u8], &str); 4] = [
+        (b">chr1\nACGT\n>chr1\nTGCA\n", "duplicate FASTA identifier"),
+        (b">\nACGT\n", "empty identifier"),
+        (b">chr1\n>chr2\nACGT\n", "has an empty sequence"),
+        (b">chr1\nAC GT\n", "invalid sequence byte 0x20"),
+    ];
+    for (data, expected) in cases {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("input.fa");
+        std::fs::write(&path, data).unwrap();
+        let error = nlr_seq::fasta::read_all(&path)
+            .expect_err("strict FASTA reader must reject malformed input");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            error.to_string().contains(expected),
+            "expected {expected:?}, got {error}"
+        );
+    }
+}

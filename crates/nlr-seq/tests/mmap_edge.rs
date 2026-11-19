@@ -46,15 +46,48 @@ fn assert_consistent(name: &str, data: &[u8], frag: usize, overlap: usize) {
     );
 }
 
+fn assert_rejected_consistently(data: &[u8], expected: &str) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let uniq = COUNTER.fetch_add(1, Ordering::SeqCst);
+
+    let mut path = std::env::temp_dir();
+    path.push(format!("nlr_reject_{}_{}.fasta", std::process::id(), uniq));
+    {
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(data).unwrap();
+    }
+    let mmap_error = match SequenceChopper::from_file(&path, 10, 4)
+        .and_then(|mut chopper| chopper.next_sequence().map(|entry| entry.map(|_| ())))
+    {
+        Ok(_) => panic!("mmap path accepted invalid FASTA"),
+        Err(error) => error,
+    };
+    let _ = std::fs::remove_file(&path);
+
+    let reader: Box<dyn std::io::BufRead> = Box::new(std::io::Cursor::new(data.to_vec()));
+    let reader_error = match SequenceChopper::new(reader, 10, 4)
+        .and_then(|mut chopper| chopper.next_sequence().map(|entry| entry.map(|_| ())))
+    {
+        Ok(_) => panic!("reader path accepted invalid FASTA"),
+        Err(error) => error,
+    };
+
+    for error in [mmap_error, reader_error] {
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains(expected));
+    }
+}
+
 #[test]
 fn empty_file_consistent() {
     assert_consistent("empty", b"", 10, 4);
 }
 
 #[test]
-fn header_only_consistent() {
-    assert_consistent("hdr", b">chr1", 10, 4);
-    assert_consistent("hdr_nl", b">chr1\n", 10, 4);
+fn header_only_is_rejected_consistently() {
+    assert_rejected_consistently(b">chr1", "empty sequence");
+    assert_rejected_consistently(b">chr1\n", "empty sequence");
 }
 
 #[test]

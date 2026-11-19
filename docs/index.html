@@ -645,7 +645,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="wrap nav-inner">
     <a href="#top" class="logo" aria-label="FastNLR home">
       FastNLR
-      <span class="ver">v1.9.2</span>
+      <span class="ver">v2.0.1</span>
     </a>
     <div class="nav-links">
       <div class="nav-group">
@@ -754,7 +754,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
     <div class="term reveal">
       <div class="term-bar">
         <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-        <span class="title">fastnlr 1.7.2 — TAIR12 validation</span>
+        <span class="title">fastnlr 2.0.1 — TAIR12 validation</span>
       </div>
       <div class="term-body">
         <span class="p">$</span> <span class="cmd">fastnlr -i TAIR12_genomic.fna -o results -t 8</span><br/>
@@ -794,7 +794,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         </div>
         <h3>Windows</h3>
         <span class="platform-meta">x64</span>
-        <a class="download-button" href="https://github.com/CropCoder/FastNLR/releases/download/v1.9.2/FastNLR_1.9.2_x64-Windows-setup.exe">
+        <a class="download-button" href="https://github.com/CropCoder/FastNLR/releases/download/v2.0.1/FastNLR_2.0.1_x64-Windows-setup.exe">
           Download
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
@@ -807,7 +807,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         </div>
         <h3>macOS</h3>
         <span class="platform-meta">Apple Silicon</span>
-        <a class="download-button" href="https://github.com/CropCoder/FastNLR/releases/download/v1.9.2/FastNLR_1.9.2_macos_ARM.dmg">
+        <a class="download-button" href="https://github.com/CropCoder/FastNLR/releases/download/v2.0.1/FastNLR_2.0.1_macos_ARM.dmg">
           Download
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
@@ -828,7 +828,7 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
         </div>
         <h3>Linux</h3>
         <span class="platform-meta">x86_64</span>
-        <a class="download-button" href="https://github.com/CropCoder/FastNLR/releases/download/v1.9.2/fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz">
+        <a class="download-button" href="https://github.com/CropCoder/FastNLR/releases/download/v2.0.1/fastnlr-v2.0.1-x86_64-unknown-linux-gnu.tar.gz">
           Download
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
@@ -862,9 +862,9 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> res
         <pre id="code-binary"><span class="c"># Linux x86_64 binaries target glibc 2.17+, so they run on
 # CentOS 7 / RHEL 8 / Debian 11 / Ubuntu 20.04 and newer.</span>
 <span class="c"># Download from Releases, then:</span>
-curl -L -o fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz \
-  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v1.9.2/fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz</span>
-tar -xzf fastnlr-v1.9.2-x86_64-unknown-linux-gnu.tar.gz
+curl -L -o fastnlr-v2.0.1-x86_64-unknown-linux-gnu.tar.gz \
+  <span class="opt">https://github.com/CropCoder/FastNLR/releases/download/v2.0.1/fastnlr-v2.0.1-x86_64-unknown-linux-gnu.tar.gz</span>
+tar -xzf fastnlr-v2.0.1-x86_64-unknown-linux-gnu.tar.gz
 ./fastnlr --version
 
 <span class="c"># Annotate a genome (prefix-derived subfiles)</span>
@@ -951,7 +951,7 @@ cargo build --release
 
       <div class="ref-panel" id="cli-panel-input" role="tabpanel" aria-labelledby="cli-tab-input">
         <div class="option-grid">
-          <div class="option-card"><div class="opt-head"><code>-i &lt;genome.fasta&gt;</code><span class="opt-badge required">Required</span></div><p>Genome FASTA input, optionally gzip-compressed.</p></div>
+          <div class="option-card"><div class="opt-head"><code>-i &lt;genome.fasta&gt;</code><span class="opt-badge required">Required</span></div><p>Genome FASTA input, optionally gzip-compressed. IDs must be unique and every record non-empty; lowercase DNA is supported.</p></div>
           <div class="option-card"><div class="opt-head"><code>--gff &lt;annotation.gff3&gt;</code><span class="opt-badge">Optional</span></div><p>Use GFF3 gene models instead of six-frame scanning. The longest CDS transcript is selected per gene.</p></div>
           <div class="option-card"><div class="opt-head"><code>-o &lt;OUTPUT.DIR&gt;</code><span class="opt-badge required">Required</span></div><p>Output directory. It is created if missing, and the input filename becomes the output prefix.</p></div>
           <div class="option-card"><div class="opt-head"><code>-x &lt;mot.txt&gt;</code><span class="opt-badge default">Built-in</span></div><p>Optional PWM profile. The standard profile is embedded when omitted.</p></div>
@@ -1024,7 +1024,7 @@ cargo build --release
         <details class="output-snippet">
           <summary>Show GFF2 header example</summary>
           <pre>##gff-version 2
-##source-version FastNLR V1.9.2
+##source-version FastNLR V2.0.1
 ##date 2026-11-09 14:53:40
 ##Type DNA</pre>
         </details>
@@ -1059,7 +1059,7 @@ cargo build --release
     <div class="center reveal">
       <span class="eyebrow">Features</span>
       <h2 class="h2">Built for speed, shipped self-contained</h2>
-      <p class="lead">A self-contained pipeline that installs from bioconda and runs out of the box on any FASTA — no extra config files, no setup.</p>
+      <p class="lead">A self-contained pipeline that installs from bioconda and runs out of the box on validated FASTA — no extra config files, no setup.</p>
     </div>
 
     <div class="grid grid-3" style="margin-top: 52px;">
@@ -1076,7 +1076,7 @@ cargo build --release
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 3v18M3 12h18M5 5l14 14M19 5 5 19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         </div>
         <h3>Zero-config binary</h3>
-        <p>The standard <code>mot.txt</code> (PWM) and <code>store.txt</code> (CDF) configs are embedded at compile time. Run on any FASTA with no extra files.</p>
+        <p>The standard <code>mot.txt</code> (PWM) and <code>store.txt</code> (CDF) configs are embedded at compile time. Input is checked before scanning: duplicate IDs, empty records and invalid sequence bytes are rejected, while lowercase DNA is supported.</p>
       </div>
 
       <div class="card reveal">
@@ -1336,6 +1336,14 @@ fastnlr <span class="cmd">-i</span> genome.fasta <span class="cmd">-o</span> out
       <p class="lead">Release timeline of FastNLR with a short summary of what changed in each version.</p>
     </div>
     <div class="timeline">
+      <div class="tl-item major reveal">
+        <span class="tl-dot"></span>
+        <div class="tl-head">
+          <span class="tl-version">v2.0.1</span>
+          <span class="tl-date">2026-11-19</span>
+        </div>
+        <p class="tl-desc">Strict FASTA validation now rejects duplicate identifiers, empty records and invalid sequence bytes consistently across plain, gzip and memory-mapped inputs. Lowercase soft-masked DNA translates identically to uppercase sequence, and release metadata is synchronized across the CLI, desktop app, installers and documentation.</p>
+      </div>
       <div class="tl-item major reveal">
         <span class="tl-dot"></span>
         <div class="tl-head">
